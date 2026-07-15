@@ -1,7 +1,7 @@
 <template>
   <div class="hand-selector">
     <!-- 左手 -->
-    <div class="hand-card" v-if="props.hands.includes('l')">
+    <div class="hand-card" v-if="activeHands.includes('l')">
       <div class="title">{{ t('displaytext.left') }}</div>
       <svg viewBox="0 0 300 380">
         <!-- 骨架 -->
@@ -23,7 +23,7 @@
 
     </div>
     <!-- 右手 -->
-    <div class="hand-card" v-if="props.hands.includes('r')">
+    <div class="hand-card" v-if="activeHands.includes('r')">
       <div class="title">
         {{ t('displaytext.right') }}
         </div>
@@ -49,21 +49,18 @@
 
 <script setup >
 
-import { reactive,ref } from "vue";
+import { reactive,ref,computed,watch } from "vue";
 import { useI18n } from "vue-i18n";
 const { t } = useI18n();
 const pointRadius = ref(15);
 const props = defineProps({
-    hands:{
-        type:Array,
-        default:()=>[]
-    },
     handsPoints:{
         type:Object,
         default:()=>({l:[],r:[]})
     }
 });
 const emit = defineEmits(['update:handsPoints']);
+
 const points=[
 
 {x:150,y:360},
@@ -107,21 +104,30 @@ const connections=[
 [0,17]
 ]
 
-// const selected=reactive(props.handsPoints)
 const selected = reactive({
     l: [...(props.handsPoints?.l || [])],
     r: [...(props.handsPoints?.r || [])],
-})
+});
+watch(() => props.handsPoints,newValue => {
+    selected.l = [...(newValue?.l || []),];
+    selected.r = [...(newValue?.r || []),];
+  },
+  {deep: true,immediate: true,}
+);
+const activeHands = computed(() => {
+  return ['l', 'r'].filter(hand => Array.isArray(selected[hand]) && selected[hand].length > 0);
+});
 
-function toggle(hand,id){
-    const arr=selected[hand]
-    const index=arr.indexOf(id)
-    if(index>-1){
-        arr.splice(index,1)
-    }else{
-        arr.push(id)
-    };
-    emit('update:handsPoints', JSON.parse(JSON.stringify(selected)))
+function toggle(hand, id) {
+  const arr = selected[hand];
+  const index = arr.indexOf(id);
+  if (index >= 0) {
+    arr.splice(index, 1);
+  } else {
+    arr.push(id);
+    arr.sort((a, b) => a - b);
+  }
+  emit('update:handsPoints',{l: [...selected.l],r: [...selected.r],});
 }
 
 function point(index,mirror){

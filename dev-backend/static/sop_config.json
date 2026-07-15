@@ -20,34 +20,13 @@
                         "target": true
                     },
                     "handMargin": 30,
-                    "hands": [
-                        "r"
-                    ],
                     "handPoints": {
-                        "l": [],
-                        "r": [
-                            8,
+                        "l": [
                             4,
-                            12,
-                            16,
-                            20,
-                            19,
-                            15,
-                            11,
-                            10,
-                            14,
-                            18,
-                            7,
-                            6,
-                            9,
-                            13,
-                            17,
-                            0,
-                            5,
-                            1,
-                            2,
-                            3
-                        ]
+                            8,
+                            12
+                        ],
+                        "r": []
                     }
                 },
                 "doneWhen": []
@@ -63,9 +42,6 @@
                     "expectedObject": "P2",
                     "fromRegion": "A1",
                     "toRegion": "CY",
-                    "hands": [
-                        "r"
-                    ],
                     "handPoints": {
                         "l": [],
                         "r": [
@@ -79,6 +55,6 @@
         ],
         "create_time": "2026-07-09 11:44:07",
         "enabled": true,
-        "modify_time": "2026-07-15 09:16:14"
+        "modify_time": "2026-07-15 11:39:33"
     }
 }

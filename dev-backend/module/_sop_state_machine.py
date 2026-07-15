@@ -144,28 +144,36 @@ class SOPStepRuntime:
             return 0.0
         end_time = self.completed_at or self.paused_at or time.time()
         return round(max(0.0, end_time - self.started_at), 2)
-    # 新增：手部配置的便捷访问
-    @property
-    def required_hands(self) -> list[str]:
-        hands = self.context.get("hands") or []
-        return [h.strip().lower() for h in hands if str(h).strip()]
     
-
-
     @property
     def hand_points_config(self) -> dict[str, list[int]]:
+        """
+        获取当前步骤实际启用的手部关键点配置。
+        handPoints 同时表达：
+        1. 哪只手参与检测；
+        2. 该手使用哪些关键点。
+        示例：
+        {
+            "l": [],
+            "r": [4, 8, 12]
+        }
+        表示仅启用右手，并使用 4、8、12 号关键点。
+        """
         raw = self.context.get("handPoints") or {}
-        result = {}
-        for side, indices in raw.items():
-            side = str(side).strip().lower()
-            idx_list = [int(i) for i in indices if isinstance(i, (int, float))]
-            if idx_list:
-                result[side] = idx_list
+        if not isinstance(raw, dict):return {}
+        result: dict[str, list[int]] = {}
+        # 当前系统只支持左右手，避免错误字段进入状态机
+        for side in ("l", "r"):
+            indices = raw.get(side,[])
+            if not isinstance(indices, list):continue
+            # 只保留合法的 MediaPipe Hand Landmark 索引 0~20,同时去重并排序
+            valid_indices = sorted({int(i) for i in indices if isinstance(i, (int, float)) and 0 <= int(i) <= 20})
+            if valid_indices:result[side] = valid_indices
         return result
     @property
     def hand_gate_enabled(self) -> bool:
         """本步骤是否需要手部动作参与验证。"""
-        return bool(self.required_hands) and bool(self.hand_points_config)
+        return bool(self.hand_points_config)
     @property
     def expected_object(self) -> str:
         return str(self.context.get("expectedObject", "")).strip()
@@ -611,7 +619,7 @@ class SOPStateMachine:
     @property
     def max_required_hands(self) -> int:
         """整个SOP里，需要手部识别的步骤中最多同时用到几只手（用于决定HandLandmarker的num_hands）。"""
-        counts = [len(set(step.required_hands)) for step in self.steps if step.hand_gate_enabled]
+        counts = [len(step.hand_points_config) for step in self.steps if step.hand_gate_enabled]
         return max(counts) if counts else 0
     def snapshot(self, matched: bool = False, reason: str = "") -> dict[str, Any]:
         """生成当前状态快照"""
@@ -634,14 +642,12 @@ class SOPStateMachine:
         """取出本步骤所需手（可能多只）在配置关键点上的"动作点"（多个关键点的几何中心）。"""
         if not hands or not step.hand_gate_enabled:return []
         points: list[tuple[float, float]] = []
-        for side in step.required_hands:
+        hand_points_config = step.hand_points_config
+        for side, indices in hand_points_config.items():
             landmarks = hands.get(side)
-            indices = step.hand_points_config.get(side)
-            if not landmarks or not indices:
-                continue
+            if not landmarks:continue
             selected = [landmarks[i] for i in indices if 0 <= i < len(landmarks)]
-            if not selected:
-                continue
+            if not selected:continue
             cx = sum(p[0] for p in selected) / len(selected)
             cy = sum(p[1] for p in selected) / len(selected)
             points.append((cx, cy))
@@ -657,9 +663,7 @@ class SOPStateMachine:
     def _object_in_regions(expected_boxes: list[DetectionBox],region_boxes: list[DetectionBox],) -> bool:
         if not expected_boxes or not region_boxes:return False
         return (count_boxes_inside_regions(expected_boxes,region_boxes,) > 0)
-    def current_hand_action_points(
-        self, hands: dict[str, list[tuple[float, float]]] | None
-    ) -> list[tuple[float, float]]:
+    def current_hand_action_points(self, hands: dict[str, list[tuple[float, float]]] | None) -> list[tuple[float, float]]:
         """获取当前步骤配置的手，此刻的动作点坐标，仅用于调试可视化。"""
         step = self.current_step
         if step is None:

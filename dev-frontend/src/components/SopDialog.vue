@@ -120,8 +120,8 @@
                               </el-form-item>
                             </el-col>
                             <el-col :span="6">
-                              <el-form-item :label="$t('config.form.hands')" prop="context.expectedObject">
-                                <el-select multiple v-model="currentStep.context.hands" clearable @change="handleChangeHands">
+                              <el-form-item :label="$t('config.form.hands')">
+                                <el-select multiple v-model="currentHands" clearable @change="handleChangeHands">
                                   <el-option v-for="(obj, index) in handsOpthion" :key="index" :label="obj.label" :value="obj.value"/>
                                 </el-select>
                               </el-form-item>
@@ -137,11 +137,11 @@
                               </el-form-item>
                             </el-col>
                           </el-row>
-                          <div v-if="currentStep.context.hands && currentStep.context.hands.length" class="hands-point-container">
+                          <div v-if="currentHands.length" class="hands-point-container">
                                 <b>{{ $t('displaytext.handkeypoints') }}</b>
-                                <div class="hands-point-wrapper" v-if="currentStep.context.hands.includes('l')">
+                                <div class="hands-point-wrapper" v-if="currentHands.includes('l')">
                                     <div class="hands-point-field">L</div>
-                                    <div v-if="currentStep.context.handPoints">
+                                    <div v-if="currentStep.context.handPoints" style="display: flex;gap:5px;flex-wrap: wrap;">
                                       <el-tag effect="dark" round size="small" v-for="item in currentStep.context.handPoints.l" :key="item">{{ item }}</el-tag>
                                     </div>
                                     
@@ -151,7 +151,7 @@
                                     </div>
                                     
                                   </div>
-                                <div class="hands-point-wrapper" v-if="currentStep.context.hands.includes('r')">
+                                <div class="hands-point-wrapper" v-if="currentHands.includes('r')">
                                   <div class="hands-point-field">R</div>
                                   <div v-if="currentStep.context.handPoints" style="display: flex;gap:5px;flex-wrap: wrap;">
                                     <el-tag effect="dark" round size="small" v-for="item in currentStep.context.handPoints.r" :key="item">{{ item }}</el-tag>
@@ -169,8 +169,8 @@
               <el-splitter-panel size="300px" min="200px" :collapsible="true">
                   <div class="config-container right-sidebar">
                       <div class="config-title">{{ $t('button.customize') }}</div>
-                      <div class="right-sidebar-wrapper" v-if="currentStep && currentStep.context.hands && currentStep.context.hands.length">
-                        <Hands :hands="currentStep.context.hands" :handsPoints="currentStep.context.handPoints" @update:handsPoints="currentStep.context.handPoints = $event"/>
+                      <div class="right-sidebar-wrapper" v-if="currentStep && currentHands.length">
+                        <Hands :handsPoints="currentStep.context.handPoints" @update:handsPoints="currentStep.context.handPoints = $event"/>
                       </div>
                   </div>
               </el-splitter-panel>
@@ -229,7 +229,9 @@ const getStepTypeLabel = (type: string) => {
   const foundType = _types.find(t => t.value === type);
   return foundType ? [foundType.type,foundType.color] : ['', 'info'];
 };
-const currentStep = computed(() => steps_local.value[activeStepIndex.value])
+const currentStep = computed(() => steps_local.value[activeStepIndex.value]);
+const HAND_SIDES = ['l', 'r'] as const;
+const ALL_HAND_POINTS = Array.from({ length: 21 },(_, index) => index);
 const lastStep = computed(() => steps_local.value[steps_local.value.length - 1])
 const currentObjectDetectionPhases = computed({
     get: () => {
@@ -256,6 +258,41 @@ const currentObjectDetectionPhases = computed({
       }
     },
 })
+const currentHands = computed<string[]>({
+  get: () => {
+    const handPoints = currentStep.value?.context?.handPoints || {};
+    return HAND_SIDES.filter(hand =>Array.isArray(handPoints[hand]) && handPoints[hand].length > 0);
+  },
+  set: (hands: string[]) => {
+    if (!currentStep.value) return;
+    ensureHandPoints();
+    for (const hand of HAND_SIDES) {
+      const isEnabled = hands.includes(hand);
+      if (isEnabled) {
+        // 新启用一只手时，如果当前没有关键点，
+        // 默认选择全部 21 个关键点。
+        if (currentStep.value.context.handPoints[hand].length === 0) {
+          currentStep.value.context.handPoints[hand] = [4,8,12];
+        }
+      } else {
+        // 取消选择手 = 清空该手全部关键点
+        currentStep.value.context.handPoints[hand] = [];
+      }
+    }
+  },
+});
+const ensureHandPoints = () => {
+  if (!currentStep.value) return;
+  const context = currentStep.value.context;
+  if (!context.handPoints || typeof context.handPoints !== 'object' || Array.isArray(context.handPoints)) {
+    context.handPoints = {l: [],r: [],};
+  }
+  for (const hand of HAND_SIDES) {
+    if (!Array.isArray(context.handPoints[hand])) {
+      context.handPoints[hand] = [];
+    }
+  }
+};
 const isStepRequiredFieldsValid = (step: any) => {return !!(step?.name && step?.type && step?.target)};
 const handleAddNewStep = async ()=>{
   // 先检查最后一个已存在步骤是否填写了必要信息，避免切换步骤后校验失效
@@ -278,7 +315,7 @@ const handleAddNewStep = async ()=>{
     hint: '捡起P1零件并放置到CY中',
     target: 1,
     timeout: 30,
-    context: { expectedObject: 'P1', fromRegion: '', toRegion: 'CY', expectedObjectRequire: {source:true,transit:false,target:true},missTolerance:5, handMargin: 5, hands: [], handPoints: { 'l': [], 'r': [] } },
+    context: { expectedObject: 'P1', fromRegion: '', toRegion: 'CY', expectedObjectRequire: {source:true,transit:false,target:true},missTolerance:5, handMargin: 5,  handPoints: { 'l': [], 'r': [] } },
     doneWhen: []
   });
   activeStepIndex.value = steps_local.value.length - 1;
@@ -295,13 +332,8 @@ const handleReset = ()=>{
 }
 const handleSave = ()=>{
   for (const step of steps_local.value) {
-        const error =
-            validateVisionStep(step)
-
-        if (error) {
-            ElMessage.error(error)
-            return
-        }
+        const error = validateVisionStep(step)
+        if (error) return ElMessage.error(error)
     }
   const newConfig = {
     camera: props.modelCameraForm.camera,
@@ -329,9 +361,8 @@ const validateVisionStep = (step: any,): string => {
   const hasExpectedObject = Boolean(context.expectedObject);
   const hasFromRegion = Boolean(context.fromRegion);
   const hasToRegion =  Boolean(context.toRegion);     
-  const hands = Array.isArray(context.hands) ? context.hands : [];
   const handPoints = context.handPoints || {};
-  const hasValidHand = hands.some((hand: string) => Array.isArray(handPoints[hand])  && handPoints[hand].length > 0);
+  const hasValidHand = HAND_SIDES.some(hand => Array.isArray(handPoints[hand]) && handPoints[hand].length > 0);
     if (!hasToRegion) return `步骤 ${step.id}：必须配置目标区域`;   
     // 未配置来源区时，从整个画面任意位置寻找 expectedObject，
     // 并持续跟踪到目标区域。 
@@ -353,33 +384,10 @@ const handleChangeHands = (value: string[]) => {
   //   currentStep.value.context.expectedObject = value;
   // }
 };
-const handlePointPointsOprator = (isSelectAll: boolean, hand: string) => {
-  if (!isSelectAll){
-      if(currentStep.value.context.handPoints && hand in currentStep.value.context.handPoints){
-        currentStep.value.context.handPoints[hand]=[];
-      };
-      if(currentStep.value.context.hands && currentStep.value.context.hands.includes(hand)){
-        currentStep.value.context.hands.splice(currentStep.value.context.hands.indexOf(hand),1)
-      }
-  }else{
-    const allPoints = Array.from({ length: 21 }, (_, i) => i);
-    if ('handPoints' in currentStep.value.context) {
-      currentStep.value.context.handPoints[hand] = allPoints;
-    } else {
-      currentStep.value.context.handPoints = { [hand]: allPoints };
-    }
-  };
-
-  // if (!currentStep.value || !currentStep.value.context.handPoints) return;
-  // const pointsArray = currentStep.value.context.handPoints[hand];
-  // if (isSelectAll) {
-    // Select all points
-    // const allPoints = Array.from({ length: 10 }, (_, i) => `P${i + 1}`);
-    // currentStep.value.context.handPoints[hand] = allPoints;
-  // } else {
-    // Unselect all points
-    // currentStep.value.context.handPoints[hand] = [];
-  // }
+const handlePointPointsOprator = (isSelectAll: boolean,hand: 'l' | 'r') => {
+  if (!currentStep.value) return;
+  ensureHandPoints();
+  currentStep.value.context.handPoints[hand] = isSelectAll ? [...ALL_HAND_POINTS] : [];
 };
 const handleClosed = () => {
   emit("close");
