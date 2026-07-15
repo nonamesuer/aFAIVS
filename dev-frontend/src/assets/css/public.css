@@ -1,0 +1,148 @@
+:root {
+    --sider-width: 275px;
+    --bs-danger-color:#ed0007;
+    --bs-success-color:#00884a;
+    --bs-warning-color:#ffcf00;
+    --bs-info-color:#7d8389;
+    --bs-bgcolor: #eff1f2;
+    --bs-primary-color: #007bc0;
+    --bs-turquoise-color: #18837e;
+    --bs-primary-hover-color: #00629a;
+    --bs-disabled-color:#e7e9eb;
+    --bs-step-color:#004975;
+    --bs-radio-button-active-color: #005d93;
+    --bs-step-finish-title-color:#e8f1ff;
+    --bs-primary-hover-icon-color: #d1e4ff ;
+    --bs-icon-disabled-color:#979ea4;
+    --bs-primary-disabled-bgcolor:#c1c7cc;
+    --bs-primary-disabled-color:#656a6f;
+    --bs-select-disabled-bgcolor:var(--bs-bgcolor);
+    --bs-element-bgcolor: #e0e2e5;
+    --bs-option-bar-bgcolor:var(--bs-element-bgcolor);
+    --bs-option-bar-bgcolor-hover:#b8bec3;
+    --bs-element-bgcolor-hover:#c1c7cc;
+    --bs-radio-bscolor:#8a9097;
+    --bs-radio-bacolor-hover:#71767c;
+    --bs-card-bgcolor-hover:#d0d4d8;
+    --bs-alert-success-bgcolor:#b8efc9;
+    --bs-alert-warning-bgcolor:#ffdf95;
+    --bs-alert-error-bgcolor:#ffd9d9;
+    --bs-alert-info-bgcolor:var(--bs-primary-hover-icon-color);
+    --bs-camera-bgcolor: var(--bs-radio-bacolor-hover);
+    --fontFamilyRegular: 'boschsans regular', sans-serif;
+    --fontFamilyBlackItalicBolder: 'boschsans bolder black italic', sans-serif;
+    --fontFamilyItalic: 'boschsans italic', sans-serif;
+    --fontFamilyItalicBold: 'boschsans bold italic', sans-serif;
+    --fontFamilyBlackBolder: 'boschsans bolder black', sans-serif;
+    --fontFamilyBold: 'boschsans bold', sans-serif;
+    --bs-radio-size:24px;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.bs-button-primary {
+    background-color: #00629a !important;
+    color: #fff !important;
+    outline: 0 !important;
+    border: 1px solid #00629a !important;
+}
+
+.bs-button-primary-border {
+    color: #00629a !important;
+    border: 1px solid #00629a !important;
+    border-radius: 0 !important;
+}
+.flex-center{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.flex-center-text-center{
+  display: flex;align-items: center;justify-content: space-around
+}
+.flex-center-vertical{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wrap-form-item{
+  display: block !important;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+.text-auto-hidden{
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* labeling-Crosshair */
+.crosshair-line {
+  position: absolute;
+  background-color: rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  transition: opacity 0.2s ease; /* 添加过渡效果 */
+}
+.crosshair-line.horizontal {
+  left: 0;
+  width: 100%;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.crosshair-line.vertical {
+  top: 0;
+  width: 1px;
+  height: 100%;
+  transform: translateX(-50%);
+}
+.file-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid #0000006d;
+  gap: 15px;
+}
+
+.file-item:hover {
+  background-color: #f0f0f0;
+}
+
+.file-name {
+  flex: 3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #000;
+}
+
+.file-size {
+  flex: 1;
+  text-align: right;
+  color: #666;
+  font-size: 0.9em;
+  text-align: center;
+}
+
+/* body:fullscreen{
+  .el-aside{
+    width: 0px !important;
+  }
+  .el-header{
+    height: 0px !important;
+    overflow: hidden !important;
+  }
+ .el-footer{
+  height: 0px !important;
+  overflow: hidden !important;
+ }
+} */
+
+
+

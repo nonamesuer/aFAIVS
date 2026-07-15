@@ -1,0 +1,37 @@
+{
+  "name": "afaivs",
+  "version": "0.0.1",
+  "private": true,
+  "author": "PkP/TEF1_Li Aiguo",
+  "description": "FAIVS-Flexible AI Vision Software(ACTION)",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "electron .",
+    "make": "electron-forge make"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "axios": "^1.11.0",
+    "element-plus": "^2.10.4",
+    "pinia": "^3.0.1",
+    "pinia-plugin-persistedstate": "^4.4.1",
+    "vue": "^3.5.17",
+    "vue-draggable-plus": "^0.6.0",
+    "vue-i18n": "^11.1.3",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.8.3",
+    "@electron-forge/maker-squirrel": "^7.8.3",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.8.3",
+    "@electron-forge/plugin-fuses": "^7.8.3",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "electron": "^37.3.1",
+    "sass-embedded": "^1.100.0",
+    "vite": "^6.3.5",
+    "vite-plugin-vue-devtools": "^8.0.0"
+  }
+}

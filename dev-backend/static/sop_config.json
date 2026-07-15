@@ -1,0 +1,84 @@
+{
+    "CY": {
+        "model": "CY",
+        "confidence": 0.5,
+        "steps": [
+            {
+                "id": 1,
+                "name": "安装P1零件",
+                "type": "p_object",
+                "hint": "捡起P1零件并放置到CY中",
+                "target": 3,
+                "timeout": 50,
+                "context": {
+                    "expectedObject": "P1",
+                    "toRegion": "CY",
+                    "missTolerance": 30,
+                    "objectDetection": {
+                        "source": false,
+                        "transit": true,
+                        "target": true
+                    },
+                    "handMargin": 30,
+                    "hands": [
+                        "r"
+                    ],
+                    "handPoints": {
+                        "l": [],
+                        "r": [
+                            8,
+                            4,
+                            12,
+                            16,
+                            20,
+                            19,
+                            15,
+                            11,
+                            10,
+                            14,
+                            18,
+                            7,
+                            6,
+                            9,
+                            13,
+                            17,
+                            0,
+                            5,
+                            1,
+                            2,
+                            3
+                        ]
+                    }
+                },
+                "doneWhen": []
+            },
+            {
+                "id": 2,
+                "name": "安装P2零件",
+                "type": "p_object",
+                "hint": "捡起P2零件并放置到CY中",
+                "target": 1,
+                "timeout": 30,
+                "context": {
+                    "expectedObject": "P2",
+                    "fromRegion": "A1",
+                    "toRegion": "CY",
+                    "hands": [
+                        "r"
+                    ],
+                    "handPoints": {
+                        "l": [],
+                        "r": [
+                            8,
+                            4
+                        ]
+                    }
+                },
+                "doneWhen": []
+            }
+        ],
+        "create_time": "2026-07-09 11:44:07",
+        "enabled": true,
+        "modify_time": "2026-07-15 09:16:14"
+    }
+}

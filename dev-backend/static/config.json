@@ -1,0 +1,77 @@
+{
+    "paths": {
+        "modelPath": "C:\\Users\\LAI8PK\\Desktop\\Projects\\FAIVS_A\\dev-backend\\models",
+        "sopPath": "",
+        "resultPath": "",
+        "saveDetectionDatasets": false
+    },
+    "resolutions": [
+        [
+            320,
+            240
+        ],
+        [
+            640,
+            480
+        ],
+        [
+            800,
+            600
+        ],
+        [
+            1024,
+            768
+        ],
+        [
+            1280,
+            720
+        ],
+        [
+            1280,
+            960
+        ],
+        [
+            1600,
+            1200
+        ],
+        [
+            1920,
+            1080
+        ],
+        [
+            2048,
+            1536
+        ],
+        [
+            2320,
+            1744
+        ],
+        [
+            2560,
+            1440
+        ],
+        [
+            3840,
+            2160
+        ],
+        [
+            4160,
+            2340
+        ]
+    ],
+    "cameraResolution": {
+        "TEF1": {
+            "width": 1024,
+            "height": 768,
+            "area": 0,
+            "clarity": 50
+        },
+        "HP 5MP Camera": {
+            "width": 1024,
+            "height": 768,
+            "area": 640,
+            "clarity": 46
+        }
+    },
+    "enableCamera": "TEF1"
+}
