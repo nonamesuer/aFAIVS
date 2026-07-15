@@ -78,6 +78,9 @@ class SOPStepRuntime:
     hand_grip_state: str = "released"  # released, gripping —— 记录抓取瞬间手是否在物体上
     miss_count: int = 0  # 目标检测框连续丢失的帧数计数（用于容忍偶发漏检）
 
+    blocked_pick_state: str | None = None # 进入 FAILED 时记录当时的动作阶段，用于判断阻塞后是否产生了新的正向操作进展。
+    awaiting_cycle_reset: bool = False # 当前一轮动作已经计数完成，# 正在等待下一轮操作的起始条件重新成立。
+
     @classmethod
     def from_config(cls, data: dict[str, Any]) -> "SOPStepRuntime":
         return cls(
@@ -112,6 +115,8 @@ class SOPStepRuntime:
             "last_reason": self.last_reason,
             "pick_state": self.pick_state,
             "miss_count": self.miss_count,
+            "blocked_pick_state": self.blocked_pick_state,
+            "awaiting_cycle_reset": self.awaiting_cycle_reset,
         }
     def validate_config(self) -> tuple[bool, str]:
         expected_label = self.expected_object
@@ -237,6 +242,13 @@ class SOPStepRuntime:
 
 class SOPStateMachine:
     """SOP 视觉步骤状态机。"""
+    _PICK_STATE_ORDER = {
+        "idle": 0,
+        "in_source": 1,
+        "picked": 2,
+        "in_target": 3,
+        "done": 4,
+    }
 
     def __init__(
         self,
@@ -317,6 +329,8 @@ class SOPStateMachine:
             step.pick_state = "idle"
             step.hand_grip_state = "released"
             step.miss_count = 0
+            step.blocked_pick_state = None
+            step.awaiting_cycle_reset = False
 
         self.current_index = 0
         self.started_at = time.time()
@@ -463,26 +477,54 @@ class SOPStateMachine:
         # 标准化检测结果
         boxes = normalize_detections(detections, min_score=self.confidence)
         if self.state == SOPRunState.FAILED:
+            # ==================================================
+            # FAILED 状态下仍然继续视觉检测
+            #
+            # self.last_reason:
+            #     原始阻塞原因
+            #
+            # step.last_reason:
+            #     当前实时操作状态
+            # ==================================================
+            # 自定义 NG 条件仍然存在
             ng_matched, ng_reason = self._match_ng_when(step, boxes)
-            if ng_matched:return self.snapshot(matched=False, reason=ng_reason)
-
-            default_ng_reason = self._match_default_wrong_object(step, boxes)
-            if default_ng_reason:return self.snapshot(matched=False, reason=default_ng_reason)
-
-            matched_count, reason = self._match_step(step, boxes,hands)
-            if matched_count < step.target:
-                step.matched_count = matched_count
+            if ng_matched:
+                step.last_reason = ng_reason
                 return self.snapshot(matched=False, reason=self.last_reason)
-
-            self._recover_current_step(reason)
-            matched = True
-            step.matched_count = matched_count
-            step.last_reason = reason
-            step.stable_count += 1
-            if step.stable_count >= self.stable_frames:
-                self._finish_current_step(reason)
-            return self.snapshot(matched=matched, reason=reason)
-
+            # 默认错误物料仍然存在
+            default_ng_reason = self._match_default_wrong_object(step, boxes)
+            if default_ng_reason:return self.snapshot(matched=False, reason=self.last_reason)
+            # --------------------------------------------------
+            # 如果之前已经完成过一轮，
+            # 当前正在等待下一轮开始条件。
+            # --------------------------------------------------
+            if step.awaiting_cycle_reset:
+                cycle_ready, live_reason = self._try_reset_for_next_cycle(step, boxes, hands)
+                step.last_reason = live_reason
+                if not cycle_ready:return self.snapshot(matched=False, reason=self.last_reason)
+            # --------------------------------------------------
+            # 继续执行当前动作链
+            # --------------------------------------------------
+            completed_once, live_reason = self._match_step(step, boxes, hands)
+            step.last_reason = live_reason
+            # --------------------------------------------------
+            # 判断是否产生新的有效正向进展
+            # target 不参与解除阻塞。
+            # --------------------------------------------------
+            can_recover = self._can_recover_current_step(step,completed_once)
+            if not can_recover:return self.snapshot(matched=False, reason=self.last_reason)
+             # --------------------------------------------------
+            # 解除阻塞
+            # --------------------------------------------------
+            self._recover_current_step(live_reason)
+            # --------------------------------------------------
+            # 当前这一帧可能已经满足“一轮完成”
+            # --------------------------------------------------
+            if completed_once:
+                step.stable_count += 1
+                if step.stable_count >= self.stable_frames:
+                    self._confirm_cycle_completed(step, live_reason)
+            return self.snapshot(matched=completed_once, reason=live_reason)
         # 检查超时
         timeout_reason = self._check_timeout(step)
         if timeout_reason:
@@ -500,24 +542,31 @@ class SOPStateMachine:
         if default_ng_reason:
             self._fail_current_step(default_ng_reason)
             return self.snapshot(matched=False, reason=default_ng_reason)
-
-        # 匹配当前步骤
-        matched_count, reason = self._match_step(step, boxes,hands)
-        matched = matched_count >= step.target
-        
-        # 更新步骤状态
-        step.matched_count = matched_count
+        # ==================================================
+        # 如果上一轮已经完成，先等待下一轮起始条件重新成立
+        # ==================================================
+        if step.awaiting_cycle_reset:
+            cycle_ready, cycle_reason = (self._try_reset_for_next_cycle(step,boxes,hands))
+            step.last_reason = cycle_reason
+            if not cycle_ready:return self.snapshot(matched=False,reason=cycle_reason)
+        # ==================================================
+        # 执行当前一轮动作判断
+        # ==================================================
+        completed_once, reason = self._match_step(step,boxes,hands)
         step.last_reason = reason
 
-        if matched:
+        # ==================================================
+        # 当前这一轮完成条件连续稳定成立
+        # ==================================================
+        if completed_once:
             step.stable_count += 1
-            # 如果达到稳定帧数，完成当前步骤
             if step.stable_count >= self.stable_frames:
-                self._finish_current_step(reason)
+                self._confirm_cycle_completed(step,reason)
         else:
             step.stable_count = 0
+        return self.snapshot(matched=completed_once,reason=reason )
 
-        return self.snapshot(matched=matched, reason=reason)
+        # return self.snapshot(matched=matched, reason=reason)
 
     def _handle_ready_check(self, detections: list[dict[str, Any]] | dict[str, Any] | None) -> dict[str, Any]:
         """处理准备检查状态"""
@@ -680,6 +729,8 @@ class SOPStateMachine:
         step.last_reason = reason
         step.pick_state = "idle"  # 重置状态
         step.miss_count = 0
+        step.blocked_pick_state = None
+        step.awaiting_cycle_reset = False
         self.current_index += 1
 
         # 检查是否有下一个步骤
@@ -709,13 +760,17 @@ class SOPStateMachine:
         self.last_reason = reason
 
     def _fail_current_step(self, reason: str) -> None:
-        """使当前步骤失败"""
+        """使当前步骤进入阻塞状态，但保留当前动作进度。"""
         step = self.current_step
         if step is not None:
+            # 保存进入阻塞时的动作阶段。
+            step.blocked_pick_state = step.pick_state
             step.state = SOPStepState.FAILED
             step.completed_at = time.time()
             step.last_reason = reason
-            step.pick_state = "idle"  # 重置状态
+            # 不重置 pick_state。
+            # FAILED 状态下仍然继续当前视觉动作链。
+            # step.pick_state = "idle"  # 重置状态
             step.miss_count = 0
         self.state = SOPRunState.FAILED
         self.completed_at = time.time()
@@ -731,10 +786,92 @@ class SOPStateMachine:
             step.last_reason = reason
             step.stable_count = 0
             step.miss_count = 0
+            step.blocked_pick_state = None
         self.state = SOPRunState.RUNNING
         self.completed_at = None
         self.last_reason = ""
-
+    def _can_recover_current_step(self,step: SOPStepRuntime,completed_once: bool,) -> bool:
+        """
+        判断阻塞后的操作是否已经产生有效正向进展。
+        target 不参与解除阻塞判断。
+        """
+        # 当前这一轮已经完成，本身就是明确的正向进展。
+        if completed_once:return True
+        blocked_state = step.blocked_pick_state or "idle"
+        current_state = step.pick_state or "idle"
+        blocked_order = self._PICK_STATE_ORDER.get(blocked_state,0)
+        current_order = self._PICK_STATE_ORDER.get(current_state,0)
+        return current_order > blocked_order
+    def _confirm_cycle_completed(self,step: SOPStepRuntime,reason: str) -> None:
+        """
+        确认当前一轮操作已经稳定完成。
+        target 表示需要完成多少轮有效操作。
+        """
+        step.matched_count += 1
+        step.stable_count = 0
+        # 已经达到目标次数，完成整个步骤。
+        if step.matched_count >= step.target:
+            self._finish_current_step(reason)
+            return
+        # 尚未达到 target，等待下一轮操作重新开始。
+        step.awaiting_cycle_reset = True
+        step.pick_state = "idle"
+        step.hand_grip_state = "released"
+        step.miss_count = 0
+        step.last_reason = (
+            f"Cycle {step.matched_count}/{step.target} completed, "
+            f"waiting for next cycle"
+        )
+    def _try_reset_for_next_cycle(self,step: SOPStepRuntime,boxes: list[DetectionBox],hands: dict[str, list[tuple[float, float]]] | None, ) -> tuple[bool, str]:
+        """
+        判断当前场景是否已经具备开始下一轮操作的条件。
+        """
+        if not step.awaiting_cycle_reset:return True, ""
+        expected_label = step.expected_object
+        from_region = str(step.context.get("fromRegion", "")).strip()
+        target_region = str(step.context.get("toRegion", "")).strip()
+        hand_margin = float(step.context.get("handMargin", 30))
+        hand_points = self._hand_action_points(step,hands )
+        # ==================================================
+        # 有来源区域
+        # ==================================================
+        if from_region:
+            from_region_boxes = find_boxes(boxes,from_region,)
+            # 来源阶段检测物料：
+            # 等待下一份物料重新出现在来源区域。
+            if step.require_object_at_source and expected_label:
+                expected_boxes = find_boxes(boxes,expected_label)
+                object_in_source = self._object_in_regions(expected_boxes,from_region_boxes)
+                if not object_in_source:return False,f"Waiting for next {expected_label} in {from_region}",
+            # 来源阶段不检测物料：
+            # 使用手部重新进入来源区域作为下一轮开始条件。
+            else:
+                hand_in_source = self._points_engage_boxes(hand_points,from_region_boxes,hand_margin)
+                if not hand_in_source:return False,f"Waiting for hand to return to {from_region}"
+            step.awaiting_cycle_reset = False
+            step.pick_state = "idle"
+            step.started_at = time.time()
+            return True, "Next cycle ready"
+        # ==================================================
+        # 没有来源区域
+        #
+        # 当前配置规则下，这种情况依赖 expectedObject。
+        # 已经放入目标区域的旧物料不能再次触发新一轮。
+        # 必须存在目标区域之外的新 expectedObject。
+        # ==================================================
+        if expected_label:
+            expected_boxes = find_boxes(boxes,expected_label)
+            target_region_boxes = find_boxes(boxes,target_region)
+            target_count = count_boxes_inside_regions(expected_boxes,target_region_boxes)
+            outside_target_count = (len(expected_boxes) - target_count)
+            if outside_target_count <= 0:return False,f"Waiting for next {expected_label} in visible area"
+            step.awaiting_cycle_reset = False
+            step.pick_state = "idle"
+            step.started_at = time.time()
+            return True, "Next cycle ready"
+        # 理论上无 fromRegion 且无 expectedObject
+        # 当前配置不应该进入这里。
+        return False, "Waiting for next cycle"
     def _check_timeout(self, step: SOPStepRuntime) -> str:
         """检查步骤是否超时"""
         if step.timeout <= 0 or not step.started_at:
@@ -743,7 +880,7 @@ class SOPStateMachine:
         if elapsed <= step.timeout:
             return ""
         return f"Step timeout: {step.name} exceeded {step.timeout:g}s"
-    def _handle_missing_expected_object(self, step: SOPStepRuntime, expected_label: str) -> tuple[int, str]:
+    def _handle_missing_expected_object(self, step: SOPStepRuntime, expected_label: str) -> tuple[bool, str]:
         """目标物体本帧未检测到时的处理。
 
         只有连续丢失超过 missTolerance 帧（默认 DEFAULT_MISS_TOLERANCE），
@@ -753,26 +890,25 @@ class SOPStateMachine:
         "context": {..., "missTolerance": 8}
         """
         tolerance = max(0, int(step.context.get("missTolerance", DEFAULT_MISS_TOLERANCE)))
-
         if step.pick_state in ("picked", "in_target"):
             if step.miss_count < tolerance:
                 step.miss_count += 1
-                return step.matched_count, (
-                    f"{expected_label} briefly lost ({step.miss_count}/{tolerance}), holding state"
-                )
+                return False, f"{expected_label} briefly lost ({step.miss_count}/{tolerance}), holding state"
             # 超过容忍帧数，才真正判定为丢失/放回
             step.pick_state = "idle"
             step.hand_grip_state = "released"
             step.miss_count = 0
-            return 0, f"Waiting for {expected_label}"
-
+            return False, f"Waiting for {expected_label}"
         # 非搬运中状态（idle / in_source），丢失目标框不需要特殊容忍逻辑
         step.miss_count = 0
-        return 0, f"Waiting for {expected_label}"
+        return False, f"Waiting for {expected_label}"
     
-    def _match_step(self, step: SOPStepRuntime, boxes: list[DetectionBox],hands: dict[str, list[tuple[float, float]]] | None = None,) -> tuple[int, str]:
+    def _match_step(self, step: SOPStepRuntime, boxes: list[DetectionBox],hands: dict[str, list[tuple[float, float]]] | None = None,) -> tuple[bool, str]:
         """匹配当前步骤的条件"""
-        if step.done_when:return self._match_done_when(step.done_when, boxes)
+        if step.done_when:
+            matched_count, reason = self._match_done_when(step.done_when,boxes)
+            completed = matched_count >= len(step.done_when)
+            return completed, reason
         expected_label = step.expected_object
         from_region = str(step.context.get("fromRegion", "")).strip()
         target_region = str(step.context.get("toRegion", "")).strip()
@@ -805,15 +941,15 @@ class SOPStateMachine:
         if step.pick_state == "idle":
             # 来源阶段要求检测物料
             if step.require_object_at_source:
-                if not expected_boxes:return 0, f"Waiting for {expected_label}"
-                if not object_in_source:return 0, f"Waiting for {expected_label} in {from_region}"
+                if not expected_boxes:return False, f"Waiting for {expected_label}"
+                if not object_in_source:return False, f"Waiting for {expected_label} in {from_region}"
                 step.pick_state = "in_source"
-                return 0, f"{expected_label} ready in {from_region}, waiting to pick"
+                return False, f"{expected_label} ready in {from_region}, waiting to pick"
             # 来源阶段不要求检测物料，但要求手部识别
-            if not step.hand_gate_enabled:return 0,"Source object detection disabled but hand tracking is not configured"
-            if not hand_in_source:return 0, f"Waiting for hand in {from_region}"
+            if not step.hand_gate_enabled:return False,"Source object detection disabled but hand tracking is not configured"
+            if not hand_in_source:return False, f"Waiting for hand in {from_region}"
             step.pick_state = "in_source"
-            return 0, f"Hand ready in {from_region}, waiting to pick"
+            return False, f"Hand ready in {from_region}, waiting to pick"
         # ==================================================
         # in_source
         # 等待真正拿起
@@ -826,24 +962,24 @@ class SOPStateMachine:
                     # 有手部时可以记录“手已经接触目标”
                     if step.hand_gate_enabled and hand_on_object:
                         step.hand_grip_state = "gripping"
-                    return 0, f"Pick {expected_label} from {from_region}"
+                    return False, f"Pick {expected_label} from {from_region}"
                 # 物料不再位于来源区
                 #
                 # 如果有手部配置：
                 # 允许使用之前已经记录的 gripping，
                 # 解决真正抓起时目标被手遮挡的问题。
                 if step.hand_gate_enabled:
-                    if step.hand_grip_state != "gripping":return 0, f"{expected_label} left {from_region} without confirmed hand engagement"
+                    if step.hand_grip_state != "gripping":return False, f"{expected_label} left {from_region} without confirmed hand engagement"
                 step.pick_state = "picked"
                 step.started_at = time.time()  # 重置计时器，开始计算搬运时间
-                return 0, f"{expected_label} picked, moving to {target_region}"
+                return False, f"{expected_label} picked, moving to {target_region}"
             # 来源阶段看不到 expectedObject,只能使用手的位置   
-            if hand_in_source:return 0, f"Hand remains in {from_region}"
-            if not hand_points:return 0, f"Waiting for hand in {from_region}"
+            if hand_in_source:return False, f"Hand remains in {from_region}"
+            if not hand_points:return False, f"Waiting for hand in {from_region}"
             step.pick_state = "picked"
             step.hand_grip_state = "gripping"
             step.started_at = time.time()  # 重置计时器，开始计算搬运时间
-            return 0, f"Hand left {from_region}, moving to {target_region}"
+            return False, f"Hand left {from_region}, moving to {target_region}"
         # ==================================================
         # picked
         # 搬运阶段
@@ -857,24 +993,24 @@ class SOPStateMachine:
                 if object_in_source:
                     step.pick_state = "in_source"
                     step.hand_grip_state = "released"
-                    return 0, f"{expected_label} returned to {from_region}, pick again"
+                    return False, f"{expected_label} returned to {from_region}, pick again"
                 #到达目标区
                 if object_in_target:
                     step.pick_state = "in_target"
-                    return 0, f"{expected_label} arrived at {target_region}, waiting for release"
-                return 0, f"Moving {expected_label} to {target_region}"
+                    return False, f"{expected_label} arrived at {target_region}, waiting for release"
+                return False, f"Moving {expected_label} to {target_region}"
             # 搬运阶段不要求持续看到目标物体,使用手部位置继续追踪
-            if not step.hand_gate_enabled:return 0,"Transit object detection disabled but hand tracking is not configured"
+            if not step.hand_gate_enabled:return False,"Transit object detection disabled but hand tracking is not configured"
             #手部重新回到来源区
             if hand_in_source:
                 step.pick_state = "in_source"
                 step.hand_grip_state = "released"
-                return 0, f"Hand returned to {from_region}, pick again"
+                return False, f"Hand returned to {from_region}, pick again"
             #手部到达目标区
             if hand_in_target:
                 step.pick_state = "in_target"
-                return 0, f"Hand arrived at {target_region}, waiting for release"
-            return 0, f"Moving hand to {target_region}"
+                return False, f"Hand arrived at {target_region}, waiting for release"
+            return False, f"Moving hand to {target_region}"
         # ==================================================
         # in_target
         # 验证最终结果
@@ -884,26 +1020,26 @@ class SOPStateMachine:
             if step.require_object_at_target:
                 if not expected_boxes:return self._handle_missing_expected_object(step, expected_label)
                 step.miss_count = 0
-                if not object_in_target:return 0, f"Waiting for {expected_label} in {target_region}"
+                if not object_in_target:return False, f"Waiting for {expected_label} in {target_region}"
                 # 配置手部时：
                 # 物料已经在目标区，但手还压在物料上，
                 # 等待放手。
                 if step.hand_gate_enabled and hand_on_object:
                     step.hand_grip_state = "gripping"
-                    return 0, f"Waiting for hand to release {expected_label} in {target_region}"
+                    return False, f"Waiting for hand to release {expected_label} in {target_region}"
                 step.hand_grip_state = "released"
-                return len(expected_boxes), f"{expected_label} reached {target_region}"
+                return True, f"{expected_label} reached {target_region}"
             #目标阶段不要求看到目标物体,使用手部位置继续追踪
             if step.hand_gate_enabled:
                 #手还在目标区域
                 #暂时认为还没有结束放置动作
-                if hand_in_target:return 0, f"Waiting for hand to leave {target_region}"
+                if hand_in_target:return False, f"Waiting for hand to leave {target_region}"
                 #手已经离开目标区域
                 step.hand_grip_state = "released"
-                return 1, f"Hand left {target_region}, {expected_label} placed"
+                return True, f"Hand left {target_region}, {expected_label} placed"
             # 没有物料目标验证，也没有手部验证
-            return 0,"Target object detection disabled but hand tracking is not configured"
-        return 0, f"Unknown pick state: {step.pick_state}"
+            return False,"Target object detection disabled but hand tracking is not configured"
+        return False, f"Unknown pick state: {step.pick_state}"
     def _match_no_source_step(
         self,
         step: SOPStepRuntime,
@@ -913,67 +1049,61 @@ class SOPStateMachine:
         target_region_boxes: list[DetectionBox],
         object_in_target: bool,
         hand_on_object: bool,
-    ) -> tuple[int, str]:
+    ) -> tuple[bool, str]:
         """匹配未配置 fromRegion 的步骤。
 
         expectedObject 的初始位置可以在画面内任意位置。检测框短暂丢失时
         保持搬运状态，连续丢失超过 missTolerance 后才重新寻找目标。
         """
-        tolerance = max(
-            0,
-            int(step.context.get("missTolerance", DEFAULT_MISS_TOLERANCE)),
-        )
+        tolerance = max(0,int(step.context.get("missTolerance", DEFAULT_MISS_TOLERANCE)),)
 
-        def match_target() -> tuple[int, str]:
+        def match_target() -> tuple[bool, str]:
             step.pick_state = "in_target"
             step.miss_count = 0
             if step.hand_gate_enabled and hand_on_object:
                 step.hand_grip_state = "gripping"
-                return 0, f"Waiting for hand to release {expected_label} in {target_region}"
+                return False, f"Waiting for hand to release {expected_label} in {target_region}"
             step.hand_grip_state = "released"
-            matched_count = count_boxes_inside_regions(
-                expected_boxes,
-                target_region_boxes,
-            )
-            return matched_count, f"{expected_label} reached {target_region}"
+            matched_count = count_boxes_inside_regions(expected_boxes,target_region_boxes)
+            return True, f"{expected_label} reached {target_region}"
 
         if object_in_target:
             return match_target()
 
         if step.pick_state == "idle":
             if not expected_boxes:
-                return 0, f"Waiting for {expected_label} in visible area"
+                return False, f"Waiting for {expected_label} in visible area"
             step.pick_state = "in_source"
             step.miss_count = 0
             if step.hand_gate_enabled and hand_on_object:
                 step.hand_grip_state = "gripping"
-            return 0, f"{expected_label} found, waiting to move to {target_region}"
+            return False, f"{expected_label} found, waiting to move to {target_region}"
 
         if step.pick_state == "in_source":
             if expected_boxes:
                 step.miss_count = 0
                 if step.hand_gate_enabled and hand_on_object:
                     step.hand_grip_state = "gripping"
-                    return 0, f"Picking {expected_label}, move it to {target_region}"
-                return 0, f"Waiting to pick {expected_label} and move it to {target_region}"
+                    return False, f"Picking {expected_label}, move it to {target_region}"
+                return False, f"Waiting to pick {expected_label} and move it to {target_region}"
 
             # 有手部配置时，必须先确认手接触过目标；否则本次消失只按漏帧处理。
             if step.hand_gate_enabled and step.hand_grip_state != "gripping":
                 step.miss_count += 1
                 if step.miss_count <= tolerance:
-                    return 0, (
+                    return False, (
                         f"{expected_label} briefly lost before confirmed pickup "
                         f"({step.miss_count}/{tolerance})"
                     )
                 step.pick_state = "idle"
                 step.miss_count = 0
-                return 0, f"Waiting for {expected_label} in visible area"
+                return False, f"Waiting for {expected_label} in visible area"
 
             # 未配置手部时，目标从原位置消失可视为进入搬运；后续仍需在
             # missTolerance 范围内重新检测到，最终必须出现在 toRegion。
             step.pick_state = "picked"
             step.miss_count = 1
-            return 0, (
+            return False, (
                 f"{expected_label} temporarily not detected while moving "
                 f"(1/{tolerance})"
             )
@@ -982,11 +1112,11 @@ class SOPStateMachine:
             if expected_boxes:
                 step.pick_state = "picked"
                 step.miss_count = 0
-                return 0, f"Moving {expected_label} to {target_region}"
+                return False, f"Moving {expected_label} to {target_region}"
 
             step.miss_count += 1
             if step.miss_count <= tolerance:
-                return 0, (
+                return False, (
                     f"{expected_label} briefly lost while moving "
                     f"({step.miss_count}/{tolerance}), holding state"
                 )
@@ -994,11 +1124,11 @@ class SOPStateMachine:
             step.pick_state = "idle"
             step.hand_grip_state = "released"
             step.miss_count = 0
-            return 0, f"{expected_label} lost, searching visible area again"
+            return False, f"{expected_label} lost, searching visible area again"
 
         step.pick_state = "idle"
         step.miss_count = 0
-        return 0, f"Waiting for {expected_label} in visible area"
+        return False, f"Waiting for {expected_label} in visible area"
     def _match_done_when(self, rules: list[dict[str, Any]], boxes: list[DetectionBox]) -> tuple[int, str]:
         """匹配完成条件"""
         matched_rules = 0

@@ -7,9 +7,7 @@
                   <el-form-item :label="$t('config.models')" style="margin-right: 0">
                     <el-select v-model="currentMainModel" :placeholder="t('interacting.select') + t('config.model')"
                         @change="handleChangeMainModel">
-                        <el-option v-for="(value, model, index) in modelsList" :key="index" :label="model" :value="model"
-                        :disabled="!value" />
-                        
+                        <el-option v-for="(value, model, index) in modelsList" :key="index" :label="model" :value="model" :disabled="!value" />
                     </el-select>
                   </el-form-item>
                   <el-popover :visible="labelColorVisible" placement="bottom" width="300" trigger="click" popper-style="height: 400px">
@@ -37,7 +35,7 @@
                           <el-row :gutter="10">
                               <el-col :span="16"><span >{{ camera }}</span></el-col>
                               <el-col :span="4" style="display: flex;align-items: center; justify-content: center;"><el-icon @click.stop="displayCapSteram(index)" size="20px"><VideoPlay /></el-icon></el-col>
-                              <el-col :span="4" style="display: flex; align-items: center; justify-content: center;"><el-icon @click.stop="resolutionsDrawer(camera)" color="var(--bs-primary-color)" size="20px"><Setting /></el-icon></el-col>
+                              <el-col :span="4" style="display: flex; align-items: center; justify-content: center;"><el-icon @click.stop="resolutionsDrawer(camera)" size="20px"><Setting /></el-icon></el-col>
                               
                           </el-row>
                           <!-- <div style="display: flex;align-items: start; justify-content: space-between;">
@@ -139,7 +137,7 @@
         </div>
         <!-- 摄像头预览 -->
         <el-dialog v-model="configCameraVisible" modal-class="bs-shade" :title="cameraList[currentMainCamera] + resolutionsDes" width="50%"
-            destroy-on-close @closed="configCameraDialogClosed" draggable :z-index="999">
+            destroy-on-close @closed="configCameraDialogClosed" draggable :z-index="99999">
             <div class="video-wrapper">
             <div class="video-container">
                 <img id="video-stream" src="" />

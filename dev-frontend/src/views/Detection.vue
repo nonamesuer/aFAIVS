@@ -343,15 +343,15 @@ const getNowTime = () => {
     return now.toLocaleTimeString('zh-CN', { hour12: false })
 }
 
-const getSopEventLevel = (state) => {
-    if (state === 'failed') {
-        return 'error'
-    }
-    if (state === 'completed') {
-        return 'info'
-    }
-    return 'info'
-}
+// const getSopEventLevel = (state) => {
+//     if (state === 'failed') {
+//         return 'error'
+//     }
+//     if (state === 'completed') {
+//         return 'info'
+//     }
+//     return 'info'
+// }
 
 const getSopReasonText = (reason = '') => {
     if (!reason) {
@@ -495,11 +495,30 @@ const buildProcessStepsFromSop = (sop = {}) => {
         reason: step.state === 'failed' ? failedReason : getSopReasonText(step.last_reason || ''),
     }))
 }
-
-const appendSopEvent = (sop = {}) => {
+const getSopLiveEventLevel = (sop = {}) => {
     const step = sop.current_step
-    const reasonText = getSopReasonText(sop.reason || step?.last_reason || '')
-    const eventKey = `${sop.state}-${step?.id || 'done'}-${reasonText}-${sop.progress?.done || 0}`
+    if (sop.state === 'completed' || step?.state === 'done') return 'success'
+    // FAILED 的红色错误已经由告警区域单独显示。
+    // 阻塞后的实时操作过程继续作为普通实时事件显示。
+    return 'info'
+}
+const appendSopEvent = (sop = {}) => {
+    const step = sop.current_step;
+    // 实时事件优先使用当前步骤实时状态。
+    // sop.reason 在 FAILED 时保留原始阻塞原因。
+    const rawReason = step?.last_reason || sop.reason || '';
+    const reasonText = getSopReasonText(rawReason)
+    if (!reasonText)return;
+    const eventKey = [
+        sop.state,
+        step?.id || 'done',
+        step?.pick_state || '',
+        step?.matched_count || 0,
+        step?.awaiting_cycle_reset || false,
+        reasonText,
+        sop.progress?.done || 0,
+    ].join('-')
+    // const eventKey = `${sop.state}-${step?.id || 'done'}-${reasonText}-${sop.progress?.done || 0}`
     if (eventKey === lastSopEventKey) {
         return
     }
@@ -507,7 +526,7 @@ const appendSopEvent = (sop = {}) => {
     events.value.unshift({
         id: `${Date.now()}-${Math.random()}`,
         time: getNowTime(),
-        level: getSopEventLevel(sop.state),
+        level: getSopLiveEventLevel(sop),
         step: step?.name || 'SOP',
         text: reasonText,
     })
@@ -538,7 +557,6 @@ const syncSopAlert = (sop = {}) => {
         confirmed: false,
     });
     criticalAlerts.value[0] = alerts.value[0];
-    console.log("criticalAlerts.value",criticalAlerts.value)
 }
 
 const applySopState = (sop) => {
@@ -572,21 +590,6 @@ const getSopConfigration = async()=>{
     } finally {
         appStore.setLoading(false);
     }
-    //     const resData = res.data;
-    //     if(!resData.status)return MesAlertWTitle('error',t("message.error"), t("message.messagetext.failed_get_config"), resData.msg, "OK")
-    //     sopConfigrationData.value = resolveSopConfig(resData.data || {});
-    //     cameraName.value = resData.enableCamera || t('displaytext.noconfigcamera');
-    //     if(Object.keys(sopConfigrationData.value).length===0){
-    //         console.log("这里需要根据是否有配置来决定检测页面的显示状况");
-    //     }else{
-    //         //处理processSteps
-    //         let steps = sopConfigrationData.value.steps || [];
-    //         processSteps.value = buildProcessSteps(steps);
-    //         updateStepStatuses();
-    //     }
-    // })
-    // .catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_config"), error.message, "OK"))
-    // .finally(()=>{appStore.setLoading(false);})
 }
 /**
  * *********************************************************
@@ -1005,17 +1008,12 @@ const stopClientStreams = (message = t('message.messagetext.stopedDetection')) =
  */
 const refreshDetectionStatus = async () => {
     appStore.setLoading(true);
-    // handleCloseDetection()
     api.statusDetection().then((res)=>{
         const resData = res.data;
         if (resData.running) {
             startClientStreams()
             return
         };
-        // 未启动
-        // stopClientStreams(
-        //     t('message.messagetext.closedDetection')
-        // )
         modifyStreamAlert(false,t('message.messagetext.closedDetection'))
     }).catch((err)=>{
         modifyStreamAlert(false, err.message || t('message.messagetext.backendServerIssue'));
