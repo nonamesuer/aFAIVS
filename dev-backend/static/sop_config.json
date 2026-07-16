@@ -22,11 +22,16 @@
                     "handMargin": 30,
                     "handPoints": {
                         "l": [],
-                        "r": []
+                        "r": [
+                            4,
+                            8,
+                            12
+                        ]
                     },
                     "fromRegion": "A1"
                 },
-                "doneWhen": []
+                "doneWhen": [],
+                "ngWhen": []
             },
             {
                 "id": 2,
@@ -45,13 +50,21 @@
                             8,
                             4
                         ]
-                    }
+                    },
+                    "objectDetection": {
+                        "source": true,
+                        "transit": true,
+                        "target": true
+                    },
+                    "missTolerance": 5,
+                    "handMargin": 30
                 },
-                "doneWhen": []
+                "doneWhen": [],
+                "ngWhen": []
             }
         ],
         "create_time": "2026-07-09 11:44:07",
         "enabled": true,
-        "modify_time": "2026-07-16 08:13:31"
+        "modify_time": "2026-07-16 15:49:41"
     }
 }

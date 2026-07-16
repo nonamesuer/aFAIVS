@@ -220,4 +220,6 @@ __marimo__/
 #MY
 models/
 node_modules/
-SOP.md
+*.md
+
+backup/
