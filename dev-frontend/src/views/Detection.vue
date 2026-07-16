@@ -48,7 +48,7 @@
                                 @error="modifyStreamAlert(false,t('message.messagetext.mjpegStreamError'))"
                             />
 
-                            <div class="current-step-overlay" v-if="processSteps.length > 0">
+                            <div class="current-step-overlay" v-if="currentStep">
                                 <div class="overlay-title">当前工序</div>
                                 <div class="overlay-name text-auto-hidden">{{ currentStep.name }}</div>
                                 <div class="overlay-meta">目标 {{ currentStep.target }} | 当前 {{ currentStep.current }} | {{ getStepStatusLabel(currentStep.status) }}</div>
@@ -63,7 +63,7 @@
                         <el-progress type="circle" color="var(--bs-primary-color)" :percentage="overallProgress" :width="58" :stroke-width="6" />
                         <span class="footer-title">总进度</span>
                     </div>
-                    <div class="footer-current" v-if="processSteps.length > 0">
+                    <div class="footer-current" v-if="currentStep">
                         <div class="footer-current-title">{{ currentStep.name }}</div>
                         <div ref="footerHintRef" class="footer-current-hint" :title="currentStep.hint || '等待工序提示'">
                             <div ref="footerHintTextRef" class="footer-current-hint-track" :class="{ 'is-scrolling': footerHintOverflow }">
@@ -94,7 +94,7 @@
                     <template #header>
                         <div>当前工序</div>
                     </template>
-                    <div class="current-section" v-if="processSteps.length > 0">
+                    <div class="current-section" v-if="currentStep">
                         <div class="current-name">{{ currentStep.name }}</div>
                         <div class="current-desc">{{ currentStep.hint }}</div>
                         <!-- <el-alert
@@ -228,7 +228,7 @@ const footerHintTextRef = ref(null) // 底部大号 hint 文本轨道引用，�
 const footerHintOverflow = ref(false) // 底部大号 hint 是否超过两行，超过时开启纵向滚动。
 
 const detectionResult = ref({
-    step: 1, // 后端识别到的当前工序序号，从 1 开始。
+    step: null, // 后端识别到的当前工序序号，从 1 开始。
     gesture: 'idle', // 后端返回的动作/手势状态，当前页面暂未直接展示。
     bbox: [], // 后端返回的主检测框数据，预留给画框使用。
     detections: [], // 后端返回的检测对象列表，预留给明细展示使用。
@@ -263,16 +263,21 @@ const detectionRunningStatus = computed(()=>{
     return ['未启动','info'];
 })
 const currentStepIndex = computed(() => {
+    if (!detectionActive.value) return -1;
     const sopProgress = detectionResult.value.sop?.progress
     if (sopProgress && processSteps.value.length) {
         const currentIndex = Number(sopProgress.current_index || 0)
         return Math.min(Math.max(currentIndex, 0), processSteps.value.length - 1)
     }
-    const idx = processSteps.value.findIndex((s) => s.status === 'process')
-    return idx === -1 ? 0 : idx
+    const idx = processSteps.value.findIndex((s) => s.status === 'process');
+    return idx;
+    // return idx === -1 ? 0 : idx
 })
 
-const currentStep = computed(() => processSteps.value[currentStepIndex.value] || processSteps.value[0])
+const currentStep = computed(() => {
+    if (currentStepIndex.value < 0)return null;
+    return processSteps.value[currentStepIndex.value] || null;
+})
 
 const overallProgress = computed(() => {
     const sopProgress = detectionResult.value.sop?.progress
@@ -461,11 +466,22 @@ const buildProcessSteps = (steps = []) => {
         name: step.name || `工序${index + 1}`,
         target: Number(step.target ?? 1),
         current: 0,
-        status: index === 0 ? 'process' : 'wait',
+        status: 'wait',
         hint: step.hint || '',
+        reason: '',
     }))
 }
+const resetProcessSteps = () => {
+    detectionResult.value.step = null
+    detectionResult.value.sop = null
+    processSteps.value.forEach((step) => {
+        step.current = 0
+        step.status = 'wait'
+        step.reason = ''
+    })
 
+    lastSopEventKey = ''
+}
 const mapSopStepStatus = (state) => {
     if (state === 'done') {
         return 'success'
@@ -583,7 +599,7 @@ const getSopConfigration = async()=>{
             //处理processSteps
             let steps = sopConfigrationData.value.steps || [];
             processSteps.value = buildProcessSteps(steps);
-            updateStepStatuses();
+            // updateStepStatuses();
         }
     } catch (error) {
         MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_config"), error.message, "OK")
@@ -613,18 +629,22 @@ const applyRuntimeStatus = (payload = {}) => {
 }
 
 const updateStepStatuses = () => {
-    const activeStep = Number(detectionResult.value.step || 1);
+    // 检测没有开始，所有工序保持未开始状态
+    if (!detectionActive.value || detectionResult.value.step == null) {
+        processSteps.value.forEach((step) => {step.status = 'wait'})
+        return
+    }
+    const activeStep = Number(detectionResult.value.step);
     processSteps.value.forEach((step, index) => {
         const stepNo = index + 1
         if (stepNo < activeStep) {
             step.status = 'success'
-            return
-        }
-        if (stepNo === activeStep) {
+        } else if (stepNo === activeStep) {
             step.status = 'process'
             return
+        } else {
+            step.status = 'wait'
         }
-        step.status = 'wait'
     });
 }
 
@@ -1037,6 +1057,13 @@ const handleStartDetection = async () => {
             return;
         };
         applyRuntimeStatus(resData.data);
+        // 点击开始成功后，立即进入第一道工序
+        detectionResult.value.step = 1;
+        processSteps.value.forEach((step, index) => {
+            step.current = 0
+            step.reason = ''
+            step.status = index === 0 ? 'process' : 'wait'
+        });
         startClientStreams()
     }).catch((err)=>{
         modifyStreamAlert(false, err.message || t('message.messagetext.faildStartDetection'));
@@ -1113,6 +1140,7 @@ const handleCloseDetection = async () => {
             return;
         };
         applyRuntimeStatus(resData.data);
+        resetProcessSteps();
         stopClientStreams(t('message.messagetext.closedDetection'));
     }).catch((err)=>{
         modifyStreamAlert(false, err.message || t('message.messagetext.faildCloseDetection'));

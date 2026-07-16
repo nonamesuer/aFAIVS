@@ -80,6 +80,7 @@ class SOPStepRuntime:
 
     blocked_pick_state: str | None = None # 进入 FAILED 时记录当时的动作阶段，用于判断阻塞后是否产生了新的正向操作进展。
     awaiting_cycle_reset: bool = False # 当前一轮动作已经计数完成，# 正在等待下一轮操作的起始条件重新成立。
+    cycle_reset_armed: bool = False # 下一轮重置是否已经经过“释放阶段”
 
     @classmethod
     def from_config(cls, data: dict[str, Any]) -> "SOPStepRuntime":
@@ -117,6 +118,7 @@ class SOPStepRuntime:
             "miss_count": self.miss_count,
             "blocked_pick_state": self.blocked_pick_state,
             "awaiting_cycle_reset": self.awaiting_cycle_reset,
+            "cycle_reset_armed": self.cycle_reset_armed,
         }
     def validate_config(self) -> tuple[bool, str]:
         expected_label = self.expected_object
@@ -331,6 +333,7 @@ class SOPStateMachine:
             step.miss_count = 0
             step.blocked_pick_state = None
             step.awaiting_cycle_reset = False
+            step.cycle_reset_armed = False
 
         self.current_index = 0
         self.started_at = time.time()
@@ -731,6 +734,7 @@ class SOPStateMachine:
         step.miss_count = 0
         step.blocked_pick_state = None
         step.awaiting_cycle_reset = False
+        step.cycle_reset_armed = False
         self.current_index += 1
 
         # 检查是否有下一个步骤
@@ -815,6 +819,7 @@ class SOPStateMachine:
             return
         # 尚未达到 target，等待下一轮操作重新开始。
         step.awaiting_cycle_reset = True
+        step.cycle_reset_armed = False
         step.pick_state = "idle"
         step.hand_grip_state = "released"
         step.miss_count = 0
@@ -822,56 +827,144 @@ class SOPStateMachine:
             f"Cycle {step.matched_count}/{step.target} completed, "
             f"waiting for next cycle"
         )
-    def _try_reset_for_next_cycle(self,step: SOPStepRuntime,boxes: list[DetectionBox],hands: dict[str, list[tuple[float, float]]] | None, ) -> tuple[bool, str]:
+    def _try_reset_for_next_cycle(self,step: SOPStepRuntime,boxes: list[DetectionBox],hands: dict[str, list[tuple[float, float]]] | None,) -> tuple[bool, str]:
         """
-        判断当前场景是否已经具备开始下一轮操作的条件。
+        判断是否可以开始下一轮操作。
+
+        核心规则：
+
+            上一轮完成
+                ↓
+            必须先观察到起始条件释放
+                ↓
+            cycle_reset_armed = True
+                ↓
+            再观察到新的起始条件成立
+                ↓
+            才允许开始下一轮
+
+        避免同一个物料、同一个手部位置或同一批检测结果
+        被连续计算多次。
         """
+
         if not step.awaiting_cycle_reset:return True, ""
         expected_label = step.expected_object
         from_region = str(step.context.get("fromRegion", "")).strip()
         target_region = str(step.context.get("toRegion", "")).strip()
         hand_margin = float(step.context.get("handMargin", 30))
-        hand_points = self._hand_action_points(step,hands )
+        hand_points = self._hand_action_points(step,hands)
         # ==================================================
-        # 有来源区域
+        # 情况 1：配置了来源区域
         # ==================================================
         if from_region:
-            from_region_boxes = find_boxes(boxes,from_region,)
-            # 来源阶段检测物料：
-            # 等待下一份物料重新出现在来源区域。
+            from_region_boxes = find_boxes(boxes,from_region)
+
+            # --------------------------------------------------
+            # 1.1 来源阶段需要检测物料
+            #
+            # 必须经过：
+            #
+            # 有物料
+            #   ↓
+            # 无物料
+            #   ↓
+            # 新物料重新出现
+            #
+            # 才允许下一轮。
+            # --------------------------------------------------
             if step.require_object_at_source and expected_label:
                 expected_boxes = find_boxes(boxes,expected_label)
                 object_in_source = self._object_in_regions(expected_boxes,from_region_boxes)
-                if not object_in_source:return False,f"Waiting for next {expected_label} in {from_region}",
-            # 来源阶段不检测物料：
-            # 使用手部重新进入来源区域作为下一轮开始条件。
-            else:
-                hand_in_source = self._points_engage_boxes(hand_points,from_region_boxes,hand_margin)
-                if not hand_in_source:return False,f"Waiting for hand to return to {from_region}"
-            step.awaiting_cycle_reset = False
-            step.pick_state = "idle"
-            step.started_at = time.time()
+                # ----------------------------------------------
+                # 第一阶段：
+                # 等待上一轮状态释放
+                # ----------------------------------------------
+                if not step.cycle_reset_armed:
+
+                    # 物料仍然存在于来源区域，
+                    # 说明上一轮场景还没有真正释放。
+                    if object_in_source:return False, f"Waiting for previous {expected_label} to clear from {from_region}"
+                    # 来源区域已经没有物料。
+                    # 现在开始等待下一件新的物料进入。
+                    step.cycle_reset_armed = True
+                    return False, f"Waiting for next {expected_label} in {from_region}"
+
+                # ----------------------------------------------
+                # 第二阶段：
+                # 已经观察到来源区域为空，
+                # 现在等待新的物料重新进入。
+                # ----------------------------------------------
+                if not object_in_source:
+                    return False, f"Waiting for next {expected_label} in {from_region}"
+
+                # 新一轮正式开始
+                self._activate_next_cycle(step)
+                return True, "Next cycle ready"
+
+            # --------------------------------------------------
+            # 1.2 来源阶段不检测物料
+            #
+            # 使用手部状态变化：
+            #
+            # 手在来源区域
+            #   ↓
+            # 手离开来源区域
+            #   ↓
+            # 手重新进入来源区域
+            #
+            # 才认为是下一次新的操作。
+            # --------------------------------------------------
+            hand_in_source = self._points_engage_boxes(hand_points,from_region_boxes,hand_margin)
+            # 第一阶段：等待手离开
+            if not step.cycle_reset_armed:
+                if hand_in_source:return False, f"Waiting for hand to leave {from_region}"
+                step.cycle_reset_armed = True
+                return False, f"Waiting for hand to return to {from_region}"
+
+            # 第二阶段：等待手重新进入
+            if not hand_in_source:return False, f"Waiting for hand to return to {from_region}"
+            self._activate_next_cycle(step)
             return True, "Next cycle ready"
+
         # ==================================================
-        # 没有来源区域
+        # 情况 2：没有来源区域
         #
-        # 当前配置规则下，这种情况依赖 expectedObject。
-        # 已经放入目标区域的旧物料不能再次触发新一轮。
-        # 必须存在目标区域之外的新 expectedObject。
+        # 依赖 expectedObject。
+        #
+        # 必须先确认旧的“新物料条件”消失，
+        # 再重新出现新的目标物。
         # ==================================================
         if expected_label:
             expected_boxes = find_boxes(boxes,expected_label)
             target_region_boxes = find_boxes(boxes,target_region)
             target_count = count_boxes_inside_regions(expected_boxes,target_region_boxes)
-            outside_target_count = (len(expected_boxes) - target_count)
-            if outside_target_count <= 0:return False,f"Waiting for next {expected_label} in visible area"
-            step.awaiting_cycle_reset = False
-            step.pick_state = "idle"
-            step.started_at = time.time()
+            outside_target_count = len(expected_boxes) - target_count
+            has_object_outside_target = outside_target_count > 0
+            # 第一阶段：
+            # 必须先等目标区域外没有可用物料
+            if not step.cycle_reset_armed:
+                if has_object_outside_target:
+                    return False, f"Waiting for previous {expected_label} to clear from visible area"
+                step.cycle_reset_armed = True
+                return False, f"Waiting for next {expected_label} in visible area"
+            # 第二阶段：
+            # 等新的物料重新出现
+            if not has_object_outside_target:return False, f"Waiting for next {expected_label} in visible area"
+            self._activate_next_cycle(step)
             return True, "Next cycle ready"
-        # 理论上无 fromRegion 且无 expectedObject
-        # 当前配置不应该进入这里。
         return False, "Waiting for next cycle"
+    def _activate_next_cycle(self,step: SOPStepRuntime) -> None:
+        """
+        正式激活下一轮操作。
+        """
+
+        step.awaiting_cycle_reset = False
+        step.cycle_reset_armed = False
+        step.pick_state = "idle"
+        step.hand_grip_state = "released"
+        step.stable_count = 0
+        step.miss_count = 0
+        step.started_at = time.time()
     def _check_timeout(self, step: SOPStepRuntime) -> str:
         """检查步骤是否超时"""
         if step.timeout <= 0 or not step.started_at:

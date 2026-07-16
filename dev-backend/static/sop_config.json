@@ -15,7 +15,7 @@
                     "toRegion": "CY",
                     "missTolerance": 30,
                     "objectDetection": {
-                        "source": false,
+                        "source": true,
                         "transit": true,
                         "target": true
                     },
@@ -23,7 +23,8 @@
                     "handPoints": {
                         "l": [],
                         "r": []
-                    }
+                    },
+                    "fromRegion": "A1"
                 },
                 "doneWhen": []
             },
@@ -51,6 +52,6 @@
         ],
         "create_time": "2026-07-09 11:44:07",
         "enabled": true,
-        "modify_time": "2026-07-15 12:46:33"
+        "modify_time": "2026-07-16 08:13:31"
     }
 }
