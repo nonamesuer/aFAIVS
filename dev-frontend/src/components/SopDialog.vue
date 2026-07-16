@@ -68,14 +68,12 @@
                   :class="['step-item', { isActivate: activeStepIndex === index }]"
                   @click="activeStepIndex = index"
                 >
+                  <el-icon size="20px" v-if="!validateVisionStep(step).valid" color="var(--bs-danger-color)"><WarningFilled /></el-icon>
                   <span class="step-num">{{ index + 1 }}</span>
                   <span class="step-name">{{ step.name || 'Unnamed step' }}</span>
                   <el-tag effect="dark" :type="getStepTypeLabel(step.type)[1]">
                     {{ getStepTypeLabel(step.type)[0] }}
                   </el-tag>
-                  <el-icon v-if="!validateVisionStep(step).valid" color="var(--el-color-danger)">
-                    <WarningFilled />
-                  </el-icon>
                 </div>
               </VueDraggable>
             </div>
@@ -235,25 +233,14 @@
                 </div>
               </el-form>
 
-              <el-alert
+              <!-- <el-alert
+                v-if="!currentValidation.valid"
                 class="validation-alert"
-                :type="currentValidation.valid ? 'success' : 'error'"
+                type="error"
                 :closable="false"
                 show-icon
-                :title="currentValidation.valid ? '当前组合有效' : currentValidation.message"
-              >
-                <template #default>
-                  <div v-if="currentValidation.valid && currentValidation.plan.length">
-                    <div class="plan-title">本轮执行链：</div>
-                    <ol class="execution-plan">
-                      <li v-for="item in currentValidation.plan" :key="item">{{ item }}</li>
-                    </ol>
-                    <div class="baseline-note">
-                      target &gt; 1 时，每轮都会重新记录开始区域和目标区域数量基线，只接受相对基线的新变化。
-                    </div>
-                  </div>
-                </template>
-              </el-alert>
+                :title="currentValidation.message"
+              /> -->
             </div>
           </div>
         </el-splitter-panel>
@@ -271,7 +258,87 @@
         </el-splitter-panel>
       </el-splitter>
     </div>
+    <!-- SOP 执行链浮动助手 -->
+    <div
+      v-if="modelCameraForm.model && visible && currentStep"
+      class="sop-execution-assistant"
+      @mouseenter="handleExecutionPreviewEnter"
+      @mouseleave="handleExecutionPreviewLeave"
+    >
+      <!-- 对话气泡 -->
+      <transition name="assistant-bubble">
+        <section v-show="executionPreviewVisible" class="assistant-preview-panel" @click.stop>
+          <header class="assistant-preview-header">
+            <div class="assistant-preview-title">
+              <el-icon class="assistant-title-icon">
+                <Cpu />
+              </el-icon>
+              <div>
+                <div>执行链助手</div>
+                <small>{{ currentStep.name || `工序 ${activeStepIndex + 1}` }}</small>
+              </div>
+            </div>
 
+            <el-button class="assistant-close-button" link circle title="隐藏执行链预览" @click.stop="hideExecutionPreview">
+              <el-icon>
+                <Close />
+              </el-icon>
+            </el-button>
+          </header>
+
+          <div class="assistant-preview-content">
+            <!-- 合法配置 -->
+            <template v-if="currentValidation.valid">
+              <div class="assistant-message">
+                当前配置有效，系统将按照以下顺序执行：
+              </div>
+              <ol v-if="currentValidation.plan.length" class="assistant-execution-plan">
+                <li v-for="(item, index) in currentValidation.plan" :key="`${index}-${item}`">
+                  <span class="assistant-plan-index">{{ index + 1 }}</span>
+                  <span>{{ item }}</span>
+                </li>
+              </ol>
+              <div v-else class="assistant-empty">
+                当前工序没有需要预览的视觉执行阶段。
+              </div>
+              <div v-if="Number(currentStep.target || 1) > 1" class="assistant-baseline-note">
+                <el-icon>
+                  <InfoFilled />
+                </el-icon>
+                <span>
+                  当前工序需要执行 {{ currentStep.target }} 次。每轮都会重新记录开始区域和目标区域的数量基线，只计算相对于基线产生的新变化。
+                </span>
+              </div>
+            </template>
+            <!-- 非法配置 -->
+            <template v-else>
+              <div class="assistant-invalid-message">
+                <el-icon>
+                  <WarningFilled />
+                </el-icon>
+                <div>
+                  <strong>当前配置暂时无法执行</strong>
+                  <p>{{ currentValidation.message }}</p>
+                </div>
+              </div>
+            </template>
+          </div>
+          <!-- 气泡尾部 -->
+          <div class="assistant-bubble-arrow"></div>
+        </section>
+      </transition>
+      <!-- 机器人入口 -->
+      <button
+        type="button"
+        class="assistant-robot-button"
+        :class="{'is-open': executionPreviewVisible,'has-error': !currentValidation.valid}"
+        :title="executionPreviewVisible ? '执行链助手' : '悬浮查看执行链'"
+        @click.stop="pinExecutionPreview"
+      >
+        <el-icon><Cpu /></el-icon>
+        <span v-if="!currentValidation.valid" class="assistant-error-dot"></span>
+      </button>
+    </div>
     <template #footer>
       <el-button type="primary" plain @click="handleReset">{{ $t('button.reset') }}</el-button>
       <el-button v-if="modelCameraForm.model" type="primary" size="large" @click="handleSave">
@@ -286,7 +353,15 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Delete, Setting } from '@element-plus/icons-vue'
+// import { Delete, Setting } from '@element-plus/icons-vue'
+import {
+  Close,
+  Cpu,
+  Delete,
+  InfoFilled,
+  Setting,
+  WarningFilled,
+} from '@element-plus/icons-vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import Hands from './Hands.vue'
 import {
@@ -504,7 +579,60 @@ const handlePointPointsOperator = (selectAll: boolean, side: 'l' | 'r') => {
   currentStep.value.context.handPoints[side] = selectAll ? [...ALL_HAND_POINTS] : []
 }
 
-const handleClosed = () => emit('close')
+const handleClosed = () => emit('close');
+//机器人浮动
+const executionPreviewPinned = ref(true)
+const executionPreviewHovered = ref(false)
+const executionPreviewDismissedWhileHover = ref(false)
+
+const executionPreviewVisible = computed(() => {
+  if (executionPreviewPinned.value) {
+    return true
+  }
+
+  return (
+    executionPreviewHovered.value &&
+    !executionPreviewDismissedWhileHover.value
+  )
+})
+/**
+ * 鼠标进入整个助手区域。
+ *
+ * 当预览没有被固定时，悬浮机器人仍然可以临时打开预览。
+ */
+const handleExecutionPreviewEnter = () => {
+  executionPreviewHovered.value = true
+}
+
+/**
+ * 鼠标离开整个助手区域。
+ *
+ * 重置“本次悬浮期间主动关闭”的状态，
+ * 从而允许下一次悬浮时重新显示。
+ */
+const handleExecutionPreviewLeave = () => {
+  executionPreviewHovered.value = false
+  executionPreviewDismissedWhileHover.value = false
+}
+
+/**
+ * 用户点击机器人图标，固定打开执行链。
+ */
+const pinExecutionPreview = () => {
+  executionPreviewPinned.value = true
+  executionPreviewDismissedWhileHover.value = false
+}
+
+/**
+ * 用户点击气泡右上角关闭按钮。
+ *
+ * 即使鼠标还停在气泡内，也应该立即关闭；
+ * 下一次鼠标离开再重新进入时，才通过悬浮重新打开。
+ */
+const hideExecutionPreview = () => {
+  executionPreviewPinned.value = false
+  executionPreviewDismissedWhileHover.value = true
+}
 </script>
 
 <style scoped lang="scss">
@@ -527,9 +655,299 @@ const handleClosed = () => emit('close')
 .hands-point-field { border-right: 1px solid #000; padding-right: 8px; }
 .point-tags { display: flex; gap: 5px; flex-wrap: wrap; }
 .hands-point-operator { margin-left: auto; display: flex; gap: 8px; cursor: pointer; }
-.validation-alert { margin-top: 16px; }
-.plan-title { font-weight: 600; margin-bottom: 4px; }
-.execution-plan { margin: 4px 0 8px 20px; padding: 0; }
-.baseline-note { color: var(--el-text-color-secondary); }
+// .validation-alert { margin-top: 16px; }
 .right-sidebar-wrapper { flex: 1; min-height: 0; overflow: auto; }
+/* =========================================================
+ * SOP 执行链浮动助手
+ * ======================================================= */
+
+.sop-execution-assistant {
+  position: fixed;
+  right: 28px;
+  bottom: 84px;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+/* 机器人圆形入口 */
+.assistant-robot-button {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: 50%;
+  background:
+    linear-gradient(
+      145deg,
+      var(--el-color-primary-light-7),
+      var(--el-color-primary)
+    );
+  color: #fff;
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.18),
+    0 2px 6px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  outline: none;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+
+  .el-icon {
+    font-size: 27px;
+  }
+
+  &:hover,
+  &.is-open {
+    transform: translateY(-2px) scale(1.04);
+    box-shadow:
+      0 12px 28px rgba(0, 0, 0, 0.22),
+      0 3px 8px rgba(0, 0, 0, 0.14);
+  }
+
+  &.has-error {
+    background:
+      linear-gradient(
+        145deg,
+        var(--el-color-danger-light-5),
+        var(--el-color-danger)
+      );
+    border-color: var(--el-color-danger-light-3);
+  }
+}
+
+/* 非法配置时机器人上的红点 */
+.assistant-error-dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--el-color-danger);
+}
+
+/* AI 对话气泡 */
+.assistant-preview-panel {
+  position: absolute;
+  right: 0;
+  bottom: 68px;
+  width: min(390px, calc(100vw - 48px));
+  max-height: min(520px, calc(100vh - 180px));
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 14px;
+  background: var(--el-bg-color);
+  color: var(--el-text-color-primary);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.2),
+    0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* 对话气泡顶部 */
+.assistant-preview-header {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px 12px 10px 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-radius: 14px 14px 0 0;
+  background:
+    linear-gradient(
+      135deg,
+      var(--el-color-primary-light-9),
+      var(--el-bg-color)
+    );
+}
+
+.assistant-preview-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+
+  small {
+    display: block;
+    max-width: 270px;
+    margin-top: 2px;
+    overflow: hidden;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    font-weight: 400;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.assistant-title-icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  color: #fff;
+  font-size: 19px;
+}
+
+.assistant-close-button {
+  flex-shrink: 0;
+}
+
+/* 可滚动的气泡内容 */
+.assistant-preview-content {
+  min-height: 0;
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.assistant-message {
+  margin-bottom: 12px;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* 执行链列表 */
+.assistant-execution-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 9px 10px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    background: var(--el-fill-color-lighter);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+}
+
+.assistant-plan-index {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* target > 1 的数量基线说明 */
+.assistant-baseline-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 13px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--el-color-info-light-9);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+
+  .el-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--el-color-info);
+  }
+}
+
+.assistant-empty {
+  padding: 18px 10px;
+  color: var(--el-text-color-secondary);
+  text-align: center;
+  font-size: 13px;
+}
+
+/* 非法配置时的助手消息 */
+.assistant-invalid-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--el-color-danger-light-7);
+  border-radius: 9px;
+  background: var(--el-color-danger-light-9);
+
+  > .el-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--el-color-danger);
+    font-size: 20px;
+  }
+
+  strong {
+    color: var(--el-color-danger);
+    font-size: 14px;
+  }
+
+  p {
+    margin: 6px 0 0;
+    color: var(--el-text-color-regular);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+}
+
+/* 指向机器人按钮的气泡小三角 */
+.assistant-bubble-arrow {
+  position: absolute;
+  right: 18px;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  border-right: 1px solid var(--el-border-color-light);
+  border-bottom: 1px solid var(--el-border-color-light);
+  background: var(--el-bg-color);
+  transform: rotate(45deg);
+}
+
+/* 打开/关闭动画 */
+.assistant-bubble-enter-active,
+.assistant-bubble-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  transform-origin: right bottom;
+}
+
+.assistant-bubble-enter-from,
+.assistant-bubble-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.96);
+}
+
+/* 小屏幕适配 */
+@media (max-width: 900px) {
+  .sop-execution-assistant {
+    right: 16px;
+    bottom: 76px;
+  }
+
+  .assistant-preview-panel {
+    width: min(360px, calc(100vw - 32px));
+    max-height: calc(100vh - 160px);
+  }
+}
 </style>
