@@ -62,6 +62,11 @@
 
 .el-button--danger {
     background-color: red;
+    color: #fff;
+    &:hover {
+        background-color: #cc0101;
+        color: #fff;
+    }
 }
 
 .el-button--primary.is-plain {
