@@ -36,6 +36,8 @@
     --fontFamilyBlackBolder: 'boschsans bolder black', sans-serif;
     --fontFamilyBold: 'boschsans bold', sans-serif;
     --bs-radio-size:24px;
+    --faivs-color-1:#183a58;
+    --faivs-color-2:#4aa5b2;
 }
 
 .text-center {

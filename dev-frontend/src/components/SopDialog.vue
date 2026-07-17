@@ -68,7 +68,7 @@
                   :class="['step-item', { isActivate: activeStepIndex === index }]"
                   @click="activeStepIndex = index"
                 >
-                  <el-icon size="20px" v-if="!validateVisionStep(step).valid" color="var(--bs-danger-color)"><WarningFilled /></el-icon>
+                  <el-icon v-if="!validateVisionStep(step).valid" class="assistant-error-dot" color="red" size="20px"><BellFilled /></el-icon>
                   <span class="step-num">{{ index + 1 }}</span>
                   <span class="step-name">{{ step.name || 'Unnamed step' }}</span>
                   <el-tag effect="dark" :type="getStepTypeLabel(step.type)[1]">
@@ -211,36 +211,21 @@
                   <div v-for="side in currentHands" :key="side" class="hands-point-wrapper">
                     <div class="hands-point-field">{{ side.toUpperCase() }}</div>
                     <div class="point-tags">
-                      <el-tag
-                        v-for="point in currentStep.context.handPoints[side]"
-                        :key="point"
-                        effect="dark"
-                        round
-                        size="small"
-                      >
+                      <el-tag v-for="point in currentStep.context.handPoints[side]" :key="point" effect="dark" round size="small">
                         {{ point }}
                       </el-tag>
                     </div>
                     <div class="hands-point-operator">
-                      <el-icon color="var(--bs-success-color)" @click="handlePointPointsOperator(true, side)">
+                      <el-icon color="var(--bs-success-color)" size="20px" @click="handlePointPointsOperator(true, side)">
                         <CircleCheck />
                       </el-icon>
-                      <el-icon @click="handlePointPointsOperator(false, side)">
+                      <el-icon size="20px" @click="handlePointPointsOperator(false, side)">
                         <CircleClose />
                       </el-icon>
                     </div>
                   </div>
                 </div>
               </el-form>
-
-              <!-- <el-alert
-                v-if="!currentValidation.valid"
-                class="validation-alert"
-                type="error"
-                :closable="false"
-                show-icon
-                :title="currentValidation.message"
-              /> -->
             </div>
           </div>
         </el-splitter-panel>
@@ -259,20 +244,15 @@
       </el-splitter>
     </div>
     <!-- SOP 执行链浮动助手 -->
-    <div
-      v-if="modelCameraForm.model && visible && currentStep"
-      class="sop-execution-assistant"
-      @mouseenter="handleExecutionPreviewEnter"
-      @mouseleave="handleExecutionPreviewLeave"
-    >
+    <div v-if="modelCameraForm.model && visible && currentStep" class="sop-execution-assistant" @mouseenter="handleExecutionPreviewEnter" @mouseleave="handleExecutionPreviewLeave">
       <!-- 对话气泡 -->
       <transition name="assistant-bubble">
         <section v-show="executionPreviewVisible" class="assistant-preview-panel" @click.stop>
           <header class="assistant-preview-header">
             <div class="assistant-preview-title">
-              <el-icon class="assistant-title-icon">
-                <Cpu />
-              </el-icon>
+              <div class="assistant-title-robot">
+                <img :src="robotImage" alt="执行链助手" draggable="false" />
+              </div>
               <div>
                 <div>执行链助手</div>
                 <small>{{ currentStep.name || `工序 ${activeStepIndex + 1}` }}</small>
@@ -335,8 +315,9 @@
         :title="executionPreviewVisible ? '执行链助手' : '悬浮查看执行链'"
         @click.stop="pinExecutionPreview"
       >
-        <el-icon><Cpu /></el-icon>
-        <span v-if="!currentValidation.valid" class="assistant-error-dot"></span>
+        <img :src="robotImage" class="assistant-robot-image" alt="执行链助手" draggable="false"/>
+        <el-icon v-if="!currentValidation.valid" class="assistant-error-dot" color="red" size="20px"><BellFilled /></el-icon>
+        <!-- <span v-if="!currentValidation.valid" class="assistant-error-dot"></span> -->
       </button>
     </div>
     <template #footer>
@@ -354,9 +335,9 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 // import { Delete, Setting } from '@element-plus/icons-vue'
+import robotImage from '@/assets/img/robot.png'
 import {
   Close,
-  Cpu,
   Delete,
   InfoFilled,
   Setting,
@@ -669,260 +650,233 @@ const hideExecutionPreview = () => {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-}
-
-/* 机器人圆形入口 */
-.assistant-robot-button {
-  position: relative;
-  width: 54px;
-  height: 54px;
-  padding: 0;
-  border: 1px solid var(--el-color-primary-light-5);
-  border-radius: 50%;
-  background:
-    linear-gradient(
-      145deg,
-      var(--el-color-primary-light-7),
-      var(--el-color-primary)
-    );
-  color: #fff;
-  box-shadow:
-    0 8px 22px rgba(0, 0, 0, 0.18),
-    0 2px 6px rgba(0, 0, 0, 0.12);
-  cursor: pointer;
-  outline: none;
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease,
-    background 0.2s ease;
-
-  .el-icon {
-    font-size: 27px;
-  }
-
-  &:hover,
-  &.is-open {
-    transform: translateY(-2px) scale(1.04);
-    box-shadow:
-      0 12px 28px rgba(0, 0, 0, 0.22),
-      0 3px 8px rgba(0, 0, 0, 0.14);
-  }
-
-  &.has-error {
-    background:
-      linear-gradient(
-        145deg,
-        var(--el-color-danger-light-5),
-        var(--el-color-danger)
-      );
-    border-color: var(--el-color-danger-light-3);
-  }
-}
-
-/* 非法配置时机器人上的红点 */
-.assistant-error-dot {
-  position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 11px;
-  height: 11px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  background: var(--el-color-danger);
-}
-
-/* AI 对话气泡 */
-.assistant-preview-panel {
-  position: absolute;
-  right: 0;
-  bottom: 68px;
-  width: min(390px, calc(100vw - 48px));
-  max-height: min(520px, calc(100vh - 180px));
-  display: flex;
-  flex-direction: column;
-  overflow: visible;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 14px;
-  background: var(--el-bg-color);
-  color: var(--el-text-color-primary);
-  box-shadow:
-    0 18px 48px rgba(0, 0, 0, 0.2),
-    0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-/* 对话气泡顶部 */
-.assistant-preview-header {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  min-height: 58px;
-  padding: 10px 12px 10px 14px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  border-radius: 14px 14px 0 0;
-  background:
-    linear-gradient(
-      135deg,
-      var(--el-color-primary-light-9),
-      var(--el-bg-color)
-    );
-}
-
-.assistant-preview-title {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 15px;
-  font-weight: 600;
-
-  small {
-    display: block;
-    max-width: 270px;
-    margin-top: 2px;
-    overflow: hidden;
-    color: var(--el-text-color-secondary);
-    font-size: 12px;
-    font-weight: 400;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
-.assistant-title-icon {
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--el-color-primary);
-  color: #fff;
-  font-size: 19px;
-}
-
-.assistant-close-button {
-  flex-shrink: 0;
-}
-
-/* 可滚动的气泡内容 */
-.assistant-preview-content {
-  min-height: 0;
-  padding: 14px;
-  overflow-y: auto;
-}
-
-.assistant-message {
-  margin-bottom: 12px;
-  color: var(--el-text-color-regular);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-/* 执行链列表 */
-.assistant-execution-plan {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-
-  li {
+  .assistant-preview-panel {
+    position: absolute;
+    right: 0;
+    bottom: 96px;
+    width: min(390px, calc(100vw - 48px));
+    max-height: min(520px, calc(100vh - 180px));
     display: flex;
-    align-items: flex-start;
-    gap: 9px;
-    padding: 9px 10px;
-    border: 1px solid var(--el-border-color-lighter);
-    border-radius: 8px;
-    background: var(--el-fill-color-lighter);
-    font-size: 13px;
-    line-height: 1.55;
+    flex-direction: column;
+    overflow: visible;
+    border: 1px solid var(--el-border-color-light);
+    background: var(--bs-bgcolor);
+    border-radius: 14px;
+    color: #000;
+    box-shadow:0 18px 48px rgba(0, 0, 0, 0.2),0 4px 12px rgba(0, 0, 0, 0.1);
+    .assistant-preview-header {
+      flex-shrink: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 58px;
+      padding: 10px 12px 10px 14px;
+      border-bottom: 1px solid var(--el-border-color-lighter);
+      border-radius: 14px 14px 0 0;
+      color:#fff;
+      background:linear-gradient(135deg, var(--faivs-color-1), var(--faivs-color-2));
+      .assistant-preview-title {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 15px;
+        font-weight: 600;
+
+        small {
+          display: block;
+          max-width: 270px;
+          margin-top: 2px;
+          overflow: hidden;
+          font-size: 12px;
+          font-weight: 400;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .assistant-title-robot {
+          flex: 0 0 42px;
+          width: 42px;
+          height: 42px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+            user-select: none;
+            filter: drop-shadow(0 0 10px #fff);
+          }
+        }
+        
+      }
+      .assistant-close-button {
+        flex-shrink: 0;
+        color:#fff !important;
+      }
+    }
+    .assistant-preview-content {
+      min-height: 0;
+      padding: 14px;
+      overflow-y: auto;
+      .assistant-message {
+        margin-bottom: 12px;
+        color: var(--el-text-color-regular);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .assistant-execution-plan {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+
+        li {
+          display: flex;
+          align-items: flex-start;
+          gap: 9px;
+          padding: 9px 10px;
+          border: 1px solid var(--el-border-color-lighter);
+          border-radius: 8px;
+          background: #fff;
+          font-size: 13px;
+          line-height: 1.55;
+          .assistant-plan-index {
+            flex: 0 0 22px;
+            width: 22px;
+            height: 22px;
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 50%;
+            background: var(--bs-primary-color);
+            color: #fff;
+            font-size: 12px;
+            font-weight: 600;
+          }
+        }
+      }
+      .assistant-baseline-note {
+        display: flex;
+        align-items: flex-start;
+        gap: 7px;
+        margin-top: 13px;
+        padding: 9px 10px;
+        color: var(--bs-turquoise-color);
+        font-size: 14px;
+        .el-icon {
+          flex-shrink: 0;
+          margin-top: 2px;
+          color: var(--bs-turquoise-color);
+        }
+      }
+      .assistant-empty {
+        padding: 18px 10px;
+        color: var(--el-text-color-secondary);
+        text-align: center;
+        font-size: 13px;
+      }
+      .assistant-invalid-message {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px;
+        // border: 1px solid var(--el-color-danger-light-7);
+        border-radius: 9px;
+        background: var(--bs-alert-error-bgcolor);
+
+        > .el-icon {
+          flex-shrink: 0;
+          margin-top: 2px;
+          color: var(--bs-danger-color);
+          font-size: 20px;
+        }
+
+        strong {
+          color: var(--bs-danger-color);
+          font-size: 14px;
+        }
+
+        p {
+          margin: 6px 0 0;
+          color: #000;
+          font-size: 13px;
+          line-height: 1.55;
+        }
+      }
+    }
+    .assistant-bubble-arrow {
+      position: absolute;
+      right: 32px;
+      bottom: -7px;
+      width: 14px;
+      height: 14px;
+      border-right: 1px solid var(--el-border-color-light);
+      border-bottom: 1px solid var(--el-border-color-light);
+      background: var(--bs-bgcolor);
+      transform: rotate(45deg);
+    }
+  }
+  .assistant-robot-button {
+    position: relative;
+    width: 82px;
+    height: 82px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    outline: none;
+    transition:transform 0.2s ease,filter 0.2s ease;
+    animation: assistant-robot-normal 1.8s ease-in-out infinite;
+    &:hover,
+    &.is-open {
+      transform: translateY(-4px) scale(1.06);
+    }
+    &:focus-visible {
+      border-radius: 16px;
+      outline: 2px solid var(--el-color-primary);
+      outline-offset: 3px;
+    }
+
+    &.has-error {
+      animation: assistant-robot-error 1.8s ease-in-out infinite;
+    }
+    .assistant-robot-image {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      pointer-events: none;
+      user-select: none;
+      filter:
+        drop-shadow(0 8px 8px rgba(0, 0, 0, 0.2))
+        drop-shadow(0 2px 3px rgba(0, 0, 0, 0.15));
+      transition: filter 0.2s ease;
+    }
+    .assistant-error-dot {
+      position: absolute;
+      top: 5px;
+      right: 4px;
+      // width: 13px;
+      // height: 13px;
+      // border: 3px solid var(--bs-bgcolor);
+      // border-radius: 50%;
+      // background: var(--bs-danger-color);
+      // box-shadow: 0 0 0 2px rgba(245, 108, 108, 0.2);
+      pointer-events: none;
+    }
+  }
+  .assistant-robot-button:hover .assistant-robot-image,
+  .assistant-robot-button.is-open .assistant-robot-image {
+    filter:
+      drop-shadow(0 12px 12px rgba(0, 0, 0, 0.24))
+      drop-shadow(0 3px 4px rgba(0, 0, 0, 0.16));
   }
 }
-
-.assistant-plan-index {
-  flex: 0 0 22px;
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  border-radius: 50%;
-  background: var(--el-color-primary);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* target > 1 的数量基线说明 */
-.assistant-baseline-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  margin-top: 13px;
-  padding: 9px 10px;
-  border-radius: 8px;
-  background: var(--el-color-info-light-9);
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.55;
-
-  .el-icon {
-    flex-shrink: 0;
-    margin-top: 2px;
-    color: var(--el-color-info);
-  }
-}
-
-.assistant-empty {
-  padding: 18px 10px;
-  color: var(--el-text-color-secondary);
-  text-align: center;
-  font-size: 13px;
-}
-
-/* 非法配置时的助手消息 */
-.assistant-invalid-message {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--el-color-danger-light-7);
-  border-radius: 9px;
-  background: var(--el-color-danger-light-9);
-
-  > .el-icon {
-    flex-shrink: 0;
-    margin-top: 2px;
-    color: var(--el-color-danger);
-    font-size: 20px;
-  }
-
-  strong {
-    color: var(--el-color-danger);
-    font-size: 14px;
-  }
-
-  p {
-    margin: 6px 0 0;
-    color: var(--el-text-color-regular);
-    font-size: 13px;
-    line-height: 1.55;
-  }
-}
-
-/* 指向机器人按钮的气泡小三角 */
-.assistant-bubble-arrow {
-  position: absolute;
-  right: 18px;
-  bottom: -7px;
-  width: 14px;
-  height: 14px;
-  border-right: 1px solid var(--el-border-color-light);
-  border-bottom: 1px solid var(--el-border-color-light);
-  background: var(--el-bg-color);
-  transform: rotate(45deg);
-}
-
 /* 打开/关闭动画 */
 .assistant-bubble-enter-active,
 .assistant-bubble-leave-active {
@@ -940,14 +894,59 @@ const hideExecutionPreview = () => {
 
 /* 小屏幕适配 */
 @media (max-width: 900px) {
-  .sop-execution-assistant {
-    right: 16px;
-    bottom: 76px;
+  .assistant-robot-button {
+    width: 68px;
+    height: 68px;
   }
 
   .assistant-preview-panel {
-    width: min(360px, calc(100vw - 32px));
-    max-height: calc(100vh - 160px);
+    bottom: 82px;
+  }
+
+  .assistant-bubble-arrow {
+    right: 25px;
+  }
+}
+@keyframes assistant-robot-warning {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-4px);
+  }
+}
+@keyframes assistant-robot-normal {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes assistant-robot-error {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg) scale(1);
+  }
+  15% {
+    transform: translateX(-8px) rotate(-5deg) scale(1.02);
+  }
+  30% {
+    transform: translateX(8px) rotate(5deg) scale(0.98);
+  }
+  45% {
+    transform: translateX(-6px) rotate(-3deg);
+  }
+  60% {
+    transform: translateX(6px) rotate(3deg);
+  }
+  80% {
+    transform: translateX(-3px) rotate(-1deg);
   }
 }
 </style>
