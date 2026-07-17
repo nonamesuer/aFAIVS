@@ -20,13 +20,20 @@
                                 <el-tag effect="dark"  :type="streamTransport === 'webrtc' ? 'success' : 'warning'">
                                     {{ streamTransport === 'webrtc' ? 'WebRTC' : 'MJPEG' }}
                                 </el-tag>
+                                <el-divider direction="vertical" />
+                                <div v-if="showStepTimeout" class="header-timeout">
+                                    <el-progress class="header-timeout-progress" :percentage="stepTimeoutPercentage" :stroke-width="7" :format="()=>`${formatTimeoutDuration(stepTimeoutElapsed - 1)} / ${formatTimeoutDuration(stepTimeoutTotal)}`"/>
+                                </div>
+
+                                
+
                             </div>
                             <div class="header-right">结果</div>
                         </div>
 
                         <div class="camera-item-body">
                             <div v-if="!streamConnected" class="reconnecting-message">
-                                {{ streamErrorMessage || '后端推流中断，正在重连...' }}
+                                {{ streamErrorMessage || $t('message.messagetext.webrtcStreamError') }}
                             </div>
                             <el-alert :closable="true" @close="criticalAlerts = []" show-icon v-if="criticalAlerts.length" :title="`${criticalAlerts[0].code} ${criticalAlerts[0].message}`" type="error" effect="dark" />
                             <video
@@ -657,7 +664,136 @@ const getSopConfigration = async()=>{
  * 2026.06.30
  * *********************************************************
  */
+/**
+ * 步骤超时时间Start
+ */
+//步骤的超时时间
+const timeoutNow = ref(Date.now())
+let timeoutTicker = null
+const currentSopRuntimeStep = computed(() => {
+    return detectionResult.value.sop?.current_step || null
+})
+const stepTimeoutTotal = computed(() => {
+    const timeout = Number(currentSopRuntimeStep.value?.timeout || 0)
 
+    if (!Number.isFinite(timeout) || timeout <= 0) {
+        return 0
+    }
+
+    return timeout
+})
+const stepTimeoutElapsed = computed(() => {
+    const sop = detectionResult.value.sop
+    const step = currentSopRuntimeStep.value
+
+    if (!sop || !step) {
+        return 0
+    }
+
+    const serverElapsed = Math.max(
+        0,
+        Number(step.elapsed || 0)
+    )
+
+    const timeout = stepTimeoutTotal.value
+
+    if (timeout <= 0) {
+        return 0
+    }
+
+    /*
+     * 只有 SOP 正在运行且检测没有暂停时，
+     * 才在后端 elapsed 基础上进行本地补时。
+     */
+    const shouldAdvanceLocally =
+        sop.state === 'running' &&
+        detectionRunning.value &&
+        !detectionPaused.value &&
+        step.state === 'active'
+
+    if (!shouldAdvanceLocally) {
+        return Math.min(timeout, serverElapsed)
+    }
+
+    const serverUpdatedAtMs =
+        Number(sop.updated_at || 0) * 1000
+
+    if (!serverUpdatedAtMs) {
+        return Math.min(timeout, serverElapsed)
+    }
+
+    const localDeltaSeconds = Math.max(
+        0,
+        (timeoutNow.value - serverUpdatedAtMs) / 1000
+    )
+
+    return Math.min(
+        timeout,
+        serverElapsed + localDeltaSeconds
+    )
+})
+const stepTimeoutRemaining = computed(() => {
+    return Math.max(
+        0,
+        stepTimeoutTotal.value - stepTimeoutElapsed.value
+    )
+})
+const stepTimeoutPercentage = computed(() => {
+    if (stepTimeoutTotal.value <= 0) {
+        return 0
+    }
+
+    const percentage =
+        (
+            stepTimeoutElapsed.value /
+            stepTimeoutTotal.value
+        ) * 100
+
+    return Number(
+        Math.min(100, Math.max(0, percentage)).toFixed(1)
+    )
+})
+const showStepTimeout = computed(() => {
+    const sop = detectionResult.value.sop
+    const step = currentSopRuntimeStep.value
+
+    if (!detectionActive.value) {
+        return false
+    }
+
+    if (!sop || !step) {
+        return false
+    }
+
+    if (stepTimeoutTotal.value <= 0) {
+        return false
+    }
+
+    if (sop.state === 'completed') {
+        return false
+    }
+
+    return ['active', 'failed'].includes(step.state)
+})
+
+const formatTimeoutDuration = (seconds) => {
+    const safeSeconds = Math.max(
+        0,
+        Math.ceil(Number(seconds || 0))
+    )
+
+    if (safeSeconds < 60) {
+        return `${safeSeconds}秒`
+    }
+
+    const minutes = Math.floor(safeSeconds / 60)
+    const remainingSeconds = safeSeconds % 60
+
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`
+}
+/**
+ * end
+ */
 
 /**
  * *********************************************************
@@ -1057,6 +1193,7 @@ const stopClientStreams = (message = t('message.messagetext.stopedDetection')) =
     closeResultSocket();
     modifyStreamAlert(null,message,true)
 }
+
 /**
  * *********************************************************
  * End 视频流与结果通道逻辑
@@ -1211,6 +1348,9 @@ onMounted(async() => {
     updateFooterHintOverflow()
     window.addEventListener('resize', updateFooterHintOverflow)
     // manuallyStopped = false
+    timeoutTicker = window.setInterval(() => {
+        timeoutNow.value = Date.now()
+    }, 1000)
     await refreshDetectionStatus();
     
 })
@@ -1223,6 +1363,10 @@ onBeforeUnmount(() => {
     }
     stopStream()
     closeResultSocket();
+    if (timeoutTicker) {
+        clearInterval(timeoutTicker)
+        timeoutTicker = null
+    }
 })
 watch(() => currentStep.value?.hint, updateFooterHintOverflow)
 watch(() => currentStep.value?.name, updateFooterHintOverflow)
@@ -1284,15 +1428,53 @@ const test = ()=>{
         padding: 0 10px;
 
         .header-left {
-            max-width: 70%;
+            max-width: 85%;
             gap: 10px;
             overflow: hidden;
         }
+        .header-timeout {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 5px;
+            width: 170px;
+            min-width: 170px;
+            height: 46px;
 
+            .header-timeout-text {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                line-height: 1;
+                white-space: nowrap;
+
+                span {
+                    font-size: 11px;
+                    color: var(--el-text-color-secondary);
+                }
+
+                strong {
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: var(--el-text-color-primary);
+                }
+            }
+
+            .header-timeout-progress {
+                width: 100%;
+
+                :deep(.el-progress-bar__outer) {
+                    background-color: var(--el-fill-color);
+                }
+            }
+        }
         .header-right {
             border-left: 1px solid #000;
-            max-width: 30%;
-            // min-width: 180px;
+            // flex: 1;
+            // min-width: 50px;
+            min-width: 180px;
             height: 100%;
             display: flex;
             align-items: center;
