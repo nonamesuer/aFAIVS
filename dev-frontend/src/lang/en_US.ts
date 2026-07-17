@@ -62,6 +62,7 @@ export default{
         field:"Field",
         rownumber:"Row Number",
         step:"Step",
+        process:"Process",
     },
     config:{
         models:"Models",
@@ -164,6 +165,7 @@ export default{
             webrtcconnnecting:"Backend WebRTC video streaming connecting, please wait...",
             webrtcStreamError:"Backend WebRTC video streaming failed, reconnecting...",
             stopdetection:"Detection stopped",
+            requiredFieldsMissing:"Please fill in all required fields",
         },
     },
     description:{
@@ -203,6 +205,16 @@ export default{
             validarea2:"The display area cannot be greater than the maximum side length",
 
         }
+    },
+    robot:{
+        alt:"Execution Chain Assistant",
+        hoveralt:"Hover to view the execution chain",
+        hideassistant:"Hide Execution Chain Assistant",
+        effectiveconfig:"The current configuration is valid, and the system will execute in the following order",
+        noconfig:"There are no visual execution stages to preview for the current process",
+        needdo:"The number of times the current process needs to be executed is:",
+        needdoexplain:"Each round will re-record the baseline of the starting area and target area, and only calculate new changes relative to the baseline.",
+        cannotdo:"The current process cannot be executed, please check if the configuration is correct",
     },
     log:{
        syslog:"System Log",

@@ -60,7 +60,8 @@ export default{
         card:"\u5361\u7247",
         field:"\u5B57\u6BB5",
         rownumber:"\u884C\u53F7",
-        step:"步骤"
+        step:"步骤",
+        process:"工序",
     },
     config:{
         models:"模型",
@@ -163,6 +164,7 @@ export default{
             webrtcconnnecting:"后端 WebRTC 视频流连接中，请稍候...",
             webrtcStreamError:"后端 WebRTC 视频流失败，正在重连...",
             stopdetection:"检测已停止",
+            requiredFieldsMissing:"请填写所有必填字段",
         },
 
     },
@@ -202,6 +204,16 @@ export default{
             validarea1:"\u663E\u793A\u533A\u57DF\u5FC5\u987B\u4E3A2\u7684\u500D\u6570\u6216\u7B49\u4E8E0",
             validarea2:"\u663E\u793A\u533A\u57DF\u4E0D\u80FD\u5927\u4E8E\u6700\u5927\u8FB9\u957F",
         }
+    },
+    robot:{
+        alt:"执行链助手",
+        hoveralt:"悬浮查看执行链",
+        hideassistant:"隐藏执行链助手",
+        effectiveconfig:"当前配置有效，系统将按照以下顺序执行",
+        noconfig:"当前工序没有需要预览的视觉执行阶段",
+        needdo:"当前工序需要执行的次数为：",
+        needdoexplain:"每轮都会重新记录开始区域和目标区域的数量基线，只计算相对于基线产生的新变化。",
+        cannotdo:"当前工序无法执行，请检查配置是否正确",
     },
     log:{
         syslog:"\u7CFB\u7EDF\u65E5\u5FD7",

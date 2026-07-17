@@ -251,15 +251,15 @@
           <header class="assistant-preview-header">
             <div class="assistant-preview-title">
               <div class="assistant-title-robot">
-                <img :src="robotImage" alt="执行链助手" draggable="false" />
+                <img :src="robotImage" :alt="$t('robot.alt')" draggable="false" />
               </div>
               <div>
-                <div>执行链助手</div>
-                <small>{{ currentStep.name || `工序 ${activeStepIndex + 1}` }}</small>
+                <div>{{ $t('robot.alt') }}</div>
+                <small>{{ currentStep.name || `${$t('interacting.process')} ${activeStepIndex + 1}` }}</small>
               </div>
             </div>
 
-            <el-button class="assistant-close-button" link circle title="隐藏执行链预览" @click.stop="hideExecutionPreview">
+            <el-button class="assistant-close-button" link circle :title="$t('robot.hideassistant')" @click.stop="hideExecutionPreview">
               <el-icon>
                 <Close />
               </el-icon>
@@ -269,24 +269,20 @@
           <div class="assistant-preview-content">
             <!-- 合法配置 -->
             <template v-if="currentValidation.valid">
-              <div class="assistant-message">
-                当前配置有效，系统将按照以下顺序执行：
-              </div>
+              <div class="assistant-message">{{ $t('robot.effectiveconfig') }}</div>
               <ol v-if="currentValidation.plan.length" class="assistant-execution-plan">
                 <li v-for="(item, index) in currentValidation.plan" :key="`${index}-${item}`">
                   <span class="assistant-plan-index">{{ index + 1 }}</span>
                   <span>{{ item }}</span>
                 </li>
               </ol>
-              <div v-else class="assistant-empty">
-                当前工序没有需要预览的视觉执行阶段。
-              </div>
+              <div v-else class="assistant-empty">{{ $t('robot.noconfig') }}</div>
               <div v-if="Number(currentStep.target || 1) > 1" class="assistant-baseline-note">
                 <el-icon>
                   <InfoFilled />
                 </el-icon>
                 <span>
-                  当前工序需要执行 {{ currentStep.target }} 次。每轮都会重新记录开始区域和目标区域的数量基线，只计算相对于基线产生的新变化。
+                  {{ $t('robot.needdo') }} {{ currentStep.target }}, {{ $t('robot.needdoexplain') }}
                 </span>
               </div>
             </template>
@@ -297,7 +293,7 @@
                   <WarningFilled />
                 </el-icon>
                 <div>
-                  <strong>当前配置暂时无法执行</strong>
+                  <strong>{{ $t('robot.cannotdo') }}</strong>
                   <p>{{ currentValidation.message }}</p>
                 </div>
               </div>
@@ -312,10 +308,10 @@
         type="button"
         class="assistant-robot-button"
         :class="{'is-open': executionPreviewVisible,'has-error': !currentValidation.valid}"
-        :title="executionPreviewVisible ? '执行链助手' : '悬浮查看执行链'"
+        :title="executionPreviewVisible ? $t('robot.alt') : t('robot.hoveralt')"
         @click.stop="pinExecutionPreview"
       >
-        <img :src="robotImage" class="assistant-robot-image" alt="执行链助手" draggable="false"/>
+        <img :src="robotImage" class="assistant-robot-image" :alt="$t('robot.alt')" draggable="false"/>
         <el-icon v-if="!currentValidation.valid" class="assistant-error-dot" color="red" size="20px"><BellFilled /></el-icon>
         <!-- <span v-if="!currentValidation.valid" class="assistant-error-dot"></span> -->
       </button>
@@ -330,26 +326,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
-import type { FormInstance, FormRules } from 'element-plus'
+import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { ElMessage } from 'element-plus';
+import type { FormInstance, FormRules } from 'element-plus';
 // import { Delete, Setting } from '@element-plus/icons-vue'
-import robotImage from '@/assets/img/robot.png'
-import {
-  Close,
-  Delete,
-  InfoFilled,
-  Setting,
-  WarningFilled,
-} from '@element-plus/icons-vue'
-import { VueDraggable } from 'vue-draggable-plus'
-import Hands from './Hands.vue'
-import {
-  normalizeObjectDetection,
-  normalizeVisionStepForSave,
-  validateVisionStep,
-} from '@/assets/js/sopRuleEngine'
+import robotImage from '@/assets/img/robot.png';
+import { Close,Delete,InfoFilled,Setting,WarningFilled } from '@element-plus/icons-vue';
+import { VueDraggable } from 'vue-draggable-plus';
+import Hands from './Hands.vue';
+import { normalizeObjectDetection, normalizeVisionStepForSave,validateVisionStep} from '@/assets/js/sopRuleEngine';
 
 const { t } = useI18n()
 
@@ -373,8 +359,7 @@ const HAND_SIDES = ['l', 'r'] as const
 const ALL_HAND_POINTS = Array.from({ length: 21 }, (_value, index) => index)
 const stepsLocal = ref<any[]>([])
 const activeStepIndex = ref(0)
-const ruleStepRef = ref<FormInstance>()
-
+const ruleStepRef = ref<FormInstance>();
 const stepRules = reactive<FormRules>({
   name: [{ required: true, message: t('interacting.pls') + t('interacting.enter') + t('config.form.stepname'), trigger: ['blur', 'change'] }],
   type: [{ required: true, message: t('interacting.pls') + t('interacting.enter') + t('config.form.steptype'), trigger: ['change'] }],
@@ -404,9 +389,7 @@ watch(
 const currentStep = computed(() => stepsLocal.value[activeStepIndex.value] || null)
 const lastStep = computed(() => stepsLocal.value[stepsLocal.value.length - 1] || null)
 const currentValidation = computed(() =>
-  currentStep.value?.type === 'p_object'
-    ? validateVisionStep(currentStep.value)
-    : { valid: true, code: '', message: '', plan: [] },
+  currentStep.value?.type === 'p_object' ? validateVisionStep(currentStep.value) : { valid: true, code: '', message: '', plan: [] },
 )
 
 const getStepTypeLabel = (type: string) => {
@@ -517,7 +500,7 @@ const handleSave = async () => {
     if (!isStepRequiredFieldsValid(rawStep)) {
       activeStepIndex.value = index
       await nextTick()
-      ElMessage.error(`步骤 ${rawStep?.id ?? index + 1}：名称、类型和目标次数不能为空`)
+      ElMessage.error(`${t('interacting.step')} ${rawStep?.id ?? index + 1}： ${t('message.messagetext.requiredFieldsMissing')}`)
       return
     }
 
@@ -562,58 +545,32 @@ const handlePointPointsOperator = (selectAll: boolean, side: 'l' | 'r') => {
 
 const handleClosed = () => emit('close');
 //机器人浮动
-const executionPreviewPinned = ref(true)
-const executionPreviewHovered = ref(false)
-const executionPreviewDismissedWhileHover = ref(false)
+const executionPreviewPinned = ref(true);
+const executionPreviewHovered = ref(false);
+const executionPreviewDismissedWhileHover = ref(false);
 
 const executionPreviewVisible = computed(() => {
-  if (executionPreviewPinned.value) {
-    return true
-  }
-
-  return (
-    executionPreviewHovered.value &&
-    !executionPreviewDismissedWhileHover.value
-  )
-})
-/**
- * 鼠标进入整个助手区域。
- *
- * 当预览没有被固定时，悬浮机器人仍然可以临时打开预览。
- */
+  if (executionPreviewPinned.value) return true;
+  return (executionPreviewHovered.value &&!executionPreviewDismissedWhileHover.value);
+});
 const handleExecutionPreviewEnter = () => {
   executionPreviewHovered.value = true
-}
+};
 
-/**
- * 鼠标离开整个助手区域。
- *
- * 重置“本次悬浮期间主动关闭”的状态，
- * 从而允许下一次悬浮时重新显示。
- */
 const handleExecutionPreviewLeave = () => {
   executionPreviewHovered.value = false
   executionPreviewDismissedWhileHover.value = false
-}
+};
 
-/**
- * 用户点击机器人图标，固定打开执行链。
- */
 const pinExecutionPreview = () => {
   executionPreviewPinned.value = true
   executionPreviewDismissedWhileHover.value = false
-}
+};
 
-/**
- * 用户点击气泡右上角关闭按钮。
- *
- * 即使鼠标还停在气泡内，也应该立即关闭；
- * 下一次鼠标离开再重新进入时，才通过悬浮重新打开。
- */
 const hideExecutionPreview = () => {
   executionPreviewPinned.value = false
   executionPreviewDismissedWhileHover.value = true
-}
+};
 </script>
 
 <style scoped lang="scss">
