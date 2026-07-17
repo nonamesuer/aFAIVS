@@ -9,7 +9,7 @@
                 "type": "p_object",
                 "hint": "捡起P1零件并放置到CY中",
                 "target": 3,
-                "timeout": 50,
+                "timeout": 6,
                 "context": {
                     "expectedObject": "P1",
                     "toRegion": "CY",

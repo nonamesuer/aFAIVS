@@ -28,7 +28,7 @@
                             <div v-if="!streamConnected" class="reconnecting-message">
                                 {{ streamErrorMessage || '后端推流中断，正在重连...' }}
                             </div>
-                            <el-alert :closable="false" show-icon v-if="criticalAlerts.length" :title="`${criticalAlerts[0].code} ${criticalAlerts[0].message}`" type="error" effect="dark" />
+                            <el-alert :closable="true" @close="criticalAlerts = []" show-icon v-if="criticalAlerts.length" :title="`${criticalAlerts[0].code} ${criticalAlerts[0].message}`" type="error" effect="dark" />
                             <video
                                 v-if="detectionActive  && streamTransport === 'webrtc'"
                                 ref="streamVideoRef"
@@ -307,6 +307,7 @@ const unconfirmedAlerts = computed(() => alerts.value.filter((a) => !a.confirmed
 // const criticalAlerts = computed(() => unconfirmedAlerts.value.filter((a) => a.level === 'error'))
 const criticalAlerts = ref([]) // 当前未确认的严重告警列表，用于顶部红色提示条。
 const sopConfigrationData = ref({}); // 当前启用的 SOP 配置对象。
+let criticalAlertTimer = null;
 
 /**
  * *********************************************************
@@ -321,6 +322,19 @@ const sopConfigrationData = ref({}); // 当前启用的 SOP 配置对象。
  * 这里统一放模板中使用的状态文本、标签类型、事件样式和告警确认方法。
  * *********************************************************
  */
+const showCriticalAlert = (alert, duration = 5000) => {
+    criticalAlerts.value = [alert]
+
+    if (criticalAlertTimer) {
+        clearTimeout(criticalAlertTimer)
+        criticalAlertTimer = null
+    }
+
+    criticalAlertTimer = setTimeout(() => {
+        criticalAlerts.value = []
+        criticalAlertTimer = null
+    }, duration)
+}
 const getTagType = (level) => {return level === 'error' ? 'danger' : level === 'warning' ? 'warning' : 'info'}
 
 const getStepStatusLabel = (status) => {return status === 'success' ? '已完成' : status === 'process' ? '进行中' : status === 'error' ? '阻塞' : '未开始'}
@@ -511,27 +525,37 @@ const buildProcessStepsFromSop = (sop = {}) => {
         reason: step.state === 'failed' ? failedReason : getSopReasonText(step.last_reason || ''),
     }))
 }
+// const getSopLiveEventLevel = (sop = {}) => {
+//     const step = sop.current_step
+//     if (sop.state === 'completed' || step?.state === 'done') return 'success'
+//     // FAILED 的红色错误已经由告警区域单独显示。
+//     // 阻塞后的实时操作过程继续作为普通实时事件显示。
+//     return 'info'
+// }
 const getSopLiveEventLevel = (sop = {}) => {
     const step = sop.current_step
+    if (sop.state === 'failed' || step?.state === 'failed') return 'error'
     if (sop.state === 'completed' || step?.state === 'done') return 'success'
-    // FAILED 的红色错误已经由告警区域单独显示。
-    // 阻塞后的实时操作过程继续作为普通实时事件显示。
     return 'info'
 }
 const appendSopEvent = (sop = {}) => {
     const step = sop.current_step;
+    const isFailed = sop.state === 'failed' || step?.state === 'failed'
+    const rawReason = isFailed ? (sop.reason || step?.last_reason || '') : (step?.last_reason || sop.reason || '')
+    if(!rawReason)return;
     // 实时事件优先使用当前步骤实时状态。
     // sop.reason 在 FAILED 时保留原始阻塞原因。
-    const rawReason = step?.last_reason || sop.reason || '';
+    // const rawReason = step?.last_reason || sop.reason || '';
     const reasonText = getSopReasonText(rawReason)
     if (!reasonText)return;
     const eventKey = [
         sop.state,
+        step?.state || '',
         step?.id || 'done',
         step?.pick_state || '',
         step?.matched_count || 0,
         step?.awaiting_cycle_reset || false,
-        reasonText,
+        rawReason,
         sop.progress?.done || 0,
     ].join('-')
     // const eventKey = `${sop.state}-${step?.id || 'done'}-${reasonText}-${sop.progress?.done || 0}`
@@ -548,31 +572,51 @@ const appendSopEvent = (sop = {}) => {
     })
     events.value = events.value.slice(0, 30)
 }
-
+let lastCriticalAlertKey = ''
 const syncSopAlert = (sop = {}) => {
-    const isSopAlert = (item) => String(item.code || '').startsWith('SOP_')
-    if (sop.state !== 'failed') {
-        criticalAlerts.value = [];
-        // criticalAlerts.value = alerts.value.filter((item) => !isSopAlert(item))
+    const step = sop.current_step
+
+    const isFailed =
+        sop.state === 'failed' ||
+        step?.state === 'failed'
+
+    if (!isFailed) {
+        lastCriticalAlertKey = ''
         return
     }
-    const rawReason = sop.reason || 'SOP 状态异常'
+
+    const rawReason =
+        sop.reason ||
+        step?.last_reason ||
+        'SOP 状态异常'
+
     const code = getSopAlertCode(rawReason)
     const message = getSopReasonText(rawReason)
-    const existing = alerts.value.find((item) => item.code === code && item.message === message)
-    
-    if (existing) {
+
+    const alertKey = [
+        step?.id || 'sop',
+        code,
+        rawReason,
+    ].join('|')
+
+    if (alertKey === lastCriticalAlertKey) {
         return
     }
-    // criticalAlerts.value = alerts.value.filter((item) => !isSopAlert(item))
-    alerts.value.unshift({
-        id: `sop-${Date.now()}`,
+
+    lastCriticalAlertKey = alertKey
+
+    const alertItem = {
+        id: `sop-${Date.now()}-${Math.random()}`,
         level: 'error',
         code,
         message,
         confirmed: false,
-    });
-    criticalAlerts.value[0] = alerts.value[0];
+    }
+
+    alerts.value.unshift(alertItem)
+    alerts.value = alerts.value.slice(0, 50)
+
+    showCriticalAlert(alertItem, 5000)
 }
 
 const applySopState = (sop) => {
@@ -1172,7 +1216,11 @@ onMounted(async() => {
 })
 
 onBeforeUnmount(() => {
-    window.removeEventListener('resize', updateFooterHintOverflow)
+    window.removeEventListener('resize', updateFooterHintOverflow);
+    if (criticalAlertTimer) {
+        clearTimeout(criticalAlertTimer)
+        criticalAlertTimer = null
+    }
     stopStream()
     closeResultSocket();
 })
