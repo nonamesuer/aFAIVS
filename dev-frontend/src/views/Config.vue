@@ -222,7 +222,8 @@ const modelCameraForm = ref({
     boxThickness: 2,
     fontThickness: 2,
     fontScale: 0.5,  
-    showResultText: false,
+    fromAreaFill: false,
+    targetAreaFill: false,
   }
 });
 onBeforeMount(()=>{

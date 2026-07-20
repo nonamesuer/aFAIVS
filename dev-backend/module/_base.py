@@ -29,6 +29,13 @@ DEFAULT_MAIN_CONFIG = {
     "resolutions": DEFAULT_RESOLUTIONS,
     "enableCamera":None,
     "cameraResolution": {},
+    "boxStyle": {
+        "boxThickness": 2,
+        "fontThickness": 2,
+        "fontScale": 0.5,
+        "fromAreaFill": False,
+        "targetAreaFill": False
+    }
 }
 class JsonFile(object):
     def __init__(self, file_path):

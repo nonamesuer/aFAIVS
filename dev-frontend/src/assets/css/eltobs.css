@@ -925,6 +925,7 @@
 .el-switch {
     .el-switch__core {
         background: var(--bs-radio-bscolor);
+        border:none;
     }
 
     .el-switch.is-checked {}

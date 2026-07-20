@@ -9,7 +9,7 @@
   >
     <template #header>
       <el-form v-if="visible" :model="modelCameraForm" :inline="true">
-        <el-form-item :label="$t('config.model')" prop="model" required>
+        <el-form-item :label="$t('config.model')" prop="model" required style="margin-right: 5px;">
           <el-select v-model="modelCameraForm.model" style="width: 200px" @change="(model) => $emit('modelChanged', model)">
             <el-option
               v-for="(available, model, index) in modelsList"
@@ -265,21 +265,31 @@
           <div class="assistant-preview-content">
             <!-- 合法配置 -->
             <template v-if="currentValidation.valid">
-              <div class="assistant-message">{{ $t('robot.effectiveconfig') }}</div>
-              <ol v-if="currentValidation.plan.length" class="assistant-execution-plan">
-                <li v-for="(item, index) in currentValidation.plan" :key="`${index}-${item}`">
-                  <span class="assistant-plan-index">{{ index + 1 }}</span>
-                  <span>{{ item }}</span>
-                </li>
-              </ol>
-              <div v-else class="assistant-empty">{{ $t('robot.noconfig') }}</div>
-              <div v-if="Number(currentStep.target || 1) > 1" class="assistant-baseline-note">
-                <el-icon>
-                  <InfoFilled />
-                </el-icon>
-                <span>
-                  {{ $t('robot.needdo') }} {{ currentStep.target }}, {{ $t('robot.needdoexplain') }}
-                </span>
+              <div class="assistant-valid-content">
+                <div class="assistant-message">{{ $t('robot.effectiveconfig') }}</div>
+                <div v-if="currentValidation.plan.length" class="assistant-plan-scroll-wrapper">
+                  <ol ref="assistantPlanListRef" class="assistant-execution-plan" @scroll="handlePlanScroll">
+                    <li v-for="(item, index) in currentValidation.plan" :key="`${index}-${item}`">
+                      <span class="assistant-plan-index">{{ index + 1 }}</span>
+                      <span>{{ item }}</span>
+                    </li>
+                  </ol>
+                  <div v-if="showPlanScrollTopHint" class="assistant-scroll-hint assistant-scroll-hint-top">
+                    <el-icon><CaretTop /></el-icon>
+                  </div>
+                  <div v-if="showPlanScrollBottomHint" class="assistant-scroll-hint assistant-scroll-hint-bottom">
+                    <el-icon><CaretBottom /></el-icon>
+                  </div>
+                </div>
+                <div v-else class="assistant-empty">{{ $t('robot.noconfig') }}</div>
+                <div v-if="Number(currentStep.target || 1) > 1" class="assistant-baseline-note">
+                  <el-icon>
+                    <InfoFilled />
+                  </el-icon>
+                  <span>
+                    {{ $t('robot.needdo') }} {{ currentStep.target }}, {{ $t('robot.needdoexplain') }}
+                  </span>
+                </div>
               </div>
             </template>
             <!-- 非法配置 -->
@@ -322,13 +332,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 // import { Delete, Setting } from '@element-plus/icons-vue'
 import robotImage from '@/assets/img/robot.png';
-import { Close,Delete,InfoFilled,Setting,WarningFilled } from '@element-plus/icons-vue';
+import { ArrowDownBold, ArrowUpBold, Close,Delete,InfoFilled,Setting,WarningFilled } from '@element-plus/icons-vue';
 import { VueDraggable } from 'vue-draggable-plus';
 import Hands from './Hands.vue';
 import { normalizeObjectDetection, normalizeVisionStepForSave,validateVisionStep} from '@/assets/js/sopRuleEngine';
@@ -491,6 +501,10 @@ const handleReset = () => {
 }
 
 const handleSave = async () => {
+  if(!stepsLocal.value.length) {
+    ElMessage.error(t('message.messagetext.blankSopConfig'))
+    return
+  }
   for (let index = 0; index < stepsLocal.value.length; index += 1) {
     const rawStep = stepsLocal.value[index]
     if (!isStepRequiredFieldsValid(rawStep)) {
@@ -544,11 +558,65 @@ const handleClosed = () => emit('close');
 const executionPreviewPinned = ref(true);
 const executionPreviewHovered = ref(false);
 const executionPreviewDismissedWhileHover = ref(false);
+const assistantPlanListRef = ref<HTMLOListElement | null>(null)
+const showPlanScrollTopHint = ref(false)
+const showPlanScrollBottomHint = ref(false)
+
+const updatePlanScrollHints = () => {
+  const element = assistantPlanListRef.value
+  if (!element) {
+    showPlanScrollTopHint.value = false
+    showPlanScrollBottomHint.value = false
+    return
+  }
+
+  const canScroll = element.scrollHeight - element.clientHeight > 1
+  if (!canScroll) {
+    showPlanScrollTopHint.value = false
+    showPlanScrollBottomHint.value = false
+    return
+  }
+
+  showPlanScrollTopHint.value = element.scrollTop > 2
+  showPlanScrollBottomHint.value = element.scrollTop + element.clientHeight < element.scrollHeight - 2
+}
+
+const handlePlanScroll = () => updatePlanScrollHints()
+
+const handleWindowResize = () => {
+  updatePlanScrollHints()
+}
 
 const executionPreviewVisible = computed(() => {
   if (executionPreviewPinned.value) return true;
   return (executionPreviewHovered.value &&!executionPreviewDismissedWhileHover.value);
 });
+
+watch(
+  [
+    executionPreviewVisible,
+    () => currentValidation.value.valid,
+    () => currentValidation.value.plan.length,
+    () => currentStep.value?.target,
+  ],
+  async () => {
+    await nextTick()
+    updatePlanScrollHints()
+  },
+  { immediate: true },
+)
+
+onMounted(() => {
+  window.addEventListener('resize', handleWindowResize)
+  nextTick(() => {
+    updatePlanScrollHints()
+  })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleWindowResize)
+})
+
 const handleExecutionPreviewEnter = () => {
   executionPreviewHovered.value = true
 };
@@ -671,22 +739,35 @@ const hideExecutionPreview = () => {
       }
     }
     .assistant-preview-content {
+      flex: 1;
       min-height: 0;
       padding: 14px;
-      overflow-y: auto;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      .assistant-valid-content {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        flex-direction: column;
+      }
       .assistant-message {
+        flex-shrink: 0;
         margin-bottom: 12px;
         color: var(--el-text-color-regular);
         font-size: 14px;
         line-height: 1.6;
       }
       .assistant-execution-plan {
+        flex: 1;
+        min-height: 0;
         display: flex;
         flex-direction: column;
         gap: 9px;
         margin: 0;
         padding: 0;
         list-style: none;
+        overflow-y: auto;
 
         li {
           display: flex;
@@ -713,7 +794,36 @@ const hideExecutionPreview = () => {
           }
         }
       }
+      .assistant-plan-scroll-wrapper {
+        position: relative;
+        display: flex;
+        flex: 1;
+        min-height: 0;
+      }
+      .assistant-scroll-hint {
+        position: absolute;
+        left: 50%;
+        z-index: 2;
+        width: 24px;
+        height: 24px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--el-border-color-lighter);
+        border-radius: 50%;
+        background: var(--bs-primary-hover-icon-color);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        transform: translateX(-50%);
+        pointer-events: none;
+      }
+      .assistant-scroll-hint-top {
+        top: 0px;
+      }
+      .assistant-scroll-hint-bottom {
+        bottom: 6px;
+      }
       .assistant-baseline-note {
+        flex-shrink: 0;
         display: flex;
         align-items: flex-start;
         gap: 7px;
@@ -728,10 +838,13 @@ const hideExecutionPreview = () => {
         }
       }
       .assistant-empty {
+        flex: 1;
+        min-height: 0;
         padding: 18px 10px;
         color: var(--el-text-color-secondary);
         text-align: center;
         font-size: 13px;
+        overflow-y: auto;
       }
       .assistant-invalid-message {
         display: flex;

@@ -2,7 +2,7 @@ import logging
 import os
 from fastapi.responses import JSONResponse  
 from fastapi import APIRouter, Request,HTTPException,File, UploadFile
-from module._base import CONFIG_PATH,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater
+from module._base import CONFIG_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater
 from datetime import datetime
 logger = logging.getLogger(__name__)
 api_config = APIRouter()
@@ -14,6 +14,57 @@ def get_config():
     if "resolutions" not in config_datas:
         config_datas["resolutions"] = DEFAULT_RESOLUTIONS
     return JSONResponse(content={"status": True, "datas": config_datas,"sops":sop_config_datas})
+@api_config.get("/box_style_config")
+def get_box_style_config():
+    config_datas = get_main_config()
+    box_style_config = config_datas.get("boxStyle", DEFAULT_MAIN_CONFIG["boxStyle"])
+    return JSONResponse(content={"status": True, "datas": box_style_config})
+@api_config.post("/set_box_style_config")
+async def set_box_style_config(request: Request):
+    try:
+        body = await request.json()
+        box_style_config = body.get("boxStyle")
+        if not box_style_config:return JSONResponse(content={"status": False, "msg": "Missing boxStyle parameter"})
+        config_datas = get_main_config()
+        config_datas["boxStyle"] = box_style_config
+        JsonFile(CONFIG_PATH).write_json_file(config_datas)
+        return JSONResponse(content={"status": True, "msg": "Box style configuration set successfully"})
+    except Exception as e:
+        logger.exception(f"Error setting box style configuration: {e}")
+        return JSONResponse(content={"status": False, "msg": "Failed to set box style configuration"})
+@api_config.post("/display_box_style_config")
+async def display_box_style_config(request: Request):
+    import numpy as np
+    import base64
+    import cv2
+    try:
+        body = await request.json()
+        box_style_config = body.get("boxStyle")
+        if not box_style_config:return JSONResponse(content={"status": False, "msg": "Missing boxStyle parameter"})
+        box_thickness = box_style_config.get("boxThickness", 3)
+        font_thickness = box_style_config.get("fontThickness", 2)
+        font_scale = box_style_config.get("fontScale", 0.5)
+        from_area_fill = box_style_config.get("fromAreaFill", False)
+        target_area_fill = box_style_config.get("targetAreaFill", False)
+        img = np.zeros((400, 400, 3), dtype=np.uint8)
+        cv2.rectangle(img, (50, 50), (150,150), (0, 255, 0), thickness=box_thickness)
+        (textSizeW, textSizeH), baseline = cv2.getTextSize('Example', cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+        cv2.putText(img, 'Example', (50, 50-textSizeH), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), thickness=font_thickness, lineType=cv2.LINE_AA)
+        if from_area_fill:
+            cv2.rectangle(img, (200, 50), (300,150), (250, 180, 255), thickness=cv2.FILLED)
+        if target_area_fill:
+            cv2.rectangle(img, (50, 250), (150,350), (180, 180, 255), thickness=cv2.FILLED)
+        cv2.rectangle(img, (200, 50), (300,150), (0, 255, 255), thickness=box_thickness)
+        cv2.putText(img, 'Start', (200, 50-textSizeH), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), thickness=font_thickness, lineType=cv2.LINE_AA)
+        cv2.rectangle(img, (50, 250), (150,350), (0, 0, 255), thickness=box_thickness)
+        cv2.putText(img, 'Target', (50, 250-textSizeH), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), thickness=font_thickness, lineType=cv2.LINE_AA)
+        _, img_encoded = cv2.imencode('.webp', img, [int(cv2.IMWRITE_WEBP_QUALITY), 90])
+        img_base64 = base64.b64encode(img_encoded).decode('utf-8')
+        result_img = f"data:image/webp;base64,{img_base64}"
+        return JSONResponse({"status": True, "frame": result_img, "msg": "Example image generated successfully"})
+    except Exception as e:
+        logger.exception(f"Error displaying box style configuration: {e}")
+        return JSONResponse(content={"status": False, "msg": "Failed to display box style configuration"})
 @api_config.get("/open_models_folder")
 def open_models_folder():
     try:

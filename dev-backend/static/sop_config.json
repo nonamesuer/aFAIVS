@@ -66,13 +66,5 @@
         "create_time": "2026-07-09 11:44:07",
         "enabled": false,
         "modify_time": "2026-07-20 10:13:00"
-    },
-    "CY4": {
-        "model": "CY4",
-        "confidence": 0.5,
-        "steps": [],
-        "create_time": "2026-07-20 11:00:46",
-        "enabled": true,
-        "modify_time": "2026-07-20 11:00:46"
     }
 }

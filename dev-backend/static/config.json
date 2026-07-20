@@ -73,5 +73,12 @@
             "clarity": 46
         }
     },
-    "enableCamera": "TEF1"
+    "enableCamera": "TEF1",
+    "boxStyle": {
+        "boxThickness": 9,
+        "fontThickness": 10,
+        "fontScale": 0.7,
+        "fromAreaFill": false,
+        "targetAreaFill": true
+    }
 }

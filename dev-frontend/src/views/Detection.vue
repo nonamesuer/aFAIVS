@@ -839,7 +839,7 @@ async function getSopConfiguration() {
             return
         }
 
-        sopConfiguration.value = resolveSopConfig(response.data || {})
+        sopConfiguration.value = resolveSopConfig(response.data || {});
         cameraName.value =
             response.enableCamera || t('displaytext.noconfigcamera')
         processSteps.value = buildProcessSteps(
