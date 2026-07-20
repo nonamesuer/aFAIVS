@@ -41,7 +41,6 @@ const appStore = useAppStore();
 const { t } = useI18n();;
 const props = defineProps<{
   visible: boolean;
-  modelCameraForm: any; // 对象引用，直接修改
 }>();
 const emit = defineEmits<{
   (e: "update:visible", val: boolean): void;

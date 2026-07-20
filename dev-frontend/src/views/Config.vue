@@ -62,31 +62,24 @@
         </div> -->
         </div>
         <div class="el-main-body" :style="{ height: elVideoStreamH }">
-            <!-- 路径配置 -->
+            <!-- 公共配置入口 -->
             <el-divider content-position="left">
                 <template #default>
-                    <div style="font-weight: 900">{{ $t("config.path_config") }}</div>
+                    <div style="font-weight: 900">{{ $t("config.common_config") }}</div>
                 </template>
             </el-divider>
-            <div>
-                <el-form label-position="top" size="large" ref="pathFormRef">
-                    <el-form-item :label="$t('config.model_path')">
-                        <el-input v-model="pathConfig.modelPath" :placeholder="$t('config.enter_model_path')" ></el-input>
-                    </el-form-item>
-                    <el-form-item :label="$t('config.sop_path')">
-                        <el-input v-model="pathConfig.sopPath" :placeholder="$t('config.enter_model_path')" ></el-input>
-                    </el-form-item>
-                    <el-form-item :label="$t('config.result_storage_path')">
-                        <el-input v-model="pathConfig.resultPath" :placeholder="$t('config.enter_result_storage_path')" />
-                    </el-form-item>
-                    <!-- <el-form-item >
-                        <el-checkbox v-model="pathConfig.saveDetectionDatasets" :label="$t('config.save_detecttion_datasets')" size="large" />
-                        <el-alert show-icon v-if="pathConfig.saveDetectionDatasets" :description="$t('config.save_detecttion_datasets_des')" type="primary" effect="dark" :closable="false"/>
-                    </el-form-item> -->
-                    <div style="text-align: right; margin-top: 20px">
-                        <el-button type="primary" @click="handleSubmitPath">{{ $t("button.submit") }}</el-button>
-                    </div>
-                </el-form>
+            <div class="common-config-grid">
+                <div class="common-config-entry" @click="pathDialogVisible = true">
+                    <el-icon class="common-config-icon"><FolderOpened /></el-icon>
+                    <span class="common-config-title">{{ $t('config.path_config') }}</span>
+                    <span class="common-config-description">{{ $t('config.path_config_description') }}</span>
+                </div>
+
+                <div class="common-config-entry" @click="boxStyleVisible = true">
+                    <el-icon class="common-config-icon"><Crop /></el-icon>
+                    <span class="common-config-title">{{ $t('button.title.box_style_setting') }}</span>
+                    <span class="common-config-description">{{ $t('config.box_style_description') }}</span>
+                </div>
             </div>
             <!-- 工序指导配置 -->
             <el-divider content-position="left">
@@ -163,11 +156,14 @@
             @close="handleCloseSignalSet"
             @save="handleSavePositionRow"
             @modelChanged="(model) => handleChangeMainModel(model)"
-            @openBoxStyleDrawer="boxStyleVisible = true"
+        />
+        <PathDialog
+          v-model:visible="pathDialogVisible"
+          v-model:path-config="pathConfig"
+          @saved="getModels"
         />
         <BoxStyleDrawer
           v-model:visible="boxStyleVisible"
-          :modelCameraForm="modelCameraForm"
         />
   </div>
 </template>
@@ -176,12 +172,13 @@ import { ref, onMounted,onBeforeMount,watch, nextTick, reactive, computed, onUnm
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/store";
 import { ElMessage, FormInstance, FormRules } from "element-plus";
-import { FolderOpened,Brush } from "@element-plus/icons-vue";
+import { FolderOpened,Brush,Crop } from "@element-plus/icons-vue";
 import { MesAlertWTitle, MesConfirmWTitle } from "@/assets/js/secondpk";
 import api from "@/api/index";
 import SopDialog from "@/components/SopDialog.vue";
 import ResolutionDrawer from "@/components/ResolutionDrawer.vue";
 import BoxStyleDrawer from "@/components/BoxStyleDrawer.vue";
+import PathDialog from "@/components/PathDialog.vue";
 const appStore = useAppStore();
 const { t } = useI18n();
 const device1Ref = ref(null);
@@ -203,8 +200,8 @@ const defaultResolution = ref({ width: 640, height: 480, area: 640, clarity: 50 
 const resolutionForm = reactive({ resolutions: "", area: 640, clarity: 50 });
 const resolutionsDrawerVisible = ref(false);
 //路径
-const pathFormRef = ref(null);
 const pathConfig = ref({ modelPath: "",sopPath:"", resultPath: "", saveDetectionDatasets: false });
+const pathDialogVisible = ref(false);
 // SOP配置
 const sopDialogVisible = ref(false);
 const sopConfigDatas = ref({});
@@ -218,13 +215,6 @@ const signalSetVisible = ref(false);
 const modelCameraForm = ref({
   model: "",
   confidence: 50,
-  boxStyleConfig:{
-    boxThickness: 2,
-    fontThickness: 2,
-    fontScale: 0.5,  
-    fromAreaFill: false,
-    targetAreaFill: false,
-  }
 });
 onBeforeMount(()=>{
   getDevice();
@@ -365,14 +355,6 @@ const videoStream = () => {
       imgToUpdate.onerror = () => { URL.revokeObjectURL(url); };
     }
   };
-};
-//路径
-const handleSubmitPath = () => {
-  api.setConfigPath(pathConfig.value).then((res) => {
-    if (!res.data.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedsetconfigpath"), res.data.msg, "OK");
-    ElMessage.success(t("message.success"));
-    getModels();
-  }).catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedsetconfigpath"), error.message, "OK"));
 };
 //分辨率
 const temSetResolutionCapName = ref("");
@@ -569,6 +551,55 @@ const handleChangeEnable = (value: boolean, modelName: string) => {
     font-weight: 900;
     font-size: 15px;
     color: #000;
+  }
+  .common-config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 240px));
+    gap: 16px;
+    align-items: stretch;
+  }
+  .common-config-entry {
+    min-height: 150px;
+    padding: 22px 18px;
+    /* border: 1px solid var(--bs-radio-bscolor); */
+    /* border-radius: 6px; */
+    background: var(--bs-bgcolor);
+    color: inherit;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    font: inherit;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    border-top:var(--bs-primary-color)  solid 6px;
+  }
+  .common-config-entry:hover{
+    background:var(--bs-card-bgcolor-hover);
+  }
+  .common-config-entry:active {
+    background: var(--ba-card-bgcolor-active);
+  }
+  .common-config-entry:focus-visible {
+    transform: translateY(-2px);
+    border-color: var(--bs-primary-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    outline: none;
+  }
+  .common-config-icon {
+    font-size: 42px;
+    color: var(--bs-primary-color);
+  }
+  .common-config-title {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .common-config-description {
+    /* color: var(--el-text-color-secondary); */
+    font-size: 13px;
+    line-height: 1.5;
   }
   .sop-config-container{
     display: grid;

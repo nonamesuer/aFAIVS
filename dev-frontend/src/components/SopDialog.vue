@@ -20,17 +20,6 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item>
-          <el-button
-            v-show="modelCameraForm.model"
-            :title="$t('button.title.box_style_setting')"
-            :icon="Setting"
-            size="small"
-            link
-            circle
-            @click="$emit('openBoxStyleDrawer')"
-          />
-        </el-form-item>
         <el-form-item :label="$t('config.confidence')">
           <div style="width: 280px">
             <el-slider v-model="modelCameraForm.confidence" :format-tooltip="value => value / 100" />
@@ -338,7 +327,7 @@ import { ElMessage } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 // import { Delete, Setting } from '@element-plus/icons-vue'
 import robotImage from '@/assets/img/robot.png';
-import { ArrowDownBold, ArrowUpBold, Close,Delete,InfoFilled,Setting,WarningFilled } from '@element-plus/icons-vue';
+import { ArrowDownBold, ArrowUpBold, Close,Delete,InfoFilled,WarningFilled } from '@element-plus/icons-vue';
 import { VueDraggable } from 'vue-draggable-plus';
 import Hands from './Hands.vue';
 import { normalizeObjectDetection, normalizeVisionStepForSave,validateVisionStep} from '@/assets/js/sopRuleEngine';
@@ -358,7 +347,6 @@ const emit = defineEmits<{
   (event: 'close'): void
   (event: 'save', row: any): void
   (event: 'modelChanged', modelName: string): void
-  (event: 'openBoxStyleDrawer'): void
 }>()
 
 const HAND_SIDES = ['l', 'r'] as const
