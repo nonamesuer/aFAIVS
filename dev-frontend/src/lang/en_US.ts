@@ -36,6 +36,7 @@ export default{
         resetandclear:"Reset and Clear",
         openmodellib:"Open Models Library",
         customize:"Customize",
+        test:"Test",
         title:{
             refreshpage:"Refresh Page",
             openinbrowser:"open in browser",
@@ -96,6 +97,14 @@ export default{
         fromarea_fill:"Start Area Fill",
         targetarea_fill:"Target Area Fill",
         click_show_example:"Click to view example",
+        modbus_config:"Modbus Configuration",
+        modbus_config_description:"Configure the Modbus TCP server and test its connection",
+        modbus_host:"Host",
+        modbus_port:"Port",
+        modbus_timeout:"Connection Timeout (seconds)",
+        enter_modbus_host:"Please enter the Modbus host",
+        invalid_modbus_port:"Port must be an integer between 1 and 65535",
+        invalid_modbus_timeout:"Connection timeout must be between 0.1 and 60 seconds",
         sop_step_config:{
             process_chain_config:"Process Chain Configuration",
             property_config:"Property Configuration",
@@ -188,6 +197,8 @@ export default{
             confirmResetDetectionDesc:"This operation will reset all steps and configurations of the process chain, please proceed with caution",
             blankSopConfig:"The current process chain configuration is empty, please add steps first",  
             failedGetBoxStyleConfig:"Failed to get box style configuration",
+            modbusConnectionSuccess:"Modbus-TCP connection successful",
+            modbusConnectionFailed:"Modbus-TCP connection failed",
         },
     },
     description:{

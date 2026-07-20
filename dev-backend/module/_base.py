@@ -35,6 +35,11 @@ DEFAULT_MAIN_CONFIG = {
         "fontScale": 0.5,
         "fromAreaFill": False,
         "targetAreaFill": False
+    },
+    "modbus": {
+        "host": "127.0.0.1",
+        "port": 502,
+        "timeout": 3
     }
 }
 class JsonFile(object):

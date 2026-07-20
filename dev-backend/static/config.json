@@ -76,9 +76,14 @@
     "enableCamera": "TEF1",
     "boxStyle": {
         "boxThickness": 9,
-        "fontThickness": 9,
+        "fontThickness": 7,
         "fontScale": 0.7,
         "fromAreaFill": false,
         "targetAreaFill": true
+    },
+    "modbus": {
+        "host": "127.0.0.1",
+        "port": 503,
+        "timeout": 3
     }
 }

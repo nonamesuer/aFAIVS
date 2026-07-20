@@ -36,6 +36,7 @@ export default{
         resetandclear:"复位并清除",
         openmodellib:"\u6253\u5F00\u6A21\u578B\u5E93",
         customize:"\u81EA\u5B9A\u4E49",
+        test:"测试",
         title:{
             refreshpage:"\u5237\u65B0\u9875\u9762",
             openinbrowser:"\u5728\u6D4F\u89C8\u5668\u4E2D\u6253\u5F00",
@@ -95,6 +96,14 @@ export default{
         fromarea_fill:"起始区域填充",
         targetarea_fill:"目标区域填充",
         click_show_example:"点击查看示例",
+        modbus_config:"Modbus 配置",
+        modbus_config_description:"配置 Modbus TCP 服务器地址并测试连接",
+        modbus_host:"主机地址",
+        modbus_port:"端口",
+        modbus_timeout:"连接超时（秒）",
+        enter_modbus_host:"请输入 Modbus 主机地址",
+        invalid_modbus_port:"端口必须为 1 到 65535 之间的整数",
+        invalid_modbus_timeout:"连接超时必须为 0.1 到 60 秒",
         sop_step_config:{
             process_chain_config:"工序链配置",
             property_config:"属性配置",
@@ -187,6 +196,8 @@ export default{
             confirmResetDetectionDesc:"此操作将会重置工序链的所有步骤和配置，亲谨慎操作",
             blankSopConfig:"当前工序链配置为空，请先添加步骤",
             failedGetBoxStyleConfig:"获取标记框样式配置失败",
+            modbusConnectionSuccess:"Modbus-TCP 连接成功",
+            modbusConnectionFailed:"Modbus-TCP 连接失败",
         },
 
     },

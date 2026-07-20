@@ -80,6 +80,11 @@
                     <span class="common-config-title">{{ $t('button.title.box_style_setting') }}</span>
                     <span class="common-config-description">{{ $t('config.box_style_description') }}</span>
                 </div>
+                <div class="common-config-entry" @click="modbusDialogVisible = true">
+                    <el-icon class="common-config-icon"><Connection /></el-icon>
+                    <span class="common-config-title">{{ $t('config.modbus_config') }}</span>
+                    <span class="common-config-description">{{ $t('config.modbus_config_description') }}</span>
+                </div>
             </div>
             <!-- 工序指导配置 -->
             <el-divider content-position="left">
@@ -166,6 +171,10 @@
           v-model:visible="boxStyleVisible"
           v-model:box-style-config="boxStyleConfig"
         />
+        <ModbusDialog
+          v-model:visible="modbusDialogVisible"
+          v-model:modbus-config="modbusConfig"
+        />
   </div>
 </template>
 <script setup lang="ts">
@@ -180,6 +189,7 @@ import SopDialog from "@/components/SopDialog.vue";
 import ResolutionDrawer from "@/components/ResolutionDrawer.vue";
 import BoxStyleDrawer from "@/components/BoxStyleDrawer.vue";
 import PathDialog from "@/components/PathDialog.vue";
+import ModbusDialog from "@/components/ModbusDialog.vue";
 const appStore = useAppStore();
 const { t } = useI18n();
 const device1Ref = ref(null);
@@ -217,7 +227,13 @@ const boxStyleConfig = ref({
   fromAreaFill: false,
   targetAreaFill: false,
 });
-
+// Modbus TCP
+const modbusDialogVisible = ref(false);
+const modbusConfig = ref({
+  host: "127.0.0.1",
+  port: 502,
+  timeout: 3,
+});
 // 参数配置相关
 const signalSetVisible = ref(false);
 const modelCameraForm = ref({
@@ -253,7 +269,7 @@ const getConfig = () => {
       pathConfig.value = { ...pathConfig.value, modelPath, sopPath, resultPath, saveDetectionDatasets };
     };
     if (datas.boxStyle) {boxStyleConfig.value = {...boxStyleConfig.value,...datas.boxStyle, }};
-
+    if (datas.modbus) {modbusConfig.value = {...modbusConfig.value,...datas.modbus, }};
     if("cameraResolution" in datas){ cameraResolution.value = datas.cameraResolution; };
     if("enableCamera" in datas){ 
       let index = cameraList.value.indexOf(datas.enableCamera);

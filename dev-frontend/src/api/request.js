@@ -16,6 +16,9 @@ const errorHandle = (status, info) => {
         case 407:
             console.log("跨域错误");
             break;
+        case 422:
+            console.log("参数验证失败");
+            break;
         case 500:
             console.log("服务器遇到意外");
             break;
@@ -34,9 +37,9 @@ const instance = axios.create({
 //发送数据之前（interceptors：拦截器）
 instance.interceptors.request.use(
     config => {
-        if (config.method === "post") {
-            config.data = JSON.stringify(config.data)
-        }
+        // if (config.method === "post") {
+        //     config.data = JSON.stringify(config.data)
+        // }
         return config; //config包含网络请求所有信息
     },
     error => Promise.reject(error)

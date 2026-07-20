@@ -58,4 +58,5 @@ export default {
     deleteModel: requestWithPath("/delete_model", "DELETE"),//删除模型文件夹
     setBoxStyleConfig: requestWithPath("/set_box_style_config", "POST"),//设置标记框样式配置
     displayBoxStyleConfig: requestWithPath("/display_box_style_config", "POST"),//展示标记框样式配置
+    testModbusConnection: requestWithPath("/modbus/test_connection", "POST"),
 }

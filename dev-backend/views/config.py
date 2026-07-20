@@ -1,11 +1,17 @@
 import logging
 import os
+import numpy as np
+import base64
+import cv2
 from fastapi.responses import JSONResponse  
 from fastapi import APIRouter, Request,HTTPException,File, UploadFile
 from module._base import CONFIG_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater
 from datetime import datetime
+from pydantic import BaseModel, Field
+from pymodbus.client import ModbusTcpClient
 logger = logging.getLogger(__name__)
 api_config = APIRouter()
+
 @api_config.get("/get_config")
 def get_config():
     config_datas = get_main_config()
@@ -29,9 +35,6 @@ async def set_box_style_config(request: Request):
         return JSONResponse(content={"status": False, "msg": "Failed to set box style configuration"})
 @api_config.post("/display_box_style_config")
 async def display_box_style_config(request: Request):
-    import numpy as np
-    import base64
-    import cv2
     try:
         body = await request.json()
         box_style_config = body.get("boxStyle")
@@ -342,3 +345,24 @@ async def modify_config(request:Request):
     except Exception as e:
         logger.error(f"Error modifying configuration: {e}")
         return {"status": False, "msg": str(e)}
+class ModbusConnectionRequest(BaseModel):
+    host: str = Field(min_length=1)
+    port: int = Field(ge=1, le=65535)
+    timeout: float = Field(gt=0, le=60)
+@api_config.post("/modbus/test_connection")
+def test_modbus_connection(payload: ModbusConnectionRequest):
+    """测试指定地址能否建立 Modbus TCP 连接，不读取任何寄存器。"""
+    host = payload.host.strip()
+    if not host:return JSONResponse(content={"status": False, "msg": "Modbus host is required"})
+    client = ModbusTcpClient(host=host,port=payload.port,timeout=payload.timeout)
+    try:
+        if client.connect():return JSONResponse(content={"status": True,"msg": f"Connected to Modbus TCP server {host}:{payload.port}",})
+        return JSONResponse(content={"status": False,"msg": f"Unable to connect to Modbus TCP server {host}:{payload.port}"})
+    except Exception as exc:
+        logger.exception("Failed to test Modbus TCP connection to %s:%s", host, payload.port)
+        return JSONResponse(content={"status": False, "msg": str(exc)})
+    finally:
+        try:
+            client.close()
+        except Exception:
+            logger.exception("Failed to close Modbus TCP test client")
