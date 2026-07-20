@@ -14,11 +14,6 @@ def get_config():
     if "resolutions" not in config_datas:
         config_datas["resolutions"] = DEFAULT_RESOLUTIONS
     return JSONResponse(content={"status": True, "datas": config_datas,"sops":sop_config_datas})
-@api_config.get("/box_style_config")
-def get_box_style_config():
-    config_datas = get_main_config()
-    box_style_config = config_datas.get("boxStyle", DEFAULT_MAIN_CONFIG["boxStyle"])
-    return JSONResponse(content={"status": True, "datas": box_style_config})
 @api_config.post("/set_box_style_config")
 async def set_box_style_config(request: Request):
     try:

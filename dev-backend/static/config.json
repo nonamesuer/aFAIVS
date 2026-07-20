@@ -76,7 +76,7 @@
     "enableCamera": "TEF1",
     "boxStyle": {
         "boxThickness": 9,
-        "fontThickness": 8,
+        "fontThickness": 9,
         "fontScale": 0.7,
         "fromAreaFill": false,
         "targetAreaFill": true

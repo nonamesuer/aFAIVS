@@ -164,6 +164,7 @@
         />
         <BoxStyleDrawer
           v-model:visible="boxStyleVisible"
+          v-model:box-style-config="boxStyleConfig"
         />
   </div>
 </template>
@@ -209,6 +210,13 @@ const editSteps = ref([]);
 const missingModels = ref<string[]>([]);//检查SOP配置中的模型是否都存在
 // 边框样式
 const boxStyleVisible = ref(false);
+const boxStyleConfig = ref({
+  boxThickness: 2,
+  fontThickness: 2,
+  fontScale: 0.5,
+  fromAreaFill: false,
+  targetAreaFill: false,
+});
 
 // 参数配置相关
 const signalSetVisible = ref(false);
@@ -244,7 +252,8 @@ const getConfig = () => {
       const { modelPath = "", sopPath = "", resultPath = "", saveDetectionDatasets = false } = datas.paths;
       pathConfig.value = { ...pathConfig.value, modelPath, sopPath, resultPath, saveDetectionDatasets };
     };
-    
+    if (datas.boxStyle) {boxStyleConfig.value = {...boxStyleConfig.value,...datas.boxStyle, }};
+
     if("cameraResolution" in datas){ cameraResolution.value = datas.cameraResolution; };
     if("enableCamera" in datas){ 
       let index = cameraList.value.indexOf(datas.enableCamera);

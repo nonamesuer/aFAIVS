@@ -38,50 +38,73 @@ import { MesAlertWTitle } from "@/assets/js/secondpk";
 import { useAppStore } from "@/stores/store";
 const appStore = useAppStore();
 
-const { t } = useI18n();;
+const { t } = useI18n();
+interface BoxStyleConfig {
+  boxThickness: number
+  fontThickness: number
+  fontScale: number
+  fromAreaFill: boolean
+  targetAreaFill: boolean
+}
 const props = defineProps<{
   visible: boolean;
+  boxStyleConfig: BoxStyleConfig
 }>();
 const emit = defineEmits<{
   (e: "update:visible", val: boolean): void;
+  (e: "update:boxStyleConfig", val: BoxStyleConfig): void
 }>();
-onMounted(()=>{
-getBoxStyleConfig()
-})
+
 const boxStyleFormRef = ref(null);
-
-const boxStyleForm = ref({
-    boxThickness: 2,
-    fontThickness: 2,
-    fontScale: 0.5,  
-    fromAreaFill: false,
-    targetAreaFill: false,
-});
-const getBoxStyleConfig=()=>{
-    api.getBoxStyleConfig().then((res)=>{
-        const resData = res.data;
-        if(!resData.status)if (!resData.status) return MesAlertWTitle("error", t("message.error"), '', resData.msg, "OK");
-        boxStyleForm.value = resData.datas;
-    }).catch((err)=>{
-        MesAlertWTitle("error", t("message.error"), '', err.message || t("message.messagetext.failedGetBoxStyleConfig"), "OK");
-    });
-}
+const createBoxStyleForm = (config?: Partial<BoxStyleConfig>): BoxStyleConfig => ({
+  boxThickness: Number(config?.boxThickness ?? 2),
+  fontThickness: Number(config?.fontThickness ?? 2),
+  fontScale: Number(config?.fontScale ?? 0.5),
+  fromAreaFill: Boolean(config?.fromAreaFill),
+  targetAreaFill: Boolean(config?.targetAreaFill),
+})
+const boxStyleForm = ref<BoxStyleConfig>(
+  createBoxStyleForm(props.boxStyleConfig),
+)
 
 
-watch(() => props.visible, (visible) => {
-    if (visible) {getBoxStyleConfig(); }
-}, {immediate: true,});
+
+watch(
+  () => [props.visible, props.boxStyleConfig] as const,
+  ([visible]) => {
+    if (visible) {
+      boxStyleForm.value = createBoxStyleForm(
+        props.boxStyleConfig,
+      )
+    }
+  },
+  {
+    immediate: true,
+    deep: true,
+  },
+)
 
 const handleSave = ()=>{
-    api.setBoxStyleConfig({"boxStyle": boxStyleForm.value}).then((res)=>{
-        const resData = res.data;
-        if(!resData.status)if (!resData.status) return MesAlertWTitle("error", t("message.error"), '', resData.msg, "OK");
-        ElMessage.success(t("message.messagetext.successsave"));
-        emit("update:visible", false);
-    }).catch((err)=>{
-        MesAlertWTitle("error", t("message.error"), '', err.message || t("message.messagetext.failedsave"), "OK");
-    });
-    
+    appStore.setLoading(true);
+    try{
+        const payload = createBoxStyleForm(boxStyleForm.value);
+        api.setBoxStyleConfig({"boxStyle": payload}).then(({data: response})=>{
+            if(!response.status) {
+                MesAlertWTitle("error", t("message.error"), '', response.msg, "OK");
+                return;
+            }
+            emit("update:boxStyleConfig", payload);
+            emit("update:visible", false);  
+            ElMessage.success(t("message.messagetext.successsave"));
+        }).catch((error: any)=>{
+            MesAlertWTitle("error", t("message.error"), '', error.message || t("message.messagetext.failedsave"), "OK");
+        }).finally(()=>{
+            appStore.setLoading(false);
+        });
+    }catch(error: any){
+        MesAlertWTitle("error", t("message.error"), '', error.message || t("message.messagetext.failedsave"), "OK");
+        appStore.setLoading(false);
+    }
 };
 const handleCancel = ()=>{
     emit("update:visible", false);
