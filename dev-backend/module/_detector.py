@@ -93,13 +93,21 @@ class DetectionRuntime:
             self.paused = False
 
         return success
+    def reset(self) -> bool:
+        if not self.running:return False
+        return self.detector.reset()
     def stop(self) -> None:
-        if not self.running:
-            return
-        self.detector.stop()
-        self.camera.stop()
         self.running = False
         self.paused = False
+        try:
+            self.detector.stop()
+        except Exception:
+            logger.exception("停止检测线程失败")
+
+        try:
+            self.camera.stop()
+        except Exception:
+            logger.exception("停止摄像头线程失败")
 
     async def create_webrtc_answer(self, sdp: str, type_: str) -> dict[str, str]:
         pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=_build_ice_servers()))
@@ -195,6 +203,7 @@ class DetectorWorker:
         }
         self.paused = False
         self.pause_lock = threading.Lock()
+        self.state_lock = threading.RLock()
         self.model_path = model_path
         self.model_name = model_name
         self.project_name = project_name
@@ -290,22 +299,23 @@ class DetectorWorker:
 
     def _update_result(self, detection: dict, hands=None) -> None:
         label_box_datas = detection.get("datas", [])
-        sop_result = self.sop_machine.update(label_box_datas,hands=hands)
-        sop_state = sop_result.get("state")
-        with self.result_lock:
-            self.result["step"] = 1 if self.result.get("step", 1) == 1 else 2
-            self.result["gesture"] = "gesture"
-            self.result["detections"] = label_box_datas
-            self.result["hands"] = hands or {}
-            self.result["hand_action_points"] = (self.sop_machine.current_hand_action_points(hands) if hands else [])
-            self.result["sop"] = sop_result
-            if sop_state != self._last_sop_state:
-                if sop_state == "completed":
-                    self.result["ok_count"] = self.result.get("ok_count", 0) + 1
-                elif sop_state == "failed":
-                    self.result["ng_count"] = self.result.get("ng_count", 0) + 1
-                self._last_sop_state = sop_state
-            self.result["updated_at"] = time.time()
+        with self.state_lock:
+            sop_result = self.sop_machine.update(label_box_datas,hands=hands)
+            sop_state = sop_result.get("state")
+            with self.result_lock:
+                self.result["step"] = 1 if self.result.get("step", 1) == 1 else 2
+                self.result["gesture"] = "gesture"
+                self.result["detections"] = label_box_datas
+                self.result["hands"] = hands or {}
+                self.result["hand_action_points"] = (self.sop_machine.current_hand_action_points(hands) if hands else [])
+                self.result["sop"] = sop_result
+                if sop_state != self._last_sop_state:
+                    if sop_state == "completed":
+                        self.result["ok_count"] = self.result.get("ok_count", 0) + 1
+                    elif sop_state == "failed":
+                        self.result["ng_count"] = self.result.get("ng_count", 0) + 1
+                    self._last_sop_state = sop_state
+                self.result["updated_at"] = time.time()
 
     def snapshot(self):
         with self.result_lock:
@@ -313,60 +323,98 @@ class DetectorWorker:
     def pause(self) -> bool:
         """暂停 AI 推理和 SOP 状态推进，但不销毁检测线程。"""
         with self.pause_lock:
-            if not self.running:
-                return False
-
-            if self.paused:
-                return True
-
-            self.paused = True
-            self.sop_machine.pause()
-
-            sop_result = self.sop_machine.snapshot(
-                matched=False,
-                reason="SOP paused",
-            )
-
-            with self.result_lock:
-                self.result["sop"] = sop_result
-                self.result["hands"] = {}
-                self.result["hand_action_points"] = []
-                self.result["updated_at"] = time.time()
-
+            if not self.running:return False
+            if self.paused:return True
+            with self.state_lock:
+                self.paused = True
+                self.sop_machine.pause()
+                sop_result = self.sop_machine.snapshot(matched=False,reason="SOP paused",)
+                with self.result_lock:
+                    self.result["sop"] = sop_result
+                    self.result["hands"] = {}
+                    self.result["hand_action_points"] = []
+                    self.result["updated_at"] = time.time()
             return True
 
 
     def resume(self) -> bool:
         """从暂停位置继续检测。"""
         with self.pause_lock:
-            if not self.running:
-                return False
-
-            if not self.paused:
-                return True
-
-            self.sop_machine.resume()
-            self.paused = False
-
-            sop_result = self.sop_machine.snapshot(
-                matched=False,
-                reason="SOP resumed",
-            )
-
-            with self.result_lock:
-                self.result["sop"] = sop_result
-                self.result["updated_at"] = time.time()
-
+            if not self.running: return False
+            if not self.paused:return True
+            with self.state_lock:
+                self.sop_machine.resume()
+                self.paused = False
+                sop_result = self.sop_machine.snapshot(matched=False,reason="SOP resumed")
+                with self.result_lock:
+                    self.result["sop"] = sop_result
+                    self.result["updated_at"] = time.time()
             return True
+    def reset(self)-> dict | None:
+        """
+        将 SOP 复位到第一步。
+        运行状态复位后继续运行；
+        暂停状态复位后仍保持暂停。
+        """
+        with self.pause_lock:
+            if not self.running:return None
+            keep_paused = self.paused
+            with self.state_lock:
+                # start() 本身已经会清除所有步骤状态、
+                # matched_count、时间、失败状态和 current_index。
+                self.sop_machine.start()
+                if keep_paused:
+                    self.sop_machine.pause()
+                    reason = "SOP reset and paused"
+                else:
+                    reason = "SOP reset"
+                sop_result = self.sop_machine.snapshot(matched=False,reason=reason)
+                self._last_sop_state = sop_result.get("state")
+
+                with self.result_lock:
+                    self.result.update({
+                        "step": 1,
+                        "gesture": "idle",
+                        "bbox": [],
+                        "detections": [],
+                        "hands": {},
+                        "hand_action_points": [],
+                        "score": 0.0,
+                        "ok_count": 0,
+                        "ng_count": 0,
+                        "updated_at": time.time(),
+                        "sop": sop_result,
+                    })
+
+            return dict(self.result)
     def stop(self) -> None:
         self.running = False
         self.paused = False
         self.detector_status.set(0)
         if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=1.0)
+            self.thread.join(timeout=2.0)
+        self.thread = None
         if self.hand_worker is not None:
-            self.hand_worker.stop()
-            self.hand_worker = None
+            try:
+                self.hand_worker.stop()
+            except Exception:
+                logger.exception("停止手部检测线程失败")
+            finally:
+                self.hand_worker = None
+        with self.result_lock:
+            self.result = {
+                "step": None,
+                "gesture": "idle",
+                "bbox": [],
+                "detections": [],
+                "hands": {},
+                "hand_action_points": [],
+                "score": 0.0,
+                "ok_count": 0,
+                "ng_count": 0,
+                "updated_at": time.time(),
+                "sop": None,
+            }
 
 
 class CameraTrack(VideoStreamTrack):

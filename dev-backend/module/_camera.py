@@ -16,6 +16,7 @@ class CameraManager:
         self.running = False
         self.thread = None
         self.frame_lock = threading.Lock()
+        self.heartbeat_thread = None
         self.latest_frame = None
         self.reconnnect_times = 0
         self.cap_status = CapStatus()
@@ -60,12 +61,25 @@ class CameraManager:
 
     def stop(self) -> None:
         self.running = False
+        self.cap_status.set(0)
+        # 先释放 VideoCapture，防止 cap.read() 阻塞线程退出
+        cap = self.cap
+        self.cap = None
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                logger.exception("释放摄像头失败")
+
         if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=1.0)
-        if self.cap:
-            self.cap.release()
+            self.thread.join(timeout=2.0)
         if self.heartbeat_thread and self.heartbeat_thread.is_alive():
-            self.heartbeat_thread.join(timeout=1.0)
+            self.heartbeat_thread.join(timeout=2.0)
+        with self.frame_lock:
+            self.latest_frame = None
+        self.thread = None
+        self.heartbeat_thread = None
+        self.reconnnect_times = 0
 
     def _heartbeat(self):
         """心跳函数，定时检查摄像头是否正常工作"""
@@ -88,39 +102,84 @@ class CameraManager:
         # if not ret or frame is None:return False
         return True
     async def _reopen_if_needed(self):
-        """如果摄像头断开了，尝试重新打开"""
+        """
+        摄像头异常断开时尝试重连。
+
+        一旦用户点击停止，self.running=False，
+        重连过程必须立即退出。
+        """
         try:
-            times = 5
-            logger.warning(f"Camera {self.camera_index} ({self.camera_name}) offline, will attempt reconnection")
-            while self.reconnnect_times < times:
+            max_retries = 5
+            logger.warning("Camera %s (%s) offline, will attempt reconnection",self.camera_index,self.camera_name)
+            while self.running and self.reconnnect_times < max_retries:
                 self.reconnnect_times += 1
-                await send_websocket_json({"camera_status":{"status":"reconnecting","message":f"Camera is offline, attempting to reconnect {self.reconnnect_times}/5..."}})
-                if not self._check_camera_alive():
-                    cap_devices = graph.get_input_devices()
-                    if self.camera_name not in cap_devices:
-                        logger.error(f"Camera {self.camera_index} ({self.camera_name}) not found in available devices: {cap_devices}")
-                        time.sleep(2)
-                        continue
-                    index = get_camera_index(self.camera_name)
-                    new_cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
-                    if not new_cap.isOpened():
-                        new_cap.release()
-                        logger.error(f"Failed to reopen camera {self.camera_name}, reconnection {self.reconnnect_times}")
-                        time.sleep(2)
-                        continue 
-                    else:
-                        self.cap = new_cap
-                        self.cap_status.set(1)
-                        logger.info(f"Successfully reopened camera {self.camera_index} ({self.camera_name})")
-                        await send_websocket_json({"camera_status":{"status":"reconnected","message":"Camera reconnected successfully"}})
-                        self.reconnnect_times = 0
-                        return
-            self.running = False
-            await send_websocket_json({"camera_status":{"status":"disconnected","message":"Failed to reconnect camera after 5 attempts"}})
-            logger.error(f"Failed to reconnect camera {self.camera_index} ({self.camera_name}) after {times} attempts")
+                await send_websocket_json({
+                    "camera_status": {
+                        "status": "reconnecting",
+                        "message": (
+                            "Camera is offline, attempting to "
+                            f"reconnect {self.reconnnect_times}/"
+                            f"{max_retries}..."
+                        ),
+                    }
+                })
+                if not self.running:return
+                cap_devices = graph.get_input_devices()
+                if self.camera_name not in cap_devices:
+                    logger.error("Camera %s not found in devices: %s",self.camera_name,cap_devices,)
+                    await asyncio.sleep(2)
+                    continue
+                index = get_camera_index(self.camera_name)
+                if index is None:
+                    await asyncio.sleep(2)
+                    continue
+                new_cap = cv2.VideoCapture(index,cv2.CAP_DSHOW)
+                if not new_cap.isOpened():
+                    new_cap.release()
+                    logger.error("Failed to reopen camera %s, retry %s",self.camera_name,self.reconnnect_times)
+                    await asyncio.sleep(2)
+                    continue
+                # 打开成功后再次检查是否已经收到停止命令。
+                if not self.running:
+                    new_cap.release()
+                    return
+                self.camera_index = index
+                self.cap = new_cap
+                self.cap_status.set(1)
+                self.reconnnect_times = 0
+                logger.info("Successfully reopened camera %s (%s)",self.camera_index,self.camera_name)
+                await send_websocket_json({
+                    "camera_status": {
+                        "status": "reconnected",
+                        "message": "Camera reconnected successfully",
+                    }
+                })
+
+                return
+            if not self.running:return
             self.cap_status.set(3)
-        except Exception as e:
             self.running = False
-            await send_websocket_json({"camera_status":{"status":"disconnected","message":f"Error while trying to reopen camera: {e}"}})
-            logger.error(f"Error while trying to reopen camera {self.camera_index} ({self.camera_name}): {e}")
-            self.cap_status.set(3)    
+            await send_websocket_json({
+                "camera_status": {
+                    "status": "disconnected",
+                    "message": (
+                        f"Failed to reconnect camera after "
+                        f"{max_retries} attempts"
+                    ),
+                }
+            })
+
+        except Exception as exc:
+            if not self.running:return
+            self.running = False
+            self.cap_status.set(3)
+            logger.exception("Error while trying to reopen camera")
+            await send_websocket_json({
+                "camera_status": {
+                    "status": "disconnected",
+                    "message": (
+                        "Error while trying to reopen camera: "
+                        f"{exc}"
+                    ),
+                }
+            })

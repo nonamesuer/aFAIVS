@@ -30,7 +30,7 @@ export default {
     pauseDetection: requestWithPath("/detection/pause_detection", "GET"),
     resumeDetection: requestWithPath("/detection/resume_detection", "GET"),
     stopDetection: requestWithPath("/detection/stop_detection", "GET"),
-    closeDetection: requestWithPath("/detection/close_detection", "GET"),
+    resetDetection: requestWithPath("/detection/reset_detection", "POST"),
     statusDetection: requestWithPath("/detection/status", "GET"),
     getSopConfigration: requestWithPath("/detection/sop/configration", "GET"),
     webRTcOfferUrl:`${base_url}/detection/webrtc/offer`,

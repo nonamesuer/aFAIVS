@@ -4,10 +4,7 @@
             <el-container>
                 <el-main class="main-pane">
                     <div class="camera-layout">
-                        <div
-                            class="camera-item-top"
-                            :class="{ 'is-connected': stream.connected }"
-                        />
+                        <div class="camera-item-top" :class="{ 'is-connected': stream.connected }"/>
 
                         <div class="camera-item-header flex-center">
                             <div class="header-left flex-center">
@@ -54,7 +51,7 @@
                                 </template>
                             </div>
 
-                            <div class="header-right">结果</div>
+                            <div class="header-right">{{ $t('interacting.result') }}</div>
                         </div>
 
                         <div class="camera-item-body">
@@ -95,14 +92,14 @@
                             />
 
                             <div v-if="currentStep" class="current-step-overlay">
-                                <div class="overlay-title">当前工序</div>
+                                <div class="overlay-title">{{ $t('displaytext.currentprocess') }}</div>
                                 <div class="overlay-name text-auto-hidden">
                                     {{ currentStep.name }}
                                 </div>
                                 <div class="overlay-meta">
-                                    目标 {{ currentStep.target }}
+                                    {{ $t('displaytext.target') }} {{ currentStep.target }}
                                     |
-                                    当前 {{ currentStep.current }}
+                                    {{ $t('displaytext.current') }} {{ currentStep.current }}
                                     |
                                     {{ getStepStatusLabel(currentStep.status) }}
                                 </div>
@@ -118,7 +115,7 @@
                 </el-main>
 
                 <el-footer class="action-footer">
-                    <div class="footer-progress">
+                    <div class="footer-progress" :title="t('displaytext.overallprogress')">
                         <el-progress
                             type="circle"
                             color="var(--bs-primary-color)"
@@ -126,7 +123,7 @@
                             :width="58"
                             :stroke-width="6"
                         />
-                        <span class="footer-title">总进度</span>
+                        <span class="footer-title" >{{ $t('displaytext.oap') }}</span>
                     </div>
 
                     <div v-if="currentStep" class="footer-current">
@@ -137,7 +134,7 @@
                         <div
                             ref="footerHintRef"
                             class="footer-current-hint"
-                            :title="currentStep.hint || '等待工序提示'"
+                            :title="currentStep.hint || $t('displaytext.waitingforprocesshint')"
                         >
                             <div
                                 ref="footerHintTextRef"
@@ -145,12 +142,12 @@
                                 :class="{ 'is-scrolling': footerHintOverflow }"
                             >
                                 <div class="footer-current-hint-text">
-                                    {{ currentStep.hint || '等待工序提示' }}
+                                    {{ currentStep.hint || $t('displaytext.waitingforprocesshint') }}
                                     <div
                                         v-if="footerHintOverflow"
                                         class="footer-current-hint-end"
                                     >
-                                        -- 提示结束 --
+                                        -- {{ $t('displaytext.endhint') }} --
                                     </div>
                                 </div>
 
@@ -159,9 +156,9 @@
                                     class="footer-current-hint-text"
                                     aria-hidden="true"
                                 >
-                                    {{ currentStep.hint || '等待工序提示' }}
+                                    {{ currentStep.hint || $t('displaytext.waitingforprocesshint') }}
                                     <div class="footer-current-hint-end">
-                                        -- 提示结束 --
+                                        -- {{ $t('displaytext.endhint') }} --
                                     </div>
                                 </div>
                             </div>
@@ -169,23 +166,21 @@
                     </div>
 
                     <div class="footer-actions">
-                        <el-button v-if="!runtime.active" type="primary" :icon="VideoPlay" @click="handleStartDetection">
-                            开始
-                        </el-button>
+                        <el-button v-if="!runtime.active" type="primary" :icon="VideoPlay" @click="handleStartDetection">{{ $t('button.start') }}</el-button>
 
                         <el-button v-if="runtime.running" type="primary"  plain :icon="VideoPause" @click="handlePauseDetection">
-                            暂停
+                            {{ $t('button.pause') }}
                         </el-button>
 
                         <el-button v-if="runtime.paused" type="primary" :icon="VideoPlay" @click="handleResumeDetection">
-                            继续
+                            {{ $t('button.resume') }}
                         </el-button>
 
-                        <el-button v-if="runtime.active" type="warning" :icon="RefreshLeft" @click="handleCloseDetection">
-                            复位
+                        <el-button v-if="runtime.active" type="warning" :icon="RefreshLeft" @click="handleResetDetection">
+                            {{ $t('button._reset') }}
                         </el-button>
 
-                        <el-button type="danger" :icon="Stopwatch" plain>停止</el-button>
+                        <el-button type="danger" :icon="Stopwatch" @click="handleStopDetection">{{ $t('button.stop') }}</el-button>
                     </div>
                 </el-footer>
             </el-container>
@@ -193,7 +188,7 @@
             <el-aside width="340px" class="right-side">
                 <el-card class="side-card side-card-current" shadow="never">
                     <template #header>
-                        <div>当前工序</div>
+                        <div>{{ $t('displaytext.currentprocess') }}</div>
                     </template>
 
                     <div v-if="currentStep" class="current-section">
@@ -203,18 +198,18 @@
                         <div class="current-progress-row">
                             <div class="current-metrics">
                                 <div class="current-metric current-metric-target">
-                                    <span>目标</span>
+                                    <span>{{ $t('displaytext.target') }}</span>
                                     <strong>{{ currentStep.target }}</strong>
                                 </div>
 
                                 <div class="current-metric current-metric-current">
-                                    <span>当前</span>
+                                    <span>{{ $t('displaytext.current') }}</span>
                                     <strong>{{ currentStep.current }}</strong>
                                 </div>
                             </div>
 
                             <div class="current-progress-meter">
-                                <span class="current-progress-label">进度</span>
+                                <span class="current-progress-label">{{ $t('displaytext.progress') }}</span>
                                 <el-progress
                                     :percentage="currentStepProgress"
                                     :stroke-width="9"
@@ -229,7 +224,7 @@
                 <el-card class="side-card side-card-steps" shadow="never">
                     <template #header>
                         <div>
-                            工序步骤：
+                            {{ $t('displaytext.processstep') }}：
                             <span>{{ okCount }}/{{ processSteps.length }}</span>
                         </div>
                     </template>
@@ -255,13 +250,13 @@
                 <el-card class="side-card side-card-alerts" shadow="never">
                     <template #header>
                         <div style="color: red">
-                            错误与告警：<span>{{ ngCount }}</span>
+                            {{ $t('displaytext.errorsandalerts') }}：<span>{{ ngCount }}</span>
                         </div>
                     </template>
 
                     <div>
                         <div v-if="!unconfirmedAlerts.length" class="empty-state">
-                            暂无未确认告警
+                            {{ $t('displaytext.noalert') }}
                         </div>
 
                         <div v-else class="alert-list">
@@ -273,10 +268,7 @@
                                 :class="`alert-${alert.level}`"
                             >
                                 <div class="alert-line">
-                                    <el-tag
-                                        size="small"
-                                        :type="getTagType(alert.level)"
-                                    >
+                                    <el-tag size="small" :type="getTagType(alert.level)">
                                         {{ alert.code }}
                                     </el-tag>
                                     <span class="alert-message">
@@ -290,7 +282,7 @@
 
                 <el-card class="side-card side-card-events" shadow="never">
                     <template #header>
-                        <div>实时事件</div>
+                        <div>{{ $t('displaytext.realtimeevent') }}</div>
                     </template>
 
                     <div class="events-section">
@@ -323,7 +315,7 @@ import { computed, nextTick, onBeforeUnmount,onMounted,reactive,ref, watch} from
 import { VideoPause, VideoPlay,RefreshLeft,Stopwatch } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api/index'
-import { MesAlertWTitle } from '@/assets/js/secondpk'
+import { MesAlertWTitle,MesConfirmWTitle } from '@/assets/js/secondpk'
 import { useAppStore } from '@/stores/store'
 
 const appStore = useAppStore()
@@ -397,13 +389,9 @@ const unconfirmedAlerts = computed(() =>
 )
 
 const runtimeStatus = computed(() => {
-    if (runtime.paused) {
-        return { label: '已暂停', tagType: 'warning' }
-    }
-    if (runtime.running) {
-        return { label: '运行中', tagType: 'success' }
-    }
-    return { label: '未启动', tagType: 'info' }
+    if (runtime.paused) return { label: t('displaytext.paused'), tagType: 'warning' };
+    if (runtime.running) return { label: t('displaytext.running'), tagType: 'success' };
+    return { label: t('displaytext.nostarted'), tagType: 'info' };
 })
 
 const currentStepIndex = computed(() => {
@@ -1289,13 +1277,7 @@ async function runDetectionAction({
         if (!response.status) {
             const message = response.msg || fallbackMessage
             setStreamState(false, message)
-            MesAlertWTitle(
-                'error',
-                t('message.error'),
-                title,
-                message,
-                'OK',
-            )
+            MesAlertWTitle('error',t('message.error'),title,message,'OK',)
             return false
         }
 
@@ -1312,18 +1294,13 @@ async function runDetectionAction({
 
 async function refreshDetectionStatus() {
     appStore.setLoading(true)
-
     try {
         const { data: response } = await api.statusDetection()
         applyRuntimeStatus(response)
-
         if (runtime.running || runtime.active) {
             startClientStreams()
         } else {
-            setStreamState(
-                false,
-                t('message.messagetext.closedDetection'),
-            )
+            setStreamState(false,t('message.messagetext.closedDetection'))
         }
     } catch (error) {
         showApiError(
@@ -1334,7 +1311,33 @@ async function refreshDetectionStatus() {
         appStore.setLoading(false)
     }
 }
+function clearDetectionHistory() {
+    events.value = []
+    alerts.value = []
+    clearCriticalAlert()
+    lastSopEventKey = ''
+    lastCriticalAlertKey = ''
+}
+function resetStoppedUiState() {
+    detectionResult.value = createEmptyDetectionResult()
 
+    processSteps.value = buildProcessSteps(
+        sopConfiguration.value.steps || [],
+    )
+
+    clearDetectionHistory()
+
+    timeoutNow.value = Date.now()
+    footerHintOverflow.value = false
+
+    stream.transport = 'webrtc'
+    mjpegUrl.value = `${api.mjpegBaseUrl}?ts=${Date.now()}`
+
+    setStreamState(
+        false,
+        t('message.messagetext.stopedDetection'),
+    )
+}
 async function handleStartDetection() {
     if (
         !cameraName.value ||
@@ -1414,20 +1417,96 @@ async function handleResumeDetection() {
     })
 }
 
-async function handleCloseDetection() {
-    await runDetectionAction({
-        request: api.closeDetection,
-        title: t(
-            'message.messagetext.faildCloseDetection',
-        ),
-        fallbackMessage: t(
-            'message.messagetext.faildCloseDetection',
-        ),
+async function handleResetDetection() {
+    let clearHistory = false
+    const result = await MesConfirmWTitle("warning",t('message.warning'), t('message.messagetext.confirmResetDetection'), t('message.messagetext.confirmResetDetectionDesc'), t('button.resetandclear'), t('button.onlyreset')).then(()=>{
+        clearHistory = true
+    }).catch(()=>{
+        clearHistory = false
+    }).finally(async () => {
+        await runDetectionAction({
+            request: api.resetDetection,
+            title: t('message.messagetext.failedResetDetection'),
+            fallbackMessage: t('message.messagetext.failedResetDetection'),
+            onSuccess: (res) => {
+                resetProcessSteps();
+                if (clearHistory) {
+                    clearDetectionHistory()
+                }
+                const result = res.data?.result;
+                if(result){
+                    applyDetectionResult(result)
+                }else{
+                    detectionResult.value = {
+                        ...createEmptyDetectionResult(),
+                        step: 1,
+                    }
+
+                    processSteps.value = buildProcessSteps(
+                        sopConfiguration.value.steps || [],
+                    ).map((step, index) => ({
+                        ...step,
+                        current: 0,
+                        reason: '',
+                        status: index === 0
+                            ? 'process'
+                            : 'wait',
+                    }))
+                }
+                timeoutNow.value = Date.now();
+                if (runtime.running && !stream.connected) {
+                    startClientStreams()
+                }
+                if (runtime.paused) {
+                    setStreamState(null,'检测已暂停，工序已复位到第一步',true,)
+                }
+            },
+        })
+    })
+}
+    
+async function handleStopDetection() {
+        await runDetectionAction({
+        request: api.stopDetection,
+
+        title: '停止失败',
+        fallbackMessage: '无法停止检测运行时',
+
         onSuccess: () => {
-            resetProcessSteps()
+            /*
+             * 后端已经停止：
+             * - 检测线程
+             * - 手部检测线程
+             * - 摄像头
+             * - WebRTC
+             */
+
+            /*
+             * 前端停止：
+             * - WebRTC PeerConnection
+             * - MJPEG
+             * - 结果 WebSocket
+             * - 自动重连定时器
+             */
             stopClientStreams(
-                t('message.messagetext.closedDetection'),
+                t('message.messagetext.stopedDetection'),
             )
+
+            /*
+             * 即使后端返回状态异常，也强制把前端恢复到
+             * “未开始”状态。
+             */
+            applyRuntimeStatus({
+                initialized: false,
+                running: false,
+                paused: false,
+                active: false,
+            })
+
+            /*
+             * 清空工序、事件、告警、OK/NG 和当前结果。
+             */
+            resetStoppedUiState()
         },
     })
 }

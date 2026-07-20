@@ -85,17 +85,43 @@ async def _cancel_tasks(*tasks: asyncio.Task) -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def _stop_detection_runtime(runtime: DetectionRuntime | None) -> None:
+async def _stop_detection_runtime(
+    runtime: DetectionRuntime | None,
+) -> None:
+    """
+    完整停止检测运行时：
+
+    1. 禁止摄像头和检测线程继续运行。
+    2. 关闭所有 WebRTC 连接。
+    3. 停止检测线程、手部检测线程和摄像头线程。
+    4. 清除全局运行时。
+    """
     global _runtime
+
     CapStatus().set(0)
     DetectorStatus().set(0)
-    if not runtime:
+
+    if runtime is None:
+        with _runtime_lock:
+            _runtime = None
         return
-    await runtime.close_peer_connections()
-    runtime.stop()
+
+    # 先从全局移除，防止停止过程中继续使用旧 runtime。
     with _runtime_lock:
         if _runtime is runtime:
             _runtime = None
+
+    try:
+        await runtime.close_peer_connections()
+    except Exception:
+        logger.exception("关闭 WebRTC 连接失败")
+
+    try:
+        # runtime.stop() 中包含线程 join，
+        # 放到工作线程执行，避免阻塞 FastAPI 事件循环。
+        await asyncio.to_thread(runtime.stop)
+    except Exception:
+        logger.exception("停止检测运行时失败")
 
 
 @api_detection.websocket("/ws/result")
@@ -123,7 +149,7 @@ async def ws_result(websocket: WebSocket):
     finally:
         await _cancel_tasks(sender_task, disconnect_task)
         WEBSOCKET_CLIENTS.discard(websocket)
-        await _stop_detection_runtime(runtime or get_runtime())
+        # await _stop_detection_runtime(runtime or get_runtime())
 
 
 class OfferRequest(BaseModel):
@@ -253,14 +279,51 @@ async def stop_detection():
     return JSONResponse({"status":True,"msg":"检测已停止","data":runtime_status()})
 
 
-@api_detection.get("/close_detection")
-async def close_detection():
+@api_detection.post("/reset_detection")
+def reset_detection():
+    """
+    只复位 SOP，不关闭摄像头、线程、WebRTC 和结果 WebSocket。
+    """
     runtime = get_runtime()
-    if not runtime:
-        return JSONResponse({"status":True,"msg":"检测已关闭","data":runtime_status()})
-    await _stop_detection_runtime(runtime)
-    return JSONResponse({"status":True,"msg":"检测已关闭","data":runtime_status()})
 
+    if not runtime or not runtime.running:
+        return JSONResponse({
+            "status": False,
+            "msg": "检测尚未启动，无法复位",
+            "data": runtime_status(),
+        })
+
+    result = runtime.reset()
+
+    if result is None:
+        return JSONResponse({
+            "status": False,
+            "msg": "检测复位失败",
+            "data": runtime_status(),
+        })
+
+    data = runtime_status()
+    data["result"] = result
+
+    return JSONResponse({
+        "status": True,
+        "msg": "工序已复位到第一步",
+        "data": data,
+    })
+@api_detection.get("/stop_detection")
+async def stop_detection():
+    """
+    完整停止检测并释放所有资源。
+    """
+    runtime = get_runtime()
+
+    await _stop_detection_runtime(runtime)
+
+    return JSONResponse({
+        "status": True,
+        "msg": "检测已停止",
+        "data": runtime_status(),
+    })
 ##
 # *********************************************************
 # Start my featrue
