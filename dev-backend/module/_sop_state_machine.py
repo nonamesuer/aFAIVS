@@ -100,6 +100,23 @@ class StepObservation:
     hand_in_target: bool
     hand_on_object: bool
     outside_target_centers: list[tuple[float, float]]
+    # ==========================
+    # 新增：取料来源监控
+    # ==========================
+
+    # 当前手进入了哪些物料来源区域
+    hand_source_regions: list[str]
+
+    # 当前手在各来源区域内接触了哪些物料
+    #
+    # 例如：
+    # {
+    #     "A料盒": ["part_A"],
+    #     "B料盒": ["part_B"],
+    # }
+    hand_engaged_source_objects: dict[str, list[str]]
+    # 手当前在整个画面中接触的所有已知物料
+    hand_engaged_materials: list[str]
 
 
 @dataclass
@@ -144,6 +161,16 @@ class SOPStepRuntime:
     transit_seen: bool = False
     target_entry_seen: bool = False
     release_seen: bool = False
+
+    # 本次操作真正从哪个区域开始拿料
+    pickup_origin_region: str | None = None
+    # 本次实际接触/拿取的物料
+    pickup_object_label: str | None = None
+    # 是否已经检测到错误取料
+    wrong_pick_latched: bool = False
+    # 错误原因
+    wrong_pick_reason: str = ""
+    wrong_pick_clear_count: int = 0
 
     @classmethod
     def from_config(cls, data: dict[str, Any]) -> "SOPStepRuntime":
@@ -247,6 +274,17 @@ class SOPStepRuntime:
         self.target_entry_seen = False
         self.release_seen = False
 
+
+        # --------------------------
+        # 取料来源监控
+        # --------------------------
+        self.pickup_origin_region = None
+        self.pickup_object_label = None
+
+        self.wrong_pick_latched = False
+        self.wrong_pick_reason = ""
+        self.wrong_pick_clear_count = 0
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -331,6 +369,15 @@ class SOPStateMachine:
         self.enable_ready_check = enable_ready_check
         self.ready_check_timeout = ready_check_timeout
         self.ready_started_at: float | None = None
+
+
+        #取料监控
+        self.source_region_names = self._collect_source_region_names()
+        self.material_labels = {
+            step.expected_object
+            for step in self.steps
+            if step.expected_object
+        }
 
     @classmethod
     def from_sop_map(
@@ -492,16 +539,64 @@ class SOPStateMachine:
                 self._fail_current_step(blocking_reason)
             step.last_reason = blocking_reason
             return self.snapshot(matched=False, reason=blocking_reason)
+        observation = self._observe(step, boxes, hands)
+        # =====================================================
+        # 1. 如果当前是“错误取料锁存”
+        # 先检查操作者是否已经结束错误动作
+        # =====================================================
+        if step.wrong_pick_latched:
+            recovered, recovery_reason = self._try_recover_wrong_pick(step,observation)
+            if not recovered:
 
+                step.last_reason = (
+                    recovery_reason
+                )
+
+                return self.snapshot(
+                    matched=False,
+                    reason=recovery_reason,
+                )
+            # 已经恢复。
+            #
+            # 当前这一帧只负责完成状态恢复，
+            # 不立即继续判定新动作。
+            #
+            # 下一帧再重新从 WAITING 开始，
+            # 可以避免恢复帧被误当成新的取料动作。
+
+            return self.snapshot(
+                matched=False,
+                reason=recovery_reason,
+            )
         if self.state == SOPRunState.FAILED:
             self._recover_current_step("Blocking condition cleared; restarting current cycle")
+            return self.snapshot(
+                matched=False,
+                reason=(
+                    "Blocking condition cleared; "
+                    "restarting current cycle"
+                ),
+            )
 
+        
+
+        
+        # ==========================================
+        # 新增：在正常 SOP 推进之前检查错误取料
+        # ==========================================
+        wrong_pick_reason = self._check_wrong_pick(step, observation)
+        if wrong_pick_reason:
+            if self.state != SOPRunState.FAILED:
+                self._fail_current_step(wrong_pick_reason)
+            step.last_reason = wrong_pick_reason
+            return self.snapshot(matched=False, reason=wrong_pick_reason)
+        # =========================================
+        #END
+        # ========================================
         timeout_reason = self._check_timeout(step)
         if timeout_reason:
             self._fail_current_step(timeout_reason)
             return self.snapshot(matched=False, reason=timeout_reason)
-
-        observation = self._observe(step, boxes, hands)
         if step.awaiting_cycle_reset:
             ready, reason = self._try_reset_for_next_cycle(step, observation)
             step.last_reason = reason
@@ -596,12 +691,100 @@ class SOPStateMachine:
         target_regions = find_boxes(boxes, step.to_region)
         hand_points = self._hand_action_points(step, hands)
 
+        hand_margin = self._hand_margin(step)
+
         source_count = count_boxes_inside_regions(expected_boxes, source_regions)
         target_count = count_boxes_inside_regions(expected_boxes, target_regions)
         outside_source_count = len(expected_boxes) - source_count if source_regions else len(expected_boxes)
         outside_target_count = len(expected_boxes) - target_count
         transit_count = count_boxes_outside_regions(expected_boxes, source_regions + target_regions)
         centers = [box.center for box in expected_boxes if box.center and not point_in_any_region(box.center, target_regions)]
+
+
+        # =====================================================
+        # 新增：
+        # 检查当前手到底在哪一个物料来源区域
+        # =====================================================
+
+        hand_source_regions: list[str] = []
+
+        hand_engaged_source_objects: dict[str, list[str],] = {}
+        hand_engaged_materials: list[str] = []
+        for material_label in self.material_labels:
+
+            material_boxes = find_boxes(
+                boxes,
+                material_label,
+            )
+
+            if self._points_engage_boxes(
+                hand_points,
+                material_boxes,
+                hand_margin,
+            ):
+                hand_engaged_materials.append(
+                    material_label,
+                )
+        for region_name in self.source_region_names:
+
+            region_boxes = find_boxes(
+                boxes,
+                region_name,
+            )
+
+            if not region_boxes:
+                continue
+
+            # 手是否进入这个料区
+            hand_in_region = self._points_engage_boxes(
+                hand_points,
+                region_boxes,
+                hand_margin,
+            )
+
+            if not hand_in_region:
+                continue
+
+            hand_source_regions.append(
+                region_name,
+            )
+
+            engaged_objects: list[str] = []
+
+            # 检查手在该区域内接触的是哪一种物料
+            for material_label in self.material_labels:
+
+                material_boxes = find_boxes(
+                    boxes,
+                    material_label,
+                )
+
+                # 只保留位于当前料区中的物料
+                material_boxes_in_region = [
+                    box
+                    for box in material_boxes
+                    if (
+                        box.center is not None
+                        and point_in_any_region(
+                            box.center,
+                            region_boxes,
+                        )
+                    )
+                ]
+
+                if self._points_engage_boxes(
+                    hand_points,
+                    material_boxes_in_region,
+                    hand_margin,
+                ):
+                    engaged_objects.append(
+                        material_label,
+                    )
+
+            if engaged_objects:
+                hand_engaged_source_objects[
+                    region_name
+                ] = engaged_objects
 
         return StepObservation(
             expected_boxes=expected_boxes,
@@ -614,10 +797,14 @@ class SOPStateMachine:
             outside_target_count=outside_target_count,
             transit_count=transit_count,
             hand_visible=bool(hand_points),
-            hand_in_source=self._points_engage_boxes(hand_points, source_regions, self._hand_margin(step)),
-            hand_in_target=self._points_engage_boxes(hand_points, target_regions, self._hand_margin(step)),
-            hand_on_object=self._points_engage_boxes(hand_points, expected_boxes, self._hand_margin(step)),
+            hand_in_source=self._points_engage_boxes(hand_points, source_regions, hand_margin),
+            hand_in_target=self._points_engage_boxes(hand_points, target_regions, hand_margin),
+            hand_on_object=self._points_engage_boxes(hand_points, expected_boxes, hand_margin),
             outside_target_centers=[center for center in centers if center is not None],
+            # 新增
+            hand_source_regions=hand_source_regions,
+            hand_engaged_source_objects=(hand_engaged_source_objects),
+            hand_engaged_materials=hand_engaged_materials,
         )
 
     def _initialize_cycle(self, step: SOPStepRuntime, obs: StepObservation) -> None:
@@ -1043,7 +1230,300 @@ class SOPStateMachine:
         if count <= tolerance:
             return False, f"{reason} ({count}/{tolerance}); holding phase {step.phase.value}"
         return self._restart_cycle(step, f"{reason} exceeded missTolerance={tolerance}")
+    def _collect_source_region_names(self) -> list[str]:
+        """
+        收集所有需要监控的物料来源区域。
 
+        默认自动从所有工序的 fromRegion 中收集。
+        """
+
+        result: list[str] = []
+
+        for step in self.steps:
+            region = step.from_region.strip()
+
+            if region and region not in result:
+                result.append(region)
+
+        # 允许以后在 SOP 根配置中额外增加监控区域
+        extra_regions = self.sop_config.get(
+            "materialSourceRegions",
+            [],
+        )
+
+        if isinstance(extra_regions, list):
+            for region in extra_regions:
+                region = str(region).strip()
+
+                if region and region not in result:
+                    result.append(region)
+
+        return result
+    def _check_wrong_pick(
+        self,
+        step: SOPStepRuntime,
+        obs: StepObservation,
+    ) -> str:
+
+        # 没配置固定起始区域，不做来源检查
+        if not step.from_region:
+            return ""
+
+        # 没启用手部识别，无法可靠判断
+        # “操作者从哪个区域拿的”
+        if not step.hand_gate_enabled:
+            return ""
+
+        # 已经锁定错误取料以后，
+        # 不允许下一帧自动恢复。
+        # if step.wrong_pick_latched:
+        #     return step.wrong_pick_reason
+
+        expected_region = (
+            step.from_region
+            .strip()
+            .lower()
+        )
+
+        expected_object = (
+            step.expected_object
+            .strip()
+            .lower()
+        )
+
+        for region_name in obs.hand_source_regions:
+
+            objects = (
+                obs.hand_engaged_source_objects
+                .get(
+                    region_name,
+                    [],
+                )
+            )
+
+            # 手只是经过区域，
+            # 但没有接触任何已知物料，
+            # 先不判 NG。
+            if not objects:
+                continue
+
+            actual_region = (
+                region_name
+                .strip()
+                .lower()
+            )
+
+            # =====================================
+            # 1. 从错误料区拿料
+            # =====================================
+
+            if actual_region != expected_region:
+
+                actual_object = objects[0]
+
+                reason = (
+                    "NG: Wrong pickup source: "
+                    f"expected {step.from_region}, "
+                    f"but operator picked "
+                    f"{actual_object} "
+                    f"from {region_name}"
+                )
+
+                step.pickup_origin_region = (
+                    region_name
+                )
+
+                step.pickup_object_label = (
+                    actual_object
+                )
+
+                step.wrong_pick_latched = True
+                step.wrong_pick_reason = reason
+
+                return reason
+
+            # =====================================
+            # 2. 区域正确，但是拿错物料
+            # =====================================
+
+            if expected_object:
+
+                for actual_object in objects:
+
+                    if (
+                        actual_object
+                        .strip()
+                        .lower()
+                        != expected_object
+                    ):
+
+                        reason = (
+                            "NG: Wrong material pickup: "
+                            f"expected "
+                            f"{step.expected_object}, "
+                            f"but operator picked "
+                            f"{actual_object} "
+                            f"from {region_name}"
+                        )
+
+                        step.pickup_origin_region = (
+                            region_name
+                        )
+
+                        step.pickup_object_label = (
+                            actual_object
+                        )
+
+                        step.wrong_pick_latched = True
+                        step.wrong_pick_reason = (
+                            reason
+                        )
+
+                        return reason
+
+            # =====================================
+            # 正确来源 + 正确物料
+            # =====================================
+
+            step.pickup_origin_region = (
+                region_name
+            )
+
+            if objects:
+                step.pickup_object_label = (
+                    objects[0]
+                )
+
+        return ""
+    def _try_recover_wrong_pick(
+        self,
+        step: SOPStepRuntime,
+        obs: StepObservation,
+    ) -> tuple[bool, str]:
+        """
+        检查错误取料动作是否已经结束。
+
+        恢复条件：
+        1. 手已经离开所有物料来源区域；
+        2. 手已经不再接触刚才拿错的物料；
+        3. 连续 stable_frames 帧满足以上条件。
+
+        满足后：
+        FAILED -> RUNNING
+        当前工序从本轮重新开始。
+        """
+
+        if not step.wrong_pick_latched:
+            return True, ""
+
+        wrong_region = (
+            step.pickup_origin_region or ""
+        )
+
+        wrong_object = (
+            step.pickup_object_label or ""
+        )
+
+        # ========================================
+        # 1. 是否还在错误取料区域
+        # ========================================
+
+        wrong_region_active = any(
+            region.strip().lower()
+            == wrong_region.strip().lower()
+
+            for region in obs.hand_source_regions
+        )
+
+        # ========================================
+        # 2. 是否仍然接触错误物料
+        # ========================================
+
+        wrong_object_active = bool(
+            wrong_object
+            and any(
+                label.strip().lower()
+                == wrong_object.strip().lower()
+
+                for label in (
+                    obs.hand_engaged_materials
+                )
+            )
+        )
+
+        # ========================================
+        # 3. 是否还进入其它任何取料区域
+        #
+        # 这里故意要求操作者先把手退出料区，
+        # 再重新开始正确动作。
+        #
+        # 防止：
+        #
+        # box_B 拿错
+        #     ↓
+        # 手直接移动到 box_A
+        #     ↓
+        # 系统误以为已经纠正
+        # ========================================
+
+        any_source_active = bool(
+            obs.hand_source_regions
+        )
+
+        if (
+            wrong_region_active
+            or wrong_object_active
+            or any_source_active
+        ):
+            step.wrong_pick_clear_count = 0
+
+            return (
+                False,
+                (
+                    f"{step.wrong_pick_reason}; "
+                    "please release the wrong material "
+                    "and move hand away from material area"
+                ),
+            )
+
+        # ========================================
+        # 4. 错误动作已经消失
+        # 连续稳定几帧再恢复，避免检测抖动
+        # ========================================
+
+        step.wrong_pick_clear_count += 1
+
+        required_frames = max(
+            2,
+            self.stable_frames,
+        )
+
+        if (
+            step.wrong_pick_clear_count
+            < required_frames
+        ):
+            return (
+                False,
+                (
+                    "Wrong pickup released; "
+                    f"confirming "
+                    f"{step.wrong_pick_clear_count}/"
+                    f"{required_frames}"
+                ),
+            )
+
+        # ========================================
+        # 5. 真正解除错误状态
+        # ========================================
+
+        self._recover_current_step(
+            "Wrong pickup cleared; restart current cycle"
+        )
+
+        return (
+            True,
+            "Wrong pickup cleared; restart current cycle",
+        )
     def _object_motion_detected(self, step: SOPStepRuntime, obs: StepObservation) -> bool:
         if not obs.outside_target_centers:
             return False

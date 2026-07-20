@@ -9,7 +9,7 @@
                 "type": "p_object",
                 "hint": "捡起P1零件并放置到CY中",
                 "target": 3,
-                "timeout": 6,
+                "timeout": 30,
                 "context": {
                     "expectedObject": "P1",
                     "toRegion": "CY",
@@ -35,14 +35,14 @@
             },
             {
                 "id": 2,
-                "name": "安装P2零件",
+                "name": "安装P3零件",
                 "type": "p_object",
-                "hint": "捡起P2零件并放置到CY中",
+                "hint": "捡起P3零件并放置到CY中",
                 "target": 1,
                 "timeout": 30,
                 "context": {
-                    "expectedObject": "P2",
-                    "fromRegion": "A1",
+                    "expectedObject": "P3",
+                    "fromRegion": "P2",
                     "toRegion": "CY",
                     "handPoints": {
                         "l": [],
@@ -65,6 +65,6 @@
         ],
         "create_time": "2026-07-09 11:44:07",
         "enabled": true,
-        "modify_time": "2026-07-17 11:17:32"
+        "modify_time": "2026-07-20 10:13:00"
     }
 }

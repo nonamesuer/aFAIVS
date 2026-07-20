@@ -202,7 +202,7 @@ export default{
         errorsandalerts:"Errors and Alerts",
         noalert:"No Alerts",
         realtimeevent:"Real-time Event",
-        oap:"OA-P",
+        oap:"OA-PRGRS",
         overallprogress:"Overall Progress",
         waitingforprocesshint:"Waiting for process hint",
         endhint:"End of hint",
