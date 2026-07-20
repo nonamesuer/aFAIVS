@@ -10,11 +10,7 @@
     <template #header>
       <el-form v-if="visible" :model="modelCameraForm" :inline="true">
         <el-form-item :label="$t('config.model')" prop="model" required>
-          <el-select
-            v-model="modelCameraForm.model"
-            style="width: 200px"
-            @change="(model) => $emit('modelChanged', model)"
-          >
+          <el-select v-model="modelCameraForm.model" style="width: 200px" @change="(model) => $emit('modelChanged', model)">
             <el-option
               v-for="(available, model, index) in modelsList"
               :key="index"

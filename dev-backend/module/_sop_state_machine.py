@@ -101,12 +101,10 @@ class StepObservation:
     hand_on_object: bool
     outside_target_centers: list[tuple[float, float]]
     # ==========================
-    # 新增：取料来源监控
+    # 取料来源监控
     # ==========================
-
     # 当前手进入了哪些物料来源区域
     hand_source_regions: list[str]
-
     # 当前手在各来源区域内接触了哪些物料
     #
     # 例如：
@@ -414,7 +412,9 @@ class SOPStateMachine:
         return max(counts) if counts else 0
 
     def start(self) -> None:
+        print("Starting SOP:", self.steps)
         if not self.steps:
+            print("空")
             self.state = SOPRunState.FAILED
             self.last_reason = "SOP steps is empty"
             return

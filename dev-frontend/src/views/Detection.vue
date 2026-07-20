@@ -997,6 +997,7 @@ function connectResultSocket() {
             try {
                 const payload = JSON.parse(data)
                 if (payload.ws_result) {
+                    console.log('接收到检测结果:', payload.ws_result)
                     applyDetectionResult(payload.ws_result)
                 } else if (payload.camera_status) {
                     handleCameraStatus(payload.camera_status)
