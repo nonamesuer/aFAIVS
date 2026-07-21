@@ -249,8 +249,22 @@ const integrationDialogVisible = ref(false);
 interface DetectionIntegrationConfig {
   triggers: {
     httpApi: boolean;
+    httpParameters: Array<{
+      name: string;
+      value: string;
+    }>;
     usbScanner: boolean;
+    usbScannerLength: {
+      min: number;
+      max: number;
+    };
     modbus: boolean;
+    modbusSignals: Array<{
+      slaveAddress: number;
+      dataType: "coil" | "discreteInput" | "holdingRegister" | "inputRegister";
+      address: number;
+      triggerValue: boolean | number;
+    }>;
   };
   resultFeedback: {
     enabled: boolean;
@@ -264,8 +278,14 @@ interface DetectionIntegrationConfig {
 const detectionIntegrationConfig = ref<DetectionIntegrationConfig>({
   triggers: {
     httpApi: false,
+    httpParameters: [],
     usbScanner: false,
+    usbScannerLength: {
+      min: 1,
+      max: 128,
+    },
     modbus: false,
+    modbusSignals: [],
   },
   resultFeedback: {
     enabled: false,
@@ -309,10 +329,21 @@ const getConfig = () => {
     if (datas.boxStyle) {boxStyleConfig.value = {...boxStyleConfig.value,...datas.boxStyle, }};
     if (datas.modbus) {modbusConfig.value = {...modbusConfig.value,...datas.modbus, }};
     if (datas.detectionIntegration) {
+      const triggerConfig = datas.detectionIntegration.triggers || {};
       detectionIntegrationConfig.value = {
         triggers: {
           ...detectionIntegrationConfig.value.triggers,
-          ...(datas.detectionIntegration.triggers || {}),
+          ...triggerConfig,
+          httpParameters: Array.isArray(triggerConfig.httpParameters)
+            ? triggerConfig.httpParameters.slice(0, 3)
+            : [],
+          usbScannerLength: {
+            ...detectionIntegrationConfig.value.triggers.usbScannerLength,
+            ...(triggerConfig.usbScannerLength || {}),
+          },
+          modbusSignals: Array.isArray(triggerConfig.modbusSignals)
+            ? triggerConfig.modbusSignals.slice(0, 3)
+            : [],
         },
         resultFeedback: {
           ...detectionIntegrationConfig.value.resultFeedback,

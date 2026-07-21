@@ -90,7 +90,13 @@
         "triggers": {
             "httpApi": true,
             "usbScanner": false,
-            "modbus": false
+            "modbus": false,
+            "httpParameters": [],
+            "usbScannerLength": {
+                "min": 1,
+                "max": 128
+            },
+            "modbusSignals": []
         },
         "resultFeedback": {
             "enabled": false,

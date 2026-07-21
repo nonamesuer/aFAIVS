@@ -22,34 +22,213 @@
           </div>
 
           <div class="trigger-list">
-            <div class="setting-row">
-              <div>
-                <div class="setting-title">{{ $t('config.http_api_trigger') }}</div>
-                <div class="setting-description">
-                  {{ $t('config.http_api_trigger_description') }}
+            <div class="trigger-item">
+              <div class="setting-row">
+                <div>
+                  <div class="setting-title">{{ $t('config.http_api_trigger') }}</div>
+                  <div class="setting-description">
+                    {{ $t('config.http_api_trigger_description') }}
+                  </div>
+                </div>
+                <el-switch v-model="form.triggers.httpApi" />
+              </div>
+
+              <div v-if="form.triggers.httpApi" class="trigger-details">
+                <div class="detail-toolbar">
+                  <span>{{ $t('config.http_parameter_count', { count: form.triggers.httpParameters.length }) }}</span>
+                  <el-button
+                    type="primary"
+                    plain
+                    :icon="Plus"
+                    :disabled="form.triggers.httpParameters.length >= MAX_HTTP_PARAMETERS"
+                    @click="addHttpParameter"
+                  >
+                    {{ $t('config.add_http_parameter') }}
+                  </el-button>
+                </div>
+
+                <div v-if="form.triggers.httpParameters.length === 0" class="empty-detail">
+                  {{ $t('config.no_http_parameters') }}
+                </div>
+                <div v-else class="detail-list">
+                  <el-row
+                    v-for="(parameter, index) in form.triggers.httpParameters"
+                    :key="index"
+                    :gutter="12"
+                    class="detail-row"
+                    align="middle"
+                  >
+                    <el-col :span="10">
+                      <el-input
+                        v-model="parameter.name"
+                        :placeholder="$t('config.http_parameter_name_placeholder')"
+                        maxlength="50"
+                      />
+                    </el-col>
+                    <el-col :span="12">
+                      <el-input
+                        v-model="parameter.value"
+                        :placeholder="$t('config.http_parameter_value_placeholder')"
+                        maxlength="200"
+                      />
+                    </el-col>
+                    <el-col :span="2" class="delete-column">
+                      <el-icon color="red" size="20px" @click="removeHttpParameter(index)">
+                        <Delete />
+                      </el-icon>
+                    </el-col>
+                  </el-row>
                 </div>
               </div>
-              <el-switch v-model="form.triggers.httpApi" />
             </div>
 
-            <div class="setting-row">
-              <div>
-                <div class="setting-title">{{ $t('config.usb_scanner_trigger') }}</div>
-                <div class="setting-description">
-                  {{ $t('config.usb_scanner_trigger_description') }}
+            <div class="trigger-item">
+              <div class="setting-row">
+                <div>
+                  <div class="setting-title">{{ $t('config.usb_scanner_trigger') }}</div>
+                  <div class="setting-description">
+                    {{ $t('config.usb_scanner_trigger_description') }}
+                  </div>
                 </div>
+                <el-switch v-model="form.triggers.usbScanner" />
               </div>
-              <el-switch v-model="form.triggers.usbScanner" />
+
+              <div v-if="form.triggers.usbScanner" class="trigger-details">
+                <el-row :gutter="16">
+                  <el-col :span="12">
+                    <el-form-item :label="$t('config.usb_min_length')">
+                      <el-input-number
+                        v-model="form.triggers.usbScannerLength.min"
+                        :min="1"
+                        :max="9999"
+                        :step="1"
+                        step-strictly
+                        style="width: 100%"
+                      />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="12">
+                    <el-form-item :label="$t('config.usb_max_length')">
+                      <el-input-number
+                        v-model="form.triggers.usbScannerLength.max"
+                        :min="1"
+                        :max="9999"
+                        :step="1"
+                        step-strictly
+                        style="width: 100%"
+                      />
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+              </div>
             </div>
 
-            <div class="setting-row">
-              <div>
-                <div class="setting-title">{{ $t('config.modbus_trigger') }}</div>
-                <div class="setting-description">
-                  {{ $t('config.modbus_trigger_description') }}
+            <div class="trigger-item">
+              <div class="setting-row">
+                <div>
+                  <div class="setting-title">{{ $t('config.modbus_trigger') }}</div>
+                  <div class="setting-description">
+                    {{ $t('config.modbus_trigger_description') }}
+                  </div>
+                </div>
+                <el-switch v-model="form.triggers.modbus" />
+              </div>
+
+              <div v-if="form.triggers.modbus" class="trigger-details">
+                <div class="detail-toolbar">
+                  <span>{{ $t('config.modbus_signal_count', { count: form.triggers.modbusSignals.length }) }}</span>
+                  <el-button
+                    type="primary"
+                    plain
+                    :icon="Plus"
+                    :disabled="form.triggers.modbusSignals.length >= MAX_MODBUS_SIGNALS"
+                    @click="addModbusSignal"
+                  >
+                    {{ $t('config.add_modbus_signal') }}
+                  </el-button>
+                </div>
+
+                <div v-if="form.triggers.modbusSignals.length === 0" class="empty-detail">
+                  {{ $t('config.no_modbus_signals') }}
+                </div>
+                <div v-else class="detail-list">
+                  <div
+                    v-for="(signal, index) in form.triggers.modbusSignals"
+                    :key="index"
+                    class="modbus-signal-card"
+                  >
+                    <div class="signal-header">
+                      <span>{{ $t('config.modbus_signal') }} {{ index + 1 }}</span>
+                      <el-icon color="red" size="20px" @click="removeModbusSignal(index)">
+                        <Delete />
+                      </el-icon>
+                    </div>
+
+                    <el-row :gutter="12">
+                      <el-col :span="5">
+                        <el-form-item :label="$t('config.modbus_slave_address')">
+                          <el-input-number
+                            v-model="signal.slaveAddress"
+                            :min="1"
+                            :max="247"
+                            :step="1"
+                            step-strictly
+                            controls-position="right"
+                            style="width: 100%"
+                          />
+                        </el-form-item>
+                      </el-col>
+                      <el-col :span="7">
+                        <el-form-item :label="$t('config.modbus_data_type')">
+                          <el-select
+                            v-model="signal.dataType"
+                            @change="handleModbusDataTypeChange(signal)"
+                          >
+                            <el-option :label="$t('config.modbus_type_coil')" value="coil" />
+                            <el-option :label="$t('config.modbus_type_discrete_input')" value="discreteInput" />
+                            <el-option :label="$t('config.modbus_type_holding_register')" value="holdingRegister" />
+                            <el-option :label="$t('config.modbus_type_input_register')" value="inputRegister" />
+                          </el-select>
+                        </el-form-item>
+                      </el-col>
+                      <el-col :span="6">
+                        <el-form-item :label="$t('config.modbus_trigger_address')">
+                          <el-input-number
+                            v-model="signal.address"
+                            :min="0"
+                            :max="65535"
+                            :step="1"
+                            step-strictly
+                            controls-position="right"
+                            style="width: 100%"
+                          />
+                        </el-form-item>
+                      </el-col>
+                      <el-col :span="6">
+                        <el-form-item :label="$t('config.modbus_trigger_value')">
+                          <el-select
+                            v-if="isBitDataType(signal.dataType)"
+                            v-model="signal.triggerValue"
+                          >
+                            <el-option :label="$t('config.modbus_bit_on')" :value="true" />
+                            <el-option :label="$t('config.modbus_bit_off')" :value="false" />
+                          </el-select>
+                          <el-input-number
+                            v-else
+                            v-model="signal.triggerValue"
+                            :min="0"
+                            :max="65535"
+                            :step="1"
+                            step-strictly
+                            controls-position="right"
+                            style="width: 100%"
+                          />
+                        </el-form-item>
+                      </el-col>
+                    </el-row>
+                  </div>
                 </div>
               </div>
-              <el-switch v-model="form.triggers.modbus" />
             </div>
           </div>
         </section>
@@ -150,10 +329,30 @@ import { useI18n } from 'vue-i18n'
 import api from '@/api/index'
 import { MesAlertWTitle } from '@/assets/js/secondpk'
 
+type ModbusDataType = 'coil' | 'discreteInput' | 'holdingRegister' | 'inputRegister'
+
+interface HttpTriggerParameter {
+  name: string
+  value: string
+}
+
+interface ModbusTriggerSignal {
+  slaveAddress: number
+  dataType: ModbusDataType
+  address: number
+  triggerValue: boolean | number
+}
+
 interface TriggerConfig {
   httpApi: boolean
+  httpParameters: HttpTriggerParameter[]
   usbScanner: boolean
+  usbScannerLength: {
+    min: number
+    max: number
+  }
   modbus: boolean
+  modbusSignals: ModbusTriggerSignal[]
 }
 
 interface FeedbackEndpoint {
@@ -171,6 +370,14 @@ interface DetectionIntegrationConfig {
 }
 
 const MAX_ENDPOINTS = 5
+const MAX_HTTP_PARAMETERS = 3
+const MAX_MODBUS_SIGNALS = 3
+const MODBUS_DATA_TYPES: ModbusDataType[] = [
+  'coil',
+  'discreteInput',
+  'holdingRegister',
+  'inputRegister',
+]
 
 const props = defineProps<{
   visible: boolean
@@ -185,25 +392,80 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const saving = ref(false)
 
+const clampInteger = (
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number => {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed)) return fallback
+  return Math.min(max, Math.max(min, parsed))
+}
+
+const isBitDataType = (dataType: ModbusDataType): boolean =>
+  dataType === 'coil' || dataType === 'discreteInput'
+
+const normalizeModbusSignal = (
+  signal?: Partial<ModbusTriggerSignal>,
+): ModbusTriggerSignal => {
+  const dataType = MODBUS_DATA_TYPES.includes(signal?.dataType as ModbusDataType)
+    ? signal?.dataType as ModbusDataType
+    : 'coil'
+
+  return {
+    slaveAddress: clampInteger(signal?.slaveAddress, 1, 1, 247),
+    dataType,
+    address: clampInteger(signal?.address, 0, 0, 65535),
+    triggerValue: isBitDataType(dataType)
+      ? signal?.triggerValue === true || signal?.triggerValue === 1
+      : clampInteger(signal?.triggerValue, 0, 0, 65535),
+  }
+}
+
 const createForm = (
   config?: Partial<DetectionIntegrationConfig>,
-): DetectionIntegrationConfig => ({
-  triggers: {
-    httpApi: Boolean(config?.triggers?.httpApi),
-    usbScanner: Boolean(config?.triggers?.usbScanner),
-    modbus: Boolean(config?.triggers?.modbus),
-  },
-  resultFeedback: {
-    enabled: Boolean(config?.resultFeedback?.enabled),
-    endpoints: Array.isArray(config?.resultFeedback?.endpoints)
-      ? config.resultFeedback.endpoints.slice(0, MAX_ENDPOINTS).map((endpoint) => ({
-          name: String(endpoint?.name || ''),
-          url: String(endpoint?.url || ''),
-          enabled: Boolean(endpoint?.enabled),
-        }))
-      : [],
-  },
-})
+): DetectionIntegrationConfig => {
+  const triggers = config?.triggers
+  const minLength = clampInteger(triggers?.usbScannerLength?.min, 1, 1, 9999)
+  const maxLength = Math.max(
+    minLength,
+    clampInteger(triggers?.usbScannerLength?.max, 128, 1, 9999),
+  )
+
+  return {
+    triggers: {
+      httpApi: Boolean(triggers?.httpApi),
+      httpParameters: Array.isArray(triggers?.httpParameters)
+        ? triggers.httpParameters.slice(0, MAX_HTTP_PARAMETERS).map((parameter) => ({
+            name: String(parameter?.name || ''),
+            value: String(parameter?.value ?? ''),
+          }))
+        : [],
+      usbScanner: Boolean(triggers?.usbScanner),
+      usbScannerLength: {
+        min: minLength,
+        max: maxLength,
+      },
+      modbus: Boolean(triggers?.modbus),
+      modbusSignals: Array.isArray(triggers?.modbusSignals)
+        ? triggers.modbusSignals
+            .slice(0, MAX_MODBUS_SIGNALS)
+            .map((signal) => normalizeModbusSignal(signal))
+        : [],
+    },
+    resultFeedback: {
+      enabled: Boolean(config?.resultFeedback?.enabled),
+      endpoints: Array.isArray(config?.resultFeedback?.endpoints)
+        ? config.resultFeedback.endpoints.slice(0, MAX_ENDPOINTS).map((endpoint) => ({
+            name: String(endpoint?.name || ''),
+            url: String(endpoint?.url || ''),
+            enabled: Boolean(endpoint?.enabled),
+          }))
+        : [],
+    },
+  }
+}
 
 const form = reactive<DetectionIntegrationConfig>(createForm(props.integrationConfig))
 
@@ -225,6 +487,34 @@ watch(
   },
   { immediate: true, deep: true },
 )
+
+const addHttpParameter = () => {
+  if (form.triggers.httpParameters.length >= MAX_HTTP_PARAMETERS) {
+    ElMessage.warning(t('config.max_http_parameters'))
+    return
+  }
+  form.triggers.httpParameters.push({ name: '', value: '' })
+}
+
+const removeHttpParameter = (index: number) => {
+  form.triggers.httpParameters.splice(index, 1)
+}
+
+const addModbusSignal = () => {
+  if (form.triggers.modbusSignals.length >= MAX_MODBUS_SIGNALS) {
+    ElMessage.warning(t('config.max_modbus_signals'))
+    return
+  }
+  form.triggers.modbusSignals.push(normalizeModbusSignal())
+}
+
+const removeModbusSignal = (index: number) => {
+  form.triggers.modbusSignals.splice(index, 1)
+}
+
+const handleModbusDataTypeChange = (signal: ModbusTriggerSignal) => {
+  signal.triggerValue = isBitDataType(signal.dataType) ? false : 0
+}
 
 const addEndpoint = () => {
   if (form.resultFeedback.endpoints.length >= MAX_ENDPOINTS) {
@@ -250,6 +540,77 @@ const isValidHttpUrl = (value: string): boolean => {
   } catch {
     return false
   }
+}
+
+const validateTriggers = (): boolean => {
+  if (form.triggers.httpApi) {
+    if (!form.triggers.httpParameters.length) {
+      ElMessage.warning(t('config.http_parameter_required'))
+      return false
+    }
+
+    const parameterNames = new Set<string>()
+    for (const parameter of form.triggers.httpParameters) {
+      const name = parameter.name.trim()
+      if (!name || !parameter.value.trim()) {
+        ElMessage.warning(t('config.http_parameter_fields_required'))
+        return false
+      }
+      if (parameterNames.has(name)) {
+        ElMessage.warning(t('config.duplicate_http_parameter'))
+        return false
+      }
+      parameterNames.add(name)
+    }
+  }
+
+  if (form.triggers.usbScanner) {
+    const minLength = Number(form.triggers.usbScannerLength.min)
+    const maxLength = Number(form.triggers.usbScannerLength.max)
+    if (
+      !Number.isInteger(minLength) ||
+      !Number.isInteger(maxLength) ||
+      minLength < 1 ||
+      maxLength < minLength
+    ) {
+      ElMessage.warning(t('config.invalid_usb_length_range'))
+      return false
+    }
+  }
+
+  if (form.triggers.modbus) {
+    if (!form.triggers.modbusSignals.length) {
+      ElMessage.warning(t('config.modbus_signal_required'))
+      return false
+    }
+
+    for (const signal of form.triggers.modbusSignals) {
+      if (
+        !Number.isInteger(signal.slaveAddress) ||
+        signal.slaveAddress < 1 ||
+        signal.slaveAddress > 247 ||
+        !Number.isInteger(signal.address) ||
+        signal.address < 0 ||
+        signal.address > 65535
+      ) {
+        ElMessage.warning(t('config.invalid_modbus_signal'))
+        return false
+      }
+
+      if (
+        !isBitDataType(signal.dataType) &&
+        (typeof signal.triggerValue !== 'number' ||
+          !Number.isInteger(signal.triggerValue) ||
+          signal.triggerValue < 0 ||
+          signal.triggerValue > 65535)
+      ) {
+        ElMessage.warning(t('config.invalid_modbus_register_value'))
+        return false
+      }
+    }
+  }
+
+  return true
 }
 
 const validateFeedback = (): boolean => {
@@ -280,8 +641,28 @@ const validateFeedback = (): boolean => {
 const buildPayload = (): DetectionIntegrationConfig => ({
   triggers: {
     httpApi: Boolean(form.triggers.httpApi),
+    httpParameters: form.triggers.httpParameters
+      .slice(0, MAX_HTTP_PARAMETERS)
+      .map((parameter) => ({
+        name: parameter.name.trim(),
+        value: parameter.value.trim(),
+      })),
     usbScanner: Boolean(form.triggers.usbScanner),
+    usbScannerLength: {
+      min: Number(form.triggers.usbScannerLength.min),
+      max: Number(form.triggers.usbScannerLength.max),
+    },
     modbus: Boolean(form.triggers.modbus),
+    modbusSignals: form.triggers.modbusSignals
+      .slice(0, MAX_MODBUS_SIGNALS)
+      .map((signal) => ({
+        slaveAddress: Number(signal.slaveAddress),
+        dataType: signal.dataType,
+        address: Number(signal.address),
+        triggerValue: isBitDataType(signal.dataType)
+          ? Boolean(signal.triggerValue)
+          : Number(signal.triggerValue),
+      })),
   },
   resultFeedback: {
     enabled: Boolean(form.resultFeedback.enabled),
@@ -294,7 +675,7 @@ const buildPayload = (): DetectionIntegrationConfig => ({
 })
 
 const handleSave = async () => {
-  if (!validateFeedback()) return
+  if (!validateTriggers() || !validateFeedback()) return
 
   saving.value = true
   const payload = buildPayload()
@@ -411,6 +792,62 @@ const handleClosed = () => syncForm(props.integrationConfig)
 
 .endpoint-actions {
   gap: 8px;
+}
+
+.trigger-details {
+  margin: 0 14px 14px;
+  padding: 14px;
+  background: var(--el-fill-color-lighter);
+}
+
+.detail-toolbar,
+.signal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+}
+
+.detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.detail-row {
+  width: 100%;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.empty-detail {
+  padding: 18px 0 4px;
+  text-align: center;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.delete-column,
+.signal-header .el-icon,
+.endpoint-actions .el-icon {
+  display: flex;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.modbus-signal-card {
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--bs-bgcolor);
+}
+
+.signal-header {
+  margin-bottom: 10px;
+}
+
+:deep(.trigger-details .el-form-item) {
+  margin-bottom: 0;
 }
 
 .dialog-footer {

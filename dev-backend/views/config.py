@@ -326,6 +326,14 @@ async def update_sop_config(request:Request):
         logger.error(f"Error updating SOP configuration: {e}")
         return {"status": False, "msg": str(e)}
 MAX_RESULT_FEEDBACK_ENDPOINTS = 5
+MAX_HTTP_TRIGGER_PARAMETERS = 3
+MAX_MODBUS_TRIGGER_SIGNALS = 3
+MODBUS_BIT_TYPES = {"coil", "discreteInput"}
+MODBUS_REGISTER_TYPES = {"holdingRegister", "inputRegister"}
+
+
+def _is_integer(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def validate_detection_integration_config(body: dict) -> str:
@@ -334,6 +342,71 @@ def validate_detection_integration_config(body: dict) -> str:
         return ""
     if not isinstance(integration, dict):
         return "detectionIntegration must be an object"
+
+    triggers = integration.get("triggers")
+    if triggers is not None:
+        if not isinstance(triggers, dict):
+            return "detectionIntegration.triggers must be an object"
+
+        http_parameters = triggers.get("httpParameters")
+        if http_parameters is not None:
+            if not isinstance(http_parameters, list):
+                return "triggers.httpParameters must be an array"
+            if len(http_parameters) > MAX_HTTP_TRIGGER_PARAMETERS:
+                return f"A maximum of {MAX_HTTP_TRIGGER_PARAMETERS} HTTP trigger parameters is allowed"
+            parameter_names = set()
+            for parameter in http_parameters:
+                if not isinstance(parameter, dict):
+                    return "Each HTTP trigger parameter must be an object"
+                if not isinstance(parameter.get("name"), str) or not isinstance(parameter.get("value"), str):
+                    return "Each HTTP trigger parameter requires string name and value fields"
+                name = parameter["name"].strip()
+                if not name or not parameter["value"].strip():
+                    return "HTTP trigger parameter name and value cannot be empty"
+                if name in parameter_names:
+                    return "HTTP trigger parameter names must be unique"
+                parameter_names.add(name)
+        if triggers.get("httpApi") is True and not http_parameters:
+            return "At least one HTTP trigger parameter is required when HTTP API trigger is enabled"
+
+        scanner_length = triggers.get("usbScannerLength")
+        if scanner_length is not None:
+            if not isinstance(scanner_length, dict):
+                return "triggers.usbScannerLength must be an object"
+            min_length = scanner_length.get("min")
+            max_length = scanner_length.get("max")
+            if not _is_integer(min_length) or not _is_integer(max_length):
+                return "USB scanner minimum and maximum lengths must be integers"
+            if min_length < 1 or max_length < min_length or max_length > 9999:
+                return "USB scanner length requires 1 <= min <= max <= 9999"
+
+        modbus_signals = triggers.get("modbusSignals")
+        if modbus_signals is not None:
+            if not isinstance(modbus_signals, list):
+                return "triggers.modbusSignals must be an array"
+            if len(modbus_signals) > MAX_MODBUS_TRIGGER_SIGNALS:
+                return f"A maximum of {MAX_MODBUS_TRIGGER_SIGNALS} Modbus trigger signals is allowed"
+            for signal in modbus_signals:
+                if not isinstance(signal, dict):
+                    return "Each Modbus trigger signal must be an object"
+                slave_address = signal.get("slaveAddress")
+                address = signal.get("address")
+                data_type = signal.get("dataType")
+                trigger_value = signal.get("triggerValue")
+                if not _is_integer(slave_address) or not 1 <= slave_address <= 247:
+                    return "Modbus slave address must be an integer between 1 and 247"
+                if not _is_integer(address) or not 0 <= address <= 65535:
+                    return "Modbus trigger address must be an integer between 0 and 65535"
+                if data_type in MODBUS_BIT_TYPES:
+                    if not isinstance(trigger_value, bool):
+                        return "Modbus coil and discrete input trigger values must be boolean"
+                elif data_type in MODBUS_REGISTER_TYPES:
+                    if not _is_integer(trigger_value) or not 0 <= trigger_value <= 65535:
+                        return "Modbus register trigger value must be an integer between 0 and 65535"
+                else:
+                    return "Unsupported Modbus data type"
+        if triggers.get("modbus") is True and not modbus_signals:
+            return "At least one Modbus trigger signal is required when Modbus trigger is enabled"
 
     result_feedback = integration.get("resultFeedback")
     if result_feedback is None:

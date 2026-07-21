@@ -44,8 +44,14 @@ DEFAULT_MAIN_CONFIG = {
     "detectionIntegration": {
         "triggers": {
             "httpApi": False,
+            "httpParameters": [],
             "usbScanner": False,
-            "modbus": False
+            "usbScannerLength": {
+                "min": 1,
+                "max": 128
+            },
+            "modbus": False,
+            "modbusSignals": []
         },
         "resultFeedback": {
             "enabled": False,
@@ -173,6 +179,18 @@ def get_display_name():
     if GetUserNameEx(NameDisplay, buffer, size):return buffer.value
     return "User"
 
+def _merge_missing_defaults(config: dict, defaults: dict) -> bool:
+    """递归补齐新增配置项，不覆盖用户已有值。"""
+    changed = False
+    for key, default_value in defaults.items():
+        if key not in config:
+            config[key] = deepcopy(default_value)
+            changed = True
+        elif isinstance(config[key], dict) and isinstance(default_value, dict):
+            changed = _merge_missing_defaults(config[key], default_value) or changed
+    return changed
+
+
 def get_main_config() -> dict:
     default_datas = deepcopy(DEFAULT_MAIN_CONFIG)
     if not os.path.exists(CONFIG_PATH):
@@ -182,11 +200,7 @@ def get_main_config() -> dict:
     if not config_datas:
         JsonFile(CONFIG_PATH).write_json_file(default_datas)
         return default_datas
-    re_write = False
-    for key, value in default_datas.items():
-        if key not in config_datas:
-            config_datas[key] = value
-            re_write = True
+    re_write = _merge_missing_defaults(config_datas, default_datas)
     if re_write:JsonFile(CONFIG_PATH).write_json_file(config_datas)
     return config_datas
 
