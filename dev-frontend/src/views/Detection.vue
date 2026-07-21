@@ -171,7 +171,14 @@
                         <el-button v-if="runtime.active" type="warning" :icon="RefreshLeft" @click="handleResetDetection">
                             {{ $t('button._reset') }}
                         </el-button>
-                        <el-button type="success" :icon="DArrowRight">{{ $t('button.next') }}</el-button>
+                        <el-button
+                            v-if="showNextButton"
+                            type="success"
+                            :icon="DArrowRight"
+                            @click="handleNextDetection"
+                        >
+                            {{ $t('button.next') }}
+                        </el-button>
                         <el-button type="danger" v-if="runtime.active" :icon="Stopwatch" @click="handleStopDetection">{{ $t('button.stop') }}</el-button>
                     </div>
                 </el-footer>
@@ -357,6 +364,7 @@ const footerHintRef = ref(null)
 const footerHintTextRef = ref(null)
 const footerHintOverflow = ref(false)
 const timeoutNow = ref(Date.now())
+const startingNextPart = ref(false)
 
 const mjpegUrl = ref(`${api.mjpegBaseUrl}?ts=${Date.now()}`)
 
@@ -376,6 +384,12 @@ const okCount = computed(() => Number(detectionResult.value.ok_count || 0))
 const ngCount = computed(() => Number(detectionResult.value.ng_count || 0))
 const currentSop = computed(() => detectionResult.value.sop || null)
 const currentRuntimeStep = computed(() => currentSop.value?.current_step || null)
+const showNextButton = computed(
+    () =>
+        !startingNextPart.value &&
+        runtime.active &&
+        currentSop.value?.state === 'completed',
+)
 const unconfirmedAlerts = computed(() =>
     alerts.value.filter((alert) => !alert.confirmed),
 )
@@ -1326,6 +1340,45 @@ function resetStoppedUiState() {
         t('message.messagetext.stopedDetection'),
     )
 }
+
+function applyResetDetectionResult(response, clearHistory = false) {
+    resetProcessSteps()
+    if (clearHistory) {
+        clearDetectionHistory()
+    }
+
+    const result = response.data?.result
+    if (result) {
+        applyDetectionResult(result)
+    } else {
+        detectionResult.value = {
+            ...createEmptyDetectionResult(),
+            step: 1,
+        }
+
+        processSteps.value = buildProcessSteps(
+            sopConfiguration.value.steps || [],
+        ).map((step, index) => ({
+            ...step,
+            current: 0,
+            reason: '',
+            status: index === 0 ? 'process' : 'wait',
+        }))
+    }
+
+    timeoutNow.value = Date.now()
+    if (runtime.running && !stream.connected) {
+        startClientStreams()
+    }
+    if (runtime.paused) {
+        setStreamState(
+            null,
+            '检测已暂停，工序已复位到第一步',
+            true,
+        )
+    }
+}
+
 async function handleStartDetection() {
     if (
         !cameraName.value ||
@@ -1416,41 +1469,29 @@ async function handleResetDetection() {
             request: api.resetDetection,
             title: t('message.messagetext.failedResetDetection'),
             fallbackMessage: t('message.messagetext.failedResetDetection'),
-            onSuccess: (res) => {
-                resetProcessSteps();
-                if (clearHistory) {
-                    clearDetectionHistory()
-                }
-                const result = res.data?.result;
-                if(result){
-                    applyDetectionResult(result)
-                }else{
-                    detectionResult.value = {
-                        ...createEmptyDetectionResult(),
-                        step: 1,
-                    }
-
-                    processSteps.value = buildProcessSteps(
-                        sopConfiguration.value.steps || [],
-                    ).map((step, index) => ({
-                        ...step,
-                        current: 0,
-                        reason: '',
-                        status: index === 0
-                            ? 'process'
-                            : 'wait',
-                    }))
-                }
-                timeoutNow.value = Date.now();
-                if (runtime.running && !stream.connected) {
-                    startClientStreams()
-                }
-                if (runtime.paused) {
-                    setStreamState(null,'检测已暂停，工序已复位到第一步',true,)
-                }
-            },
+            onSuccess: (response) =>
+                applyResetDetectionResult(response, clearHistory),
         })
     })
+}
+
+async function handleNextDetection() {
+    if (!showNextButton.value || startingNextPart.value) {
+        return
+    }
+
+    startingNextPart.value = true
+    try {
+        await runDetectionAction({
+            request: api.resetDetection,
+            title: t('message.messagetext.failedResetDetection'),
+            fallbackMessage: t('message.messagetext.failedResetDetection'),
+            onSuccess: (response) =>
+                applyResetDetectionResult(response),
+        })
+    } finally {
+        startingNextPart.value = false
+    }
 }
     
 async function handleStopDetection() {
