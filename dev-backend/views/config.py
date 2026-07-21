@@ -325,6 +325,34 @@ async def update_sop_config(request:Request):
     except Exception as e:
         logger.error(f"Error updating SOP configuration: {e}")
         return {"status": False, "msg": str(e)}
+MAX_RESULT_FEEDBACK_ENDPOINTS = 5
+
+
+def validate_detection_integration_config(body: dict) -> str:
+    integration = body.get("detectionIntegration")
+    if integration is None:
+        return ""
+    if not isinstance(integration, dict):
+        return "detectionIntegration must be an object"
+
+    result_feedback = integration.get("resultFeedback")
+    if result_feedback is None:
+        return ""
+    if not isinstance(result_feedback, dict):
+        return "resultFeedback must be an object"
+
+    endpoints = result_feedback.get("endpoints")
+    if endpoints is None:
+        return ""
+    if not isinstance(endpoints, list):
+        return "resultFeedback.endpoints must be an array"
+    if len(endpoints) > MAX_RESULT_FEEDBACK_ENDPOINTS:
+        return f"A maximum of {MAX_RESULT_FEEDBACK_ENDPOINTS} result feedback endpoints is allowed"
+    if any(not isinstance(endpoint, dict) for endpoint in endpoints):
+        return "Each result feedback endpoint must be an object"
+    return ""
+
+
 @api_config.post("/modify_config") 
 async def modify_config(request:Request):
     """_summary_:通用配置更新接口，
@@ -338,6 +366,11 @@ async def modify_config(request:Request):
     """
     try:
         body = await request.json()
+        if not isinstance(body, dict):
+            return {"status": False, "msg": "Configuration payload must be an object"}
+        validation_error = validate_detection_integration_config(body)
+        if validation_error:
+            return {"status": False, "msg": validation_error}
         updater = ConfigUpdater(get_main_config())
         updated_config = updater.update(body)
         JsonFile(CONFIG_PATH).write_json_file(updated_config)

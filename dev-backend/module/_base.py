@@ -40,6 +40,17 @@ DEFAULT_MAIN_CONFIG = {
         "host": "127.0.0.1",
         "port": 502,
         "timeout": 3
+    },
+    "detectionIntegration": {
+        "triggers": {
+            "httpApi": False,
+            "usbScanner": False,
+            "modbus": False
+        },
+        "resultFeedback": {
+            "enabled": False,
+            "endpoints": []
+        }
     }
 }
 class JsonFile(object):
@@ -191,4 +202,3 @@ async def send_websocket_json(message):
     """发送消息到所有WebSocket客户端"""
     for client in WEBSOCKET_CLIENTS:
         await client.send_json(message)
-

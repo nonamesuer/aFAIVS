@@ -85,5 +85,16 @@
         "host": "127.0.0.1",
         "port": 503,
         "timeout": 3
+    },
+    "detectionIntegration": {
+        "triggers": {
+            "httpApi": true,
+            "usbScanner": false,
+            "modbus": false
+        },
+        "resultFeedback": {
+            "enabled": false,
+            "endpoints": []
+        }
     }
 }

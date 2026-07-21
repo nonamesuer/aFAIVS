@@ -85,6 +85,11 @@
                     <span class="common-config-title">{{ $t('config.modbus_config') }}</span>
                     <span class="common-config-description">{{ $t('config.modbus_config_description') }}</span>
                 </div>
+                <div class="common-config-entry" @click="integrationDialogVisible = true">
+                    <el-icon class="common-config-icon"><SetUp /></el-icon>
+                    <span class="common-config-title">{{ $t('config.detection_integration_config') }}</span>
+                    <span class="common-config-description">{{ $t('config.detection_integration_config_description') }}</span>
+                </div>
             </div>
             <!-- 工序指导配置 -->
             <el-divider content-position="left">
@@ -175,6 +180,10 @@
           v-model:visible="modbusDialogVisible"
           v-model:modbus-config="modbusConfig"
         />
+        <DetectionIntegrationDialog
+          v-model:visible="integrationDialogVisible"
+          v-model:integration-config="detectionIntegrationConfig"
+        />
   </div>
 </template>
 <script setup lang="ts">
@@ -182,14 +191,15 @@ import { ref, onMounted,onBeforeMount,watch, nextTick, reactive, computed, onUnm
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/store";
 import { ElMessage, FormInstance, FormRules } from "element-plus";
-import { FolderOpened,Brush,Crop } from "@element-plus/icons-vue";
+import { FolderOpened,Brush,Crop,Connection,SetUp } from "@element-plus/icons-vue";
 import { MesAlertWTitle, MesConfirmWTitle } from "@/assets/js/secondpk";
 import api from "@/api/index";
 import SopDialog from "@/components/SopDialog.vue";
 import ResolutionDrawer from "@/components/ResolutionDrawer.vue";
 import BoxStyleDrawer from "@/components/BoxStyleDrawer.vue";
-import PathDialog from "@/components/PathDialog.vue";
+import PathDialog from "@/components/PathDIalog.vue";
 import ModbusDialog from "@/components/ModbusDialog.vue";
+import DetectionIntegrationDialog from "@/components/DetectionIntegrationDialog.vue";
 const appStore = useAppStore();
 const { t } = useI18n();
 const device1Ref = ref(null);
@@ -234,6 +244,34 @@ const modbusConfig = ref({
   port: 502,
   timeout: 3,
 });
+// 检测触发与结果反馈
+const integrationDialogVisible = ref(false);
+interface DetectionIntegrationConfig {
+  triggers: {
+    httpApi: boolean;
+    usbScanner: boolean;
+    modbus: boolean;
+  };
+  resultFeedback: {
+    enabled: boolean;
+    endpoints: Array<{
+      name: string;
+      url: string;
+      enabled: boolean;
+    }>;
+  };
+}
+const detectionIntegrationConfig = ref<DetectionIntegrationConfig>({
+  triggers: {
+    httpApi: false,
+    usbScanner: false,
+    modbus: false,
+  },
+  resultFeedback: {
+    enabled: false,
+    endpoints: [],
+  },
+});
 // 参数配置相关
 const signalSetVisible = ref(false);
 const modelCameraForm = ref({
@@ -270,6 +308,21 @@ const getConfig = () => {
     };
     if (datas.boxStyle) {boxStyleConfig.value = {...boxStyleConfig.value,...datas.boxStyle, }};
     if (datas.modbus) {modbusConfig.value = {...modbusConfig.value,...datas.modbus, }};
+    if (datas.detectionIntegration) {
+      detectionIntegrationConfig.value = {
+        triggers: {
+          ...detectionIntegrationConfig.value.triggers,
+          ...(datas.detectionIntegration.triggers || {}),
+        },
+        resultFeedback: {
+          ...detectionIntegrationConfig.value.resultFeedback,
+          ...(datas.detectionIntegration.resultFeedback || {}),
+          endpoints: Array.isArray(datas.detectionIntegration.resultFeedback?.endpoints)
+            ? datas.detectionIntegration.resultFeedback.endpoints.slice(0, 5)
+            : [],
+        },
+      };
+    };
     if("cameraResolution" in datas){ cameraResolution.value = datas.cameraResolution; };
     if("enableCamera" in datas){ 
       let index = cameraList.value.indexOf(datas.enableCamera);
