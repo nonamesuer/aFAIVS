@@ -1586,10 +1586,23 @@ class SOPStateMachine:
         for label in self._future_expected_objects():
             if label.casefold() == expected_label:
                 continue
-            if count_boxes_inside_regions(find_boxes(boxes, label), regions) > 0:
+            current_count = count_boxes_inside_regions(find_boxes(boxes, label), regions)
+            baseline_count = self._completed_object_count_in_region(label, step.to_region)
+            if current_count > baseline_count:
                 return f"NG: Expected {step.expected_object}, but {label} entered {step.to_region}"
+            # if count_boxes_inside_regions(find_boxes(boxes, label), regions) > 0:
+            #     return f"NG: Expected {step.expected_object}, but {label} entered {step.to_region}"
         return ""
-
+    def _completed_object_count_in_region(self, label: str, region: str) -> int:
+        expected_label = label.casefold()
+        expected_region = region.casefold()
+        return sum(
+            completed_step.matched_count
+            for completed_step in self.steps[: self.current_index]
+            if completed_step.state == SOPStepState.DONE
+            and completed_step.expected_object.casefold() == expected_label
+            and completed_step.to_region.casefold() == expected_region
+        )
     def _match_rule(self, rule: dict[str, Any], boxes: list[DetectionBox]) -> tuple[bool, str]:
         rule_type = str(rule.get("type", "object_detected")).strip()
         label = str(rule.get("label") or rule.get("object") or rule.get("expectedObject") or "").strip()
