@@ -45,7 +45,15 @@
                                 </template>
                             </div>
 
-                            <div class="header-right">{{ $t('interacting.result') }}</div>
+                            <div v-if="currentSop" class="header-right" :style="{color: sopStateMeta.color}">
+                                <el-icon
+                                    class="header-right-icon"
+                                    :class="{ 'is-loading': sopStateMeta.spinning }"
+                                >
+                                    <component :is="sopStateMeta.icon" />
+                                </el-icon>
+                                <span class="header-right-label">{{ sopStateMeta.label }}</span>
+                            </div>
                         </div>
 
                         <div class="camera-item-body">
@@ -311,7 +319,18 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount,onMounted,reactive,ref, watch} from 'vue'
-import { VideoPause, VideoPlay,RefreshLeft,Stopwatch,DArrowRight } from '@element-plus/icons-vue'
+import {
+    VideoPause,
+    VideoPlay,
+    RefreshLeft,
+    Stopwatch,
+    DArrowRight,
+    Clock,
+    Loading,
+    CircleCheckFilled,
+    CircleCloseFilled,
+    WarningFilled,
+} from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api/index'
 import { MesAlertWTitle,MesConfirmWTitle } from '@/assets/js/secondpk'
@@ -384,6 +403,16 @@ const okCount = computed(() => Number(detectionResult.value.ok_count || 0))
 const ngCount = computed(() => Number(detectionResult.value.ng_count || 0))
 const currentSop = computed(() => detectionResult.value.sop || null)
 const currentRuntimeStep = computed(() => currentSop.value?.current_step || null)
+const sopStateMeta = computed(() => {
+    const state = String(currentSop.value?.state || '').toLowerCase()
+    return {
+        idle: {label: t('displaytext.idle'),icon: Clock, color: 'var(--bs-info-color)',spinning: false},
+        completed: {label: t('displaytext.completed'),icon: CircleCheckFilled,color: 'var(--bs-success-color)',spinning: false},
+        running: {label: t('displaytext.running'),icon: Loading,color: 'var(--bs-step-color)',spinning: true},
+        failed: {label: t('displaytext.failed'),icon: CircleCloseFilled,color: 'var(--bs-danger-color)',spinning: false},
+        paused: {label: t('displaytext.paused'),icon: WarningFilled,color: 'var(--bs-warning-color)',spinning: false},
+    }[state] || {label: currentSop.value?.state || t('displaytext.unknown'),icon: Clock,color: 'var(--bs-primary-color)',spinning: false}
+})
 const showNextButton = computed(
     () =>
         !startingNextPart.value &&
@@ -1487,7 +1516,7 @@ async function handleNextDetection() {
             title: t('message.messagetext.failedResetDetection'),
             fallbackMessage: t('message.messagetext.failedResetDetection'),
             onSuccess: (response) =>
-                applyResetDetectionResult(response),
+                applyResetDetectionResult(response,true),
         })
     } finally {
         startingNextPart.value = false
@@ -1613,7 +1642,7 @@ watch(
 
     .camera-item-header {
         height: 9%;
-        padding: 0 10px;
+        padding: 0 0 0 10px;
         border-bottom: 1px solid #d8dce5;
 
         .header-left {
@@ -1642,13 +1671,26 @@ watch(
         }
 
         .header-right {
-            min-width: 180px;
+            background: var(--bs-bgcolor);
             height: 100%;
-            padding-left: 10px;
+            padding:0 10px;
             border-left: 1px solid #000;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: flex-end;
+            justify-content: center;
+            gap: 2px;
+            font-weight: 600;
+
+            .header-right-icon {
+                font-size: 34px;
+                line-height: 1;
+            }
+
+            .header-right-label {
+                font-size: 11px;
+                line-height: 1;
+            }
         }
     }
 
@@ -1706,7 +1748,7 @@ watch(
             width: 360px;
             max-width: calc(100% - 24px);
             padding: 10px 12px;
-            border-radius: 8px;
+            // border-radius: 8px;
             background: rgb(20 25 32 / 72%);
             color: #fff;
 

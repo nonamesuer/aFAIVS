@@ -234,6 +234,10 @@ export default{
         running:"Running",
         nostarted:"Not started",
         needenabledconfig:"Please enable configuration first",
+        idle:"Idle",
+        completed:"Completed",
+        failed:"Failed",
+        unknown:"Unknown",
     },
     camera:{
         settingstitle:"Camera and picture parameter settings",

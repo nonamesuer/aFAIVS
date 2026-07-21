@@ -233,7 +233,11 @@ export default{
         paused:"已暂停",
         running:"运行中",
         nostarted:"未启动",
-        needenabledconfig:"请先启用配置"
+        needenabledconfig:"请先启用配置",
+        idle:"待机",
+        completed:"已完成",
+        failed:"异常",
+        unknown:"未知",
 
     },
     camera:{
