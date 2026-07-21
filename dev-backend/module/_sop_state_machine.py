@@ -1582,7 +1582,10 @@ class SOPStateMachine:
         regions = find_boxes(boxes, step.to_region)
         if not regions:
             return ""
+        expected_label = step.expected_object.casefold()
         for label in self._future_expected_objects():
+            if label.casefold() == expected_label:
+                continue
             if count_boxes_inside_regions(find_boxes(boxes, label), regions) > 0:
                 return f"NG: Expected {step.expected_object}, but {label} entered {step.to_region}"
         return ""
