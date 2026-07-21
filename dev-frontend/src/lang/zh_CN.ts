@@ -37,6 +37,7 @@ export default{
         openmodellib:"\u6253\u5F00\u6A21\u578B\u5E93",
         customize:"\u81EA\u5B9A\u4E49",
         test:"测试",
+        next:"下一件",
         title:{
             refreshpage:"\u5237\u65B0\u9875\u9762",
             openinbrowser:"\u5728\u6D4F\u89C8\u5668\u4E2D\u6253\u5F00",
@@ -108,6 +109,7 @@ export default{
             process_chain_config:"工序链配置",
             property_config:"属性配置",
             time:"时间",
+            latestupdatetime:"最近更新时间",
             step_count:"工序数",
         },
         form:{
@@ -231,6 +233,7 @@ export default{
         paused:"已暂停",
         running:"运行中",
         nostarted:"未启动",
+        needenabledconfig:"请先启用配置"
 
     },
     camera:{

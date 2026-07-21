@@ -11,9 +11,10 @@
                                 <div class="text-auto-hidden">{{ cameraName }}</div>
                                 <el-divider direction="vertical" />
 
-                                <div class="text-auto-hidden">
+                                <div class="text-auto-hidden" v-if="sopConfiguration.model">
                                     {{ sopConfiguration.model || '' }}
                                 </div>
+                                <el-tag v-else effect="dark" size="small" type="danger">{{ $t('displaytext.needenabledconfig') }}</el-tag>
                                 <el-divider direction="vertical" />
 
                                 <div class="text-auto-hidden">
@@ -21,20 +22,13 @@
                                 </div>
                                 <el-divider direction="vertical" />
 
-                                <el-tag
-                                    effect="dark"
-                                    size="small"
-                                    :type="runtimeStatus.tagType"
-                                >
+                                <el-tag effect="dark" size="small" :type="runtimeStatus.tagType">
                                     {{ runtimeStatus.label }}
                                 </el-tag>
 
                                 <el-divider direction="vertical" />
 
-                                <el-tag
-                                    effect="dark"
-                                    :type="stream.transport === 'webrtc' ? 'success' : 'warning'"
-                                >
+                                <el-tag effect="dark" :type="stream.transport === 'webrtc' ? 'success' : 'warning'">
                                     {{ stream.transport === 'webrtc' ? 'WebRTC' : 'MJPEG' }}
                                 </el-tag>
 
@@ -116,9 +110,7 @@
 
                 <el-footer class="action-footer">
                     <div class="footer-progress" :title="t('displaytext.overallprogress')">
-                        <el-progress
-                            type="circle"
-                            color="var(--bs-primary-color)"
+                        <el-progress type="circle" color="var(--bs-primary-color)"
                             :percentage="overallProgress"
                             :width="58"
                             :stroke-width="6"
@@ -165,7 +157,7 @@
                         </div>
                     </div>
 
-                    <div class="footer-actions">
+                    <div class="footer-actions" v-if="sopConfiguration.model">
                         <el-button v-if="!runtime.active" type="primary" :icon="VideoPlay" @click="handleStartDetection">{{ $t('button.start') }}</el-button>
 
                         <el-button v-if="runtime.running" type="primary"  plain :icon="VideoPause" @click="handlePauseDetection">
@@ -179,8 +171,8 @@
                         <el-button v-if="runtime.active" type="warning" :icon="RefreshLeft" @click="handleResetDetection">
                             {{ $t('button._reset') }}
                         </el-button>
-
-                        <el-button type="danger" :icon="Stopwatch" @click="handleStopDetection">{{ $t('button.stop') }}</el-button>
+                        <el-button type="success" :icon="DArrowRight">{{ $t('button.next') }}</el-button>
+                        <el-button type="danger" v-if="runtime.active" :icon="Stopwatch" @click="handleStopDetection">{{ $t('button.stop') }}</el-button>
                     </div>
                 </el-footer>
             </el-container>
@@ -312,7 +304,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount,onMounted,reactive,ref, watch} from 'vue'
-import { VideoPause, VideoPlay,RefreshLeft,Stopwatch } from '@element-plus/icons-vue'
+import { VideoPause, VideoPlay,RefreshLeft,Stopwatch,DArrowRight } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api/index'
 import { MesAlertWTitle,MesConfirmWTitle } from '@/assets/js/secondpk'
@@ -672,13 +664,8 @@ function resetProcessSteps() {
 
 function syncProcessStepsFromSop(sop = {}) {
     const steps = Array.isArray(sop.steps) ? sop.steps : []
-    if (!steps.length) {
-        return
-    }
-
-    const failedReason =
-        sop.state === 'failed' ? getSopReasonText(sop.reason || '') : ''
-
+    if (!steps.length) return;
+    const failedReason = sop.state === 'failed' ? getSopReasonText(sop.reason || '') : ''
     processSteps.value = buildProcessSteps(steps, true).map((step, index) => {
         const source = steps[index]
         return {

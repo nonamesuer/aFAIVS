@@ -121,7 +121,7 @@
                     </div>
                   </div>
                   <div class="card-content-description">
-                    <div class="label">{{ $t('config.sop_step_config.time') }}</div>
+                    <div class="label">{{ $t('config.sop_step_config.latestupdatetime') }}</div>
                         <div class="value">{{ conf.modify_time }}</div>
                   </div>
                 </div>

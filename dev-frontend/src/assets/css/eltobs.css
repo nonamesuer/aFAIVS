@@ -68,7 +68,14 @@
         color: #fff;
     }
 }
+.el-button--success {
+    background-color: var(--bs-success-color);
+    color: #fff;
 
+    &:hover {
+        background-color: #015931;
+    }
+}
 .el-button--primary.is-plain {
     color: #004975;
     background-color: transparent;

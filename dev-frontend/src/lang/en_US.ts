@@ -37,6 +37,7 @@ export default{
         openmodellib:"Open Models Library",
         customize:"Customize",
         test:"Test",
+        next:"Next",
         title:{
             refreshpage:"Refresh Page",
             openinbrowser:"open in browser",
@@ -109,6 +110,7 @@ export default{
             process_chain_config:"Process Chain Configuration",
             property_config:"Property Configuration",
             time:"Time",
+            latestupdatetime:"Latest Update Time",
             step_count:"Step Count",
         },
         form:{
@@ -231,6 +233,7 @@ export default{
         paused:"Paused",
         running:"Running",
         nostarted:"Not started",
+        needenabledconfig:"Please enable configuration first",
     },
     camera:{
         settingstitle:"Camera and picture parameter settings",

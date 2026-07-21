@@ -8,7 +8,7 @@
                 "name": "安装P1零件",
                 "type": "p_object",
                 "hint": "捡起P1零件并放置到CY中",
-                "target": 3,
+                "target": 1,
                 "timeout": 30,
                 "context": {
                     "expectedObject": "P1",
@@ -35,14 +35,13 @@
             },
             {
                 "id": 2,
-                "name": "安装P3零件",
+                "name": "安装P2零件",
                 "type": "p_object",
-                "hint": "捡起P3零件并放置到CY中",
+                "hint": "捡起P2零件并放置到CY中",
                 "target": 1,
                 "timeout": 30,
                 "context": {
-                    "expectedObject": "P3",
-                    "fromRegion": "P2",
+                    "expectedObject": "P2",
                     "toRegion": "CY",
                     "handPoints": {
                         "l": [],
@@ -61,10 +60,36 @@
                 },
                 "doneWhen": [],
                 "ngWhen": []
+            },
+            {
+                "id": 3,
+                "name": "安装P1零件",
+                "type": "p_object",
+                "hint": "捡起P1零件并放置到CY中",
+                "target": 1,
+                "timeout": 30,
+                "context": {
+                    "expectedObject": "P1",
+                    "fromRegion": "A1",
+                    "toRegion": "CY",
+                    "objectDetection": {
+                        "source": true,
+                        "transit": true,
+                        "target": true
+                    },
+                    "missTolerance": 30,
+                    "handMargin": 5,
+                    "handPoints": {
+                        "l": [],
+                        "r": []
+                    }
+                },
+                "doneWhen": [],
+                "ngWhen": []
             }
         ],
         "create_time": "2026-07-09 11:44:07",
-        "enabled": false,
-        "modify_time": "2026-07-20 10:13:00"
+        "enabled": true,
+        "modify_time": "2026-07-21 11:38:19"
     }
 }
