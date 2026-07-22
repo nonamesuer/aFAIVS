@@ -83,20 +83,30 @@
     },
     "modbus": {
         "host": "127.0.0.1",
-        "port": 503,
+        "port": 5020,
         "timeout": 3
     },
     "detectionIntegration": {
         "triggers": {
-            "httpApi": true,
+            "httpApi": false,
             "usbScanner": false,
-            "modbus": false,
-            "httpParameters": [],
+            "modbus": true,
+            "httpParameters": [
+                "code",
+                "station"
+            ],
             "usbScannerLength": {
                 "min": 1,
                 "max": 128
             },
-            "modbusSignals": []
+            "modbusSignals": [
+                {
+                    "slaveAddress": 1,
+                    "dataType": "discreteInput",
+                    "address": 0,
+                    "triggerValue": true
+                }
+            ]
         },
         "resultFeedback": {
             "enabled": false,

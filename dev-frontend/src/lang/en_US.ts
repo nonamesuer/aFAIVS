@@ -266,6 +266,7 @@ export default{
         }
     },
     displaytext:{
+        waitingtrigger:"Waiting for an HTTP, USB scanner, or Modbus trigger",
         noconfigcamera:"No camera configured",
         left:"Left",
         right:"Right",

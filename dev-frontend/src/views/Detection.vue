@@ -74,6 +74,15 @@
                                 @close="clearCriticalAlert"
                             />
 
+                            <el-alert
+                                v-if="runtime.waitingForTrigger"
+                                :closable="false"
+                                show-icon
+                                type="warning"
+                                effect="dark"
+                                :title="$t('displaytext.waitingtrigger')"
+                            />
+
                             <video
                                 v-if="runtime.active && stream.transport === 'webrtc'"
                                 ref="streamVideoRef"
@@ -168,7 +177,7 @@
                     <div class="footer-actions" v-if="sopConfiguration.model">
                         <el-button v-if="!runtime.active" type="primary" :icon="VideoPlay" @click="handleStartDetection">{{ $t('button.start') }}</el-button>
 
-                        <el-button v-if="runtime.running" type="primary"  plain :icon="VideoPause" @click="handlePauseDetection">
+                        <el-button v-if="runtime.running && !runtime.waitingForTrigger" type="primary"  plain :icon="VideoPause" @click="handlePauseDetection">
                             {{ $t('button.pause') }}
                         </el-button>
 
@@ -176,7 +185,7 @@
                             {{ $t('button.resume') }}
                         </el-button>
 
-                        <el-button v-if="runtime.active" type="warning" :icon="RefreshLeft" @click="handleResetDetection">
+                        <el-button v-if="runtime.active && !runtime.waitingForTrigger" type="warning" :icon="RefreshLeft" @click="handleResetDetection">
                             {{ $t('button._reset') }}
                         </el-button>
                         <el-button
@@ -361,6 +370,12 @@ const runtime = reactive({
     running: false,
     paused: false,
     active: false,
+    triggerConfigured: false,
+    waitingForTrigger: false,
+    detecting: false,
+    triggerMethods: [],
+    triggerSource: null,
+    triggeredAt: null,
 })
 
 const stream = reactive({
@@ -398,6 +413,8 @@ let webRtcStarting = false
 let webRtcStartToken = 0
 let lastSopEventKey = ''
 let lastCriticalAlertKey = ''
+let scannerBuffer = ''
+let scannerResetTimer = null
 
 const okCount = computed(() => Number(detectionResult.value.ok_count || 0))
 const ngCount = computed(() => Number(detectionResult.value.ng_count || 0))
@@ -424,6 +441,7 @@ const unconfirmedAlerts = computed(() =>
 )
 
 const runtimeStatus = computed(() => {
+    if (runtime.waitingForTrigger) return { label: t('displaytext.waitingtrigger'), tagType: 'warning' };
     if (runtime.paused) return { label: t('displaytext.paused'), tagType: 'warning' };
     if (runtime.running) return { label: t('displaytext.running'), tagType: 'success' };
     return { label: t('displaytext.nostarted'), tagType: 'info' };
@@ -576,6 +594,55 @@ function applyRuntimeStatus(payload = {}) {
     runtime.running = Boolean(payload.running)
     runtime.paused = Boolean(payload.paused)
     runtime.active = Boolean(payload.active)
+    runtime.triggerConfigured = Boolean(payload.trigger_configured)
+    runtime.waitingForTrigger = Boolean(payload.waiting_for_trigger)
+    runtime.detecting = Boolean(payload.detecting)
+    runtime.triggerMethods = Array.isArray(payload.trigger_methods)
+        ? payload.trigger_methods
+        : []
+    runtime.triggerSource = payload.trigger_source || null
+    runtime.triggeredAt = payload.triggered_at || null
+}
+
+function clearScannerBuffer() {
+    scannerBuffer = ''
+    if (scannerResetTimer) {
+        window.clearTimeout(scannerResetTimer)
+        scannerResetTimer = null
+    }
+}
+
+async function submitScannerValue(value) {
+    try {
+        const { data: response } = await api.triggerDetectionUsb({ value })
+        applyRuntimeStatus(response.data || {})
+    } catch (error) {
+        console.warn('USB scanner trigger failed:', error)
+    }
+}
+
+function handleScannerKeydown(event) {
+    if (
+        !runtime.waitingForTrigger ||
+        !runtime.triggerMethods.includes('usb') ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.metaKey
+    ) {
+        return
+    }
+
+    if (event.key === 'Enter') {
+        const value = scannerBuffer
+        clearScannerBuffer()
+        if (value) submitScannerValue(value)
+        return
+    }
+
+    if (event.key.length !== 1) return
+    scannerBuffer += event.key
+    if (scannerResetTimer) window.clearTimeout(scannerResetTimer)
+    scannerResetTimer = window.setTimeout(clearScannerBuffer, 500)
 }
 
 function getTagType(level) {
@@ -1029,6 +1096,9 @@ function connectResultSocket() {
                 if (payload.ws_result) {
                     console.log('接收到检测结果:', payload.ws_result)
                     applyDetectionResult(payload.ws_result)
+                    if (payload.runtime_status) {
+                        applyRuntimeStatus(payload.runtime_status)
+                    }
                 } else if (payload.camera_status) {
                     handleCameraStatus(payload.camera_status)
                 }
@@ -1440,7 +1510,7 @@ async function handleStartDetection() {
                     ...step,
                     current: 0,
                     reason: '',
-                    status: index === 0 ? 'process' : 'wait',
+                    status: !runtime.waitingForTrigger && index === 0 ? 'process' : 'wait',
                 }),
             )
             startClientStreams()
@@ -1577,6 +1647,7 @@ onMounted(async () => {
         'resize',
         updateFooterHintOverflow,
     )
+    window.addEventListener('keydown', handleScannerKeydown)
 
     timeoutTicker = window.setInterval(() => {
         timeoutNow.value = Date.now()
@@ -1590,6 +1661,8 @@ onBeforeUnmount(() => {
         'resize',
         updateFooterHintOverflow,
     )
+    window.removeEventListener('keydown', handleScannerKeydown)
+    clearScannerBuffer()
 
     clearCriticalAlert()
     clearTimer('reconnect')

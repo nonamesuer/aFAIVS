@@ -266,6 +266,7 @@ export default{
         }
     },
     displaytext:{
+        waitingtrigger:"等待 HTTP、USB 扫码枪或 Modbus 触发信号",
         noconfigcamera:"未配置相机",
         left:"左",
         right:"右",

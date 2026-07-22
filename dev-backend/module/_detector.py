@@ -15,6 +15,7 @@ from module._camera import CameraManager
 from module._onnx_detection import ONNXDetection
 from module._sop_state_machine import SOPStateMachine
 from module._hand_detection import HandTracker, HandDetectorWorker
+from module._trigger import TriggerController
 
 logger = logging.getLogger(__name__)
 
@@ -57,12 +58,14 @@ class DetectionRuntime:
         self.peer_connections: set[RTCPeerConnection] = set()
         self.running = False
         self.paused = False
+        self.trigger_controller = TriggerController(self.detector.activate_trigger)
 
     def start(self) -> None:
         if self.running:
             return
         self.camera.start()
-        self.detector.start()
+        self.detector.start(wait_for_trigger=self.trigger_controller.requires_trigger)
+        self.trigger_controller.start()
         self.running = True
         self.paused = False
     def pause(self) -> bool:
@@ -99,6 +102,11 @@ class DetectionRuntime:
     def stop(self) -> None:
         self.running = False
         self.paused = False
+        try:
+            self.trigger_controller.stop()
+        except Exception:
+            logger.exception("停止触发监听失败")
+
         try:
             self.detector.stop()
         except Exception:
@@ -202,6 +210,8 @@ class DetectorWorker:
             "updated_at": 0.0,
         }
         self.paused = False
+        self.waiting_for_trigger = False
+        self.trigger_lock = threading.Lock()
         self.pause_lock = threading.Lock()
         self.state_lock = threading.RLock()
         self.model_path = model_path
@@ -250,12 +260,19 @@ class DetectorWorker:
             machine.last_reason = str(e)
             return machine
 
-    def start(self) -> None:
+    def start(self, wait_for_trigger: bool = False) -> None:
         if self.running:return
         self.paused = False
+        self.waiting_for_trigger = wait_for_trigger
         self.sop_machine = self._create_sop_machine()
-        self.sop_machine.start()
-        self._refresh_hand_tracker()
+        if wait_for_trigger:
+            sop_result = self.sop_machine.snapshot(reason="Waiting for configured trigger")
+            with self.result_lock:
+                self.result["sop"] = sop_result
+                self.result["updated_at"] = time.time()
+        else:
+            self.sop_machine.start()
+            self._refresh_hand_tracker()
         self._last_sop_state = self.sop_machine.snapshot().get("state")
         self.running = True
         self.detector_status.set(1)
@@ -278,6 +295,10 @@ class DetectorWorker:
             # 保留线程，但不执行 ONNX / MediaPipe结果读取 / SOP update
             # =================================================
             if self.paused:
+                time.sleep(0.05)
+                next_tick = time.monotonic()
+                continue
+            if self.waiting_for_trigger:
                 time.sleep(0.05)
                 next_tick = time.monotonic()
                 continue
@@ -320,6 +341,28 @@ class DetectorWorker:
     def snapshot(self):
         with self.result_lock:
             return dict(self.result)
+    def activate_trigger(self, source: str, payload: dict) -> bool:
+        """Start SOP once. TriggerController rejects later trigger signals."""
+        with self.trigger_lock:
+            if not self.running or not self.waiting_for_trigger:
+                return False
+            with self.state_lock:
+                self.sop_machine.start()
+                self.waiting_for_trigger = False
+                self._refresh_hand_tracker()
+                sop_result = self.sop_machine.snapshot(
+                    matched=False,
+                    reason=f"Detection started by {source} trigger",
+                )
+                self._last_sop_state = sop_result.get("state")
+                with self.result_lock:
+                    self.result["sop"] = sop_result
+                    self.result["trigger"] = {
+                        "source": source,
+                        "payload": payload,
+                    }
+                    self.result["updated_at"] = time.time()
+            return True
     def pause(self) -> bool:
         """暂停 AI 推理和 SOP 状态推进，但不销毁检测线程。"""
         with self.pause_lock:
@@ -390,6 +433,7 @@ class DetectorWorker:
     def stop(self) -> None:
         self.running = False
         self.paused = False
+        self.waiting_for_trigger = False
         self.detector_status.set(0)
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=2.0)

@@ -2,7 +2,7 @@ import asyncio
 import threading
 import logging
 import os
-from fastapi import APIRouter, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse,JSONResponse
 from pydantic import BaseModel
 
@@ -29,13 +29,25 @@ def get_or_create_runtime(camera_index, camera_name, model_path=None, model_name
         return _runtime
 
 
-def runtime_status() -> dict[str, bool]:
-    return {
+def runtime_status() -> dict:
+    status = {
         "initialized": _runtime is not None,
         "running": bool(_runtime and _runtime.running and not _runtime.paused),
         "paused": bool(_runtime and _runtime.running and _runtime.paused),
         "active": bool(_runtime and _runtime.running),
     }
+    if _runtime is not None:
+        status.update(_runtime.trigger_controller.status())
+    else:
+        status.update({
+            "trigger_configured": False,
+            "waiting_for_trigger": False,
+            "detecting": False,
+            "trigger_methods": [],
+            "trigger_source": None,
+            "triggered_at": None,
+        })
+    return status
 
 
 async def _send_detection_results(websocket: WebSocket) -> None:
@@ -65,7 +77,10 @@ async def _send_detection_results(websocket: WebSocket) -> None:
             current_cap_status == 1
             and current_detector_status == 1
         ):
-            await websocket.send_json({"ws_result": runtime.detector.snapshot()})
+            await websocket.send_json({
+                "ws_result": runtime.detector.snapshot(),
+                "runtime_status": runtime_status(),
+            })
         await asyncio.sleep(0.1)
 
 
@@ -181,6 +196,36 @@ def server_stream():
 @api_detection.get("/status")
 def status_detection():
     return runtime_status()
+
+
+@api_detection.get("/trigger/http")
+def trigger_http(request: Request):
+    """HTTP GET trigger. Only configured parameter names are required; values are dynamic."""
+    runtime = get_runtime()
+    if not runtime or not runtime.running:
+        return JSONResponse({"status": False, "msg": "检测尚未启动", "data": runtime_status()})
+    accepted, message = runtime.trigger_controller.trigger_http(request.query_params)
+    return JSONResponse({"status": accepted, "msg": message, "data": runtime_status()})
+
+
+@api_detection.post("/trigger/usb")
+async def trigger_usb(request: Request):
+    """Accept a scanner value without a rigid Pydantic body to avoid unrelated 422 errors."""
+    runtime = get_runtime()
+    if not runtime or not runtime.running:
+        return JSONResponse({"status": False, "msg": "检测尚未启动", "data": runtime_status()})
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    value = payload.get("value", payload.get("code", ""))
+    print("trigger_usb value:", value)
+    if not isinstance(value, str):
+        return JSONResponse({"status": False, "msg": "USB scanner value must be a string", "data": runtime_status()})
+    accepted, message = runtime.trigger_controller.trigger_usb(value)
+    return JSONResponse({"status": accepted, "msg": message, "data": runtime_status()})
 
 @api_detection.get("/start_detection")
 def start_detection(camera_name: str,project_name: str):
