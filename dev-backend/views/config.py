@@ -356,13 +356,11 @@ def validate_detection_integration_config(body: dict) -> str:
                 return f"A maximum of {MAX_HTTP_TRIGGER_PARAMETERS} HTTP trigger parameters is allowed"
             parameter_names = set()
             for parameter in http_parameters:
-                if not isinstance(parameter, dict):
-                    return "Each HTTP trigger parameter must be an object"
-                if not isinstance(parameter.get("name"), str) or not isinstance(parameter.get("value"), str):
-                    return "Each HTTP trigger parameter requires string name and value fields"
-                name = parameter["name"].strip()
-                if not name or not parameter["value"].strip():
-                    return "HTTP trigger parameter name and value cannot be empty"
+                if not isinstance(parameter, str):
+                    return "Each HTTP trigger parameter must be a string"
+                name = parameter.strip()
+                if not name:
+                    return "HTTP trigger parameter name cannot be empty"
                 if name in parameter_names:
                     return "HTTP trigger parameter names must be unique"
                 parameter_names.add(name)

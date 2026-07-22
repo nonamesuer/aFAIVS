@@ -249,10 +249,7 @@ const integrationDialogVisible = ref(false);
 interface DetectionIntegrationConfig {
   triggers: {
     httpApi: boolean;
-    httpParameters: Array<{
-      name: string;
-      value: string;
-    }>;
+    httpParameters: string[];
     usbScanner: boolean;
     usbScannerLength: {
       min: number;
@@ -335,7 +332,13 @@ const getConfig = () => {
           ...detectionIntegrationConfig.value.triggers,
           ...triggerConfig,
           httpParameters: Array.isArray(triggerConfig.httpParameters)
-            ? triggerConfig.httpParameters.slice(0, 3)
+            ? triggerConfig.httpParameters.slice(0, 3).map((parameter: unknown) => {
+                if (typeof parameter === "string") return parameter;
+                if (parameter && typeof parameter === "object" && "name" in parameter) {
+                  return String(parameter.name || "");
+                }
+                return "";
+              })
             : [],
           usbScannerLength: {
             ...detectionIntegrationConfig.value.triggers.usbScannerLength,

@@ -52,24 +52,17 @@
                 </div>
                 <div v-else class="detail-list">
                   <el-row
-                    v-for="(parameter, index) in form.triggers.httpParameters"
+                    v-for="(_, index) in form.triggers.httpParameters"
                     :key="index"
                     :gutter="12"
                     class="detail-row"
                     align="middle"
                   >
-                    <el-col :span="10">
+                    <el-col :span="22">
                       <el-input
-                        v-model="parameter.name"
+                        v-model="form.triggers.httpParameters[index]"
                         :placeholder="$t('config.http_parameter_name_placeholder')"
                         maxlength="50"
-                      />
-                    </el-col>
-                    <el-col :span="12">
-                      <el-input
-                        v-model="parameter.value"
-                        :placeholder="$t('config.http_parameter_value_placeholder')"
-                        maxlength="200"
                       />
                     </el-col>
                     <el-col :span="2" class="delete-column">
@@ -331,11 +324,6 @@ import { MesAlertWTitle } from '@/assets/js/secondpk'
 
 type ModbusDataType = 'coil' | 'discreteInput' | 'holdingRegister' | 'inputRegister'
 
-interface HttpTriggerParameter {
-  name: string
-  value: string
-}
-
 interface ModbusTriggerSignal {
   slaveAddress: number
   dataType: ModbusDataType
@@ -345,7 +333,7 @@ interface ModbusTriggerSignal {
 
 interface TriggerConfig {
   httpApi: boolean
-  httpParameters: HttpTriggerParameter[]
+  httpParameters: string[]
   usbScanner: boolean
   usbScannerLength: {
     min: number
@@ -406,6 +394,14 @@ const clampInteger = (
 const isBitDataType = (dataType: ModbusDataType): boolean =>
   dataType === 'coil' || dataType === 'discreteInput'
 
+const normalizeHttpParameter = (parameter: unknown): string => {
+  if (typeof parameter === 'string') return parameter
+  if (parameter && typeof parameter === 'object' && 'name' in parameter) {
+    return String(parameter.name || '')
+  }
+  return ''
+}
+
 const normalizeModbusSignal = (
   signal?: Partial<ModbusTriggerSignal>,
 ): ModbusTriggerSignal => {
@@ -437,10 +433,9 @@ const createForm = (
     triggers: {
       httpApi: Boolean(triggers?.httpApi),
       httpParameters: Array.isArray(triggers?.httpParameters)
-        ? triggers.httpParameters.slice(0, MAX_HTTP_PARAMETERS).map((parameter) => ({
-            name: String(parameter?.name || ''),
-            value: String(parameter?.value ?? ''),
-          }))
+        ? triggers.httpParameters
+            .slice(0, MAX_HTTP_PARAMETERS)
+            .map((parameter) => normalizeHttpParameter(parameter))
         : [],
       usbScanner: Boolean(triggers?.usbScanner),
       usbScannerLength: {
@@ -493,7 +488,7 @@ const addHttpParameter = () => {
     ElMessage.warning(t('config.max_http_parameters'))
     return
   }
-  form.triggers.httpParameters.push({ name: '', value: '' })
+  form.triggers.httpParameters.push('')
 }
 
 const removeHttpParameter = (index: number) => {
@@ -551,8 +546,8 @@ const validateTriggers = (): boolean => {
 
     const parameterNames = new Set<string>()
     for (const parameter of form.triggers.httpParameters) {
-      const name = parameter.name.trim()
-      if (!name || !parameter.value.trim()) {
+      const name = parameter.trim()
+      if (!name) {
         ElMessage.warning(t('config.http_parameter_fields_required'))
         return false
       }
@@ -643,10 +638,7 @@ const buildPayload = (): DetectionIntegrationConfig => ({
     httpApi: Boolean(form.triggers.httpApi),
     httpParameters: form.triggers.httpParameters
       .slice(0, MAX_HTTP_PARAMETERS)
-      .map((parameter) => ({
-        name: parameter.name.trim(),
-        value: parameter.value.trim(),
-      })),
+      .map((parameter) => parameter.trim()),
     usbScanner: Boolean(form.triggers.usbScanner),
     usbScannerLength: {
       min: Number(form.triggers.usbScannerLength.min),
