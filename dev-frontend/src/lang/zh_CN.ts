@@ -194,6 +194,7 @@ export default{
         messagetext:{
             refreshpage:"请刷新当前页面",
             backendServerIssue:"后端服务异常或未启动",
+            usbTriggerChannelUnavailable:"USB 扫码通道尚未连接，请稍后重试",
             faildStartDetection:"启动检测失败",
             faildPauseDetection:"暂停检测失败",
             faildResumeDetection:"恢复检测失败",
@@ -266,7 +267,11 @@ export default{
         }
     },
     displaytext:{
-        waitingtrigger:"等待 HTTP、USB 扫码枪或 Modbus 触发信号",
+        waitingtrigger:"等待 {methods} 触发信号",
+        waitingexternaltrigger:"等待外部触发信号",
+        httptriggername:"HTTP API",
+        usbtriggername:"USB 扫码枪",
+        modbustriggername:"Modbus",
         noconfigcamera:"未配置相机",
         left:"左",
         right:"右",

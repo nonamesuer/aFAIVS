@@ -195,6 +195,7 @@ export default{
         messagetext:{
             refreshpage:"Please refresh the page",
             backendServerIssue:"Backend server is abnormal or not started",
+            usbTriggerChannelUnavailable:"The USB scanner channel is not connected yet; please try again",
             faildStartDetection:"Failed to start detection",
             faildPauseDetection:"Failed to pause detection",
             faildResumeDetection:"Failed to resume detection",
@@ -266,7 +267,11 @@ export default{
         }
     },
     displaytext:{
-        waitingtrigger:"Waiting for an HTTP, USB scanner, or Modbus trigger",
+        waitingtrigger:"Waiting for a trigger from {methods}",
+        waitingexternaltrigger:"Waiting for an external trigger",
+        httptriggername:"HTTP API",
+        usbtriggername:"USB scanner",
+        modbustriggername:"Modbus",
         noconfigcamera:"No camera configured",
         left:"Left",
         right:"Right",

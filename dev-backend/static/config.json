@@ -89,8 +89,8 @@
     "detectionIntegration": {
         "triggers": {
             "httpApi": false,
-            "usbScanner": false,
-            "modbus": true,
+            "usbScanner": true,
+            "modbus": false,
             "httpParameters": [
                 "code",
                 "station"

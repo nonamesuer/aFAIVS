@@ -1,4 +1,5 @@
 import asyncio
+import json
 import threading
 import logging
 import os
@@ -87,7 +88,26 @@ async def _send_detection_results(websocket: WebSocket) -> None:
 async def _wait_websocket_disconnect(websocket: WebSocket) -> None:
     while True:
         try:
-            await websocket.receive_text()
+            message = await websocket.receive_text()
+            try:
+                payload = json.loads(message)
+            except (TypeError, json.JSONDecodeError):
+                continue
+
+            if not isinstance(payload, dict) or payload.get("type") != "usb_trigger":
+                continue
+
+            runtime = get_runtime()
+            value = payload.get("value")
+            print(f"Received USB trigger value: {value}")
+            if not runtime or not runtime.running or not isinstance(value, str):
+                continue
+
+            accepted, reason = runtime.trigger_controller.trigger_usb(value)
+            if not accepted:
+                logger.info("USB scanner trigger ignored: %s", reason)
+                
+            # await websocket.receive_text()
         except WebSocketDisconnect:
             logger.info("WebSocket disconnected")
             return
@@ -208,24 +228,6 @@ def trigger_http(request: Request):
     return JSONResponse({"status": accepted, "msg": message, "data": runtime_status()})
 
 
-@api_detection.post("/trigger/usb")
-async def trigger_usb(request: Request):
-    """Accept a scanner value without a rigid Pydantic body to avoid unrelated 422 errors."""
-    runtime = get_runtime()
-    if not runtime or not runtime.running:
-        return JSONResponse({"status": False, "msg": "检测尚未启动", "data": runtime_status()})
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    if not isinstance(payload, dict):
-        payload = {}
-    value = payload.get("value", payload.get("code", ""))
-    print("trigger_usb value:", value)
-    if not isinstance(value, str):
-        return JSONResponse({"status": False, "msg": "USB scanner value must be a string", "data": runtime_status()})
-    accepted, message = runtime.trigger_controller.trigger_usb(value)
-    return JSONResponse({"status": accepted, "msg": message, "data": runtime_status()})
 
 @api_detection.get("/start_detection")
 def start_detection(camera_name: str,project_name: str):

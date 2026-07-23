@@ -80,7 +80,7 @@
                                 show-icon
                                 type="warning"
                                 effect="dark"
-                                :title="$t('displaytext.waitingtrigger')"
+                                :title="waitingTriggerText"
                             />
 
                             <video
@@ -346,7 +346,7 @@ import { MesAlertWTitle,MesConfirmWTitle } from '@/assets/js/secondpk'
 import { useAppStore } from '@/stores/store'
 
 const appStore = useAppStore()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const MAX_EVENT_COUNT = 50
 const MAX_ALERT_COUNT = 30
@@ -440,8 +440,29 @@ const unconfirmedAlerts = computed(() =>
     alerts.value.filter((alert) => !alert.confirmed),
 )
 
+const waitingTriggerText = computed(() => {
+    const methodLabels = {
+        http: t('displaytext.httptriggername'),
+        usb: t('displaytext.usbtriggername'),
+        modbus: t('displaytext.modbustriggername'),
+    }
+    const labels = runtime.triggerMethods
+        .map((method) => methodLabels[method])
+        .filter(Boolean)
+
+    if (!labels.length) {
+        return t('displaytext.waitingexternaltrigger')
+    }
+
+    const methods = new Intl.ListFormat(locale.value, {
+        style: 'short',
+        type: 'disjunction',
+    }).format(labels)
+    return t('displaytext.waitingtrigger', { methods })
+})
+
 const runtimeStatus = computed(() => {
-    if (runtime.waitingForTrigger) return { label: t('displaytext.waitingtrigger'), tagType: 'warning' };
+    if (runtime.waitingForTrigger) return { label: waitingTriggerText.value, tagType: 'warning' };
     if (runtime.paused) return { label: t('displaytext.paused'), tagType: 'warning' };
     if (runtime.running) return { label: t('displaytext.running'), tagType: 'success' };
     return { label: t('displaytext.nostarted'), tagType: 'info' };
@@ -612,13 +633,20 @@ function clearScannerBuffer() {
     }
 }
 
-async function submitScannerValue(value) {
-    try {
-        const { data: response } = await api.triggerDetectionUsb({ value })
-        applyRuntimeStatus(response.data || {})
-    } catch (error) {
-        console.warn('USB scanner trigger failed:', error)
+function submitScannerValue(value) {
+    if (!resultSocket || resultSocket.readyState !== WebSocket.OPEN) {
+        setStreamState(
+            null,
+            t('message.messagetext.usbTriggerChannelUnavailable'),
+            true,
+        )
+        return
     }
+
+    resultSocket.send(JSON.stringify({
+        type: 'usb_trigger',
+        value,
+    }))
 }
 
 function handleScannerKeydown(event) {
@@ -627,10 +655,14 @@ function handleScannerKeydown(event) {
         !runtime.triggerMethods.includes('usb') ||
         event.ctrlKey ||
         event.altKey ||
-        event.metaKey
+        event.metaKey ||
+        event.repeat
     ) {
         return
     }
+
+    // USB 扫码枪以键盘方式输入；等待触发期间阻止字符和回车误操作页面按钮。
+    event.preventDefault()
 
     if (event.key === 'Enter') {
         const value = scannerBuffer
@@ -643,6 +675,12 @@ function handleScannerKeydown(event) {
     scannerBuffer += event.key
     if (scannerResetTimer) window.clearTimeout(scannerResetTimer)
     scannerResetTimer = window.setTimeout(clearScannerBuffer, 500)
+}
+
+function handleScannerContextLost() {
+    if (document.hidden || !document.hasFocus()) {
+        clearScannerBuffer()
+    }
 }
 
 function getTagType(level) {
@@ -1647,7 +1685,9 @@ onMounted(async () => {
         'resize',
         updateFooterHintOverflow,
     )
-    window.addEventListener('keydown', handleScannerKeydown)
+    window.addEventListener('keydown', handleScannerKeydown, true)
+    window.addEventListener('blur', handleScannerContextLost)
+    document.addEventListener('visibilitychange', handleScannerContextLost)
 
     timeoutTicker = window.setInterval(() => {
         timeoutNow.value = Date.now()
@@ -1661,7 +1701,9 @@ onBeforeUnmount(() => {
         'resize',
         updateFooterHintOverflow,
     )
-    window.removeEventListener('keydown', handleScannerKeydown)
+    window.removeEventListener('keydown', handleScannerKeydown, true)
+    window.removeEventListener('blur', handleScannerContextLost)
+    document.removeEventListener('visibilitychange', handleScannerContextLost)
     clearScannerBuffer()
 
     clearCriticalAlert()
