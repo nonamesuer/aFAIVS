@@ -78,6 +78,7 @@ class TriggerController:
         self._triggered = False
         self._source: str | None = None
         self._triggered_at: float | None = None
+        self._modbus_armed: list[bool] = []
 
     @property
     def methods(self) -> list[str]:
@@ -107,6 +108,8 @@ class TriggerController:
             self._triggered = not self.requires_trigger
             self._source = None
             self._triggered_at = None
+            # 首次启动允许当前已满足条件的 Modbus 信号直接触发。
+            self._modbus_armed = [True] * len(self.config["modbusSignals"])
         self._stop_event.clear()
         if self.config["modbus"]:
             self._thread = threading.Thread(
@@ -115,6 +118,23 @@ class TriggerController:
                 daemon=True,
             )
             self._thread.start()
+
+    def rearm(self) -> bool:
+        """SOP 完成后重新布防，允许下一件由新的触发信号启动。"""
+        with self._lock:
+            if not self._active or not self.requires_trigger:
+                return False
+            if self._waiting:
+                return True
+
+            self._waiting = True
+            self._triggered = False
+            self._source = None
+            self._triggered_at = None
+            # 下一件必须等待 Modbus 信号先离开触发值，再重新进入触发值，
+            # 避免线圈/寄存器一直保持命中状态时连续启动多个零件。
+            self._modbus_armed = [False] * len(self.config["modbusSignals"])
+            return True
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -209,6 +229,14 @@ class TriggerController:
             return bool(response.bits[0])
         return int(response.registers[0])
 
+    def _modbus_signal_ready(self, index: int, matched: bool) -> bool:
+        """重新布防后，信号必须先不匹配，再次匹配时才算新的触发沿。"""
+        with self._lock:
+            armed = self._modbus_armed[index]
+            if not matched:
+                self._modbus_armed[index] = True
+            return matched and armed
+
     def _poll_modbus(self) -> None:
         main_config = get_main_config()
         connection = main_config.get("modbus", {})
@@ -218,27 +246,31 @@ class TriggerController:
             timeout=float(connection.get("timeout", 3)),
         )
         try:
-            while not self._stop_event.is_set() and self.waiting:
+            while not self._stop_event.is_set():
+                if not self.waiting:
+                    self._stop_event.wait(self.poll_interval)
+                    continue
                 try:
                     if not client.connect():
                         self._stop_event.wait(self.poll_interval)
                         continue
-                    for signal in self.config["modbusSignals"]:
+                    for index, signal in enumerate(self.config["modbusSignals"]):
                         actual = self._read_signal(client, signal)
                         expected = signal.get("triggerValue")
                         if signal.get("dataType") in MODBUS_BIT_TYPES:
                             matched = actual is bool(expected)
                         else:
                             matched = actual == int(expected)
-                        if matched:
-                            self._accept(
+                        if self._modbus_signal_ready(index, matched):
+                            accepted = self._accept(
                                 "modbus",
                                 {
                                     "signal": dict(signal),
                                     "actualValue": actual,
                                 },
                             )
-                            return
+                            if accepted:
+                                break
                 except Exception:
                     logger.exception("Failed while polling Modbus trigger")
                 self._stop_event.wait(self.poll_interval)

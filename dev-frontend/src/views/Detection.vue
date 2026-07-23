@@ -413,6 +413,7 @@ let webRtcStarting = false
 let webRtcStartToken = 0
 let lastSopEventKey = ''
 let lastCriticalAlertKey = ''
+let lastTriggerCycleAt = null
 let scannerBuffer = ''
 let scannerResetTimer = null
 
@@ -434,6 +435,7 @@ const showNextButton = computed(
     () =>
         !startingNextPart.value &&
         runtime.active &&
+        !runtime.triggerConfigured &&
         currentSop.value?.state === 'completed',
 )
 const unconfirmedAlerts = computed(() =>
@@ -611,6 +613,15 @@ function setStreamState(connected, errorMessage = '', onlyMessage = false) {
 }
 
 function applyRuntimeStatus(payload = {}) {
+    const nextTriggeredAt = Number(payload.triggered_at || 0)
+    if (nextTriggeredAt > 0 && nextTriggeredAt !== lastTriggerCycleAt) {
+        if (lastTriggerCycleAt !== null) {
+            // 触发模式下的新信号等价于手动点击“下一件”：清除上一件的页面事件。
+            clearDetectionHistory()
+        }
+        lastTriggerCycleAt = nextTriggeredAt
+    }
+
     runtime.initialized = Boolean(payload.initialized)
     runtime.running = Boolean(payload.running)
     runtime.paused = Boolean(payload.paused)
@@ -1458,6 +1469,7 @@ function clearDetectionHistory() {
     lastCriticalAlertKey = ''
 }
 function resetStoppedUiState() {
+    lastTriggerCycleAt = null
     detectionResult.value = createEmptyDetectionResult()
 
     processSteps.value = buildProcessSteps(

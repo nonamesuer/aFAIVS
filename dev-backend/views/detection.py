@@ -99,15 +99,13 @@ async def _wait_websocket_disconnect(websocket: WebSocket) -> None:
 
             runtime = get_runtime()
             value = payload.get("value")
-            print(f"Received USB trigger value: {value}")
             if not runtime or not runtime.running or not isinstance(value, str):
                 continue
 
             accepted, reason = runtime.trigger_controller.trigger_usb(value)
             if not accepted:
                 logger.info("USB scanner trigger ignored: %s", reason)
-                
-            # await websocket.receive_text()
+
         except WebSocketDisconnect:
             logger.info("WebSocket disconnected")
             return

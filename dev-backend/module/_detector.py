@@ -1,4 +1,4 @@
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 import asyncio
 import logging
 import os
@@ -59,6 +59,14 @@ class DetectionRuntime:
         self.running = False
         self.paused = False
         self.trigger_controller = TriggerController(self.detector.activate_trigger)
+        self.detector.on_sop_completed = self._prepare_next_trigger_cycle
+
+    def _prepare_next_trigger_cycle(self) -> None:
+        """触发模式下，当前 SOP 完成后等待下一件的新触发信号。"""
+        if not self.trigger_controller.requires_trigger:
+            return
+        if self.detector.prepare_for_next_trigger():
+            self.trigger_controller.rearm()
 
     def start(self) -> None:
         if self.running:
@@ -211,6 +219,7 @@ class DetectorWorker:
         }
         self.paused = False
         self.waiting_for_trigger = False
+        self.on_sop_completed: Callable[[], None] | None = None
         self.trigger_lock = threading.Lock()
         self.pause_lock = threading.Lock()
         self.state_lock = threading.RLock()
@@ -331,6 +340,7 @@ class DetectorWorker:
 
     def _update_result(self, detection: dict, hands=None) -> None:
         label_box_datas = detection.get("datas", [])
+        completed_now = False
         with self.state_lock:
             sop_result = self.sop_machine.update(label_box_datas,hands=hands)
             self.result_store.consume_sop_snapshot(sop_result)
@@ -345,16 +355,47 @@ class DetectorWorker:
                 if sop_state != self._last_sop_state:
                     if sop_state == "completed":
                         self.result["ok_count"] = self.result.get("ok_count", 0) + 1
+                        completed_now = True
                     elif sop_state == "failed":
                         self.result["ng_count"] = self.result.get("ng_count", 0) + 1
                     self._last_sop_state = sop_state
                 self.result["updated_at"] = time.time()
 
+        if completed_now and self.on_sop_completed is not None:
+            try:
+                self.on_sop_completed()
+            except Exception:
+                logger.exception("Failed to prepare the next triggered SOP run")
+
     def snapshot(self):
         with self.result_lock:
             return dict(self.result)
+
+    def prepare_for_next_trigger(self) -> bool:
+        """保持已完成结果可见，但暂停推理并等待下一件触发。"""
+        with self.trigger_lock:
+            if not self.running or self.waiting_for_trigger:
+                return False
+            with self.state_lock:
+                if self.sop_machine.snapshot().get("state") != "completed":
+                    return False
+                self.waiting_for_trigger = True
+                sop_result = self.sop_machine.snapshot(
+                    matched=False,
+                    reason="Waiting for the next configured trigger",
+                )
+                with self.result_lock:
+                    self.result["gesture"] = "idle"
+                    self.result["bbox"] = []
+                    self.result["detections"] = []
+                    self.result["hands"] = {}
+                    self.result["hand_action_points"] = []
+                    self.result["sop"] = sop_result
+                    self.result["updated_at"] = time.time()
+            return True
+
     def activate_trigger(self, source: str, payload: dict) -> bool:
-        """Start SOP once. TriggerController rejects later trigger signals."""
+        """启动当前零件；SOP 进行期间 TriggerController 会拒绝后续信号。"""
         with self.trigger_lock:
             if not self.running or not self.waiting_for_trigger:
                 return False
@@ -384,12 +425,23 @@ class DetectorWorker:
                 self.result_store.consume_sop_snapshot(sop_result)
                 self._last_sop_state = sop_result.get("state")
                 with self.result_lock:
-                    self.result["sop"] = sop_result
-                    self.result["trigger"] = {
-                        "source": source,
-                        "payload": payload,
-                    }
-                    self.result["updated_at"] = time.time()
+                    self.result.update({
+                        "step": 1,
+                        "gesture": "idle",
+                        "bbox": [],
+                        "detections": [],
+                        "hands": {},
+                        "hand_action_points": [],
+                        "score": 0.0,
+                        "ok_count": 0,
+                        "ng_count": 0,
+                        "sop": sop_result,
+                        "trigger": {
+                            "source": source,
+                            "payload": payload,
+                        },
+                        "updated_at": time.time(),
+                    })
             return True
     def pause(self) -> bool:
         """暂停 AI 推理和 SOP 状态推进，但不销毁检测线程。"""
