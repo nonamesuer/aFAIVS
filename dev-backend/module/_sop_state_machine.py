@@ -309,6 +309,12 @@ class SOPStepRuntime:
             "blocked_pick_state": self.blocked_pick_state,
             "awaiting_cycle_reset": self.awaiting_cycle_reset,
             "cycle_reset_armed": self.cycle_reset_armed,
+            #新增实际取料履历
+            "pickup_origin_region": self.pickup_origin_region,
+            "pickup_object_label": self.pickup_object_label,
+            "wrong_pick_latched": self.wrong_pick_latched,
+            "wrong_pick_reason": self.wrong_pick_reason,
+            "wrong_pick_clear_count": self.wrong_pick_clear_count,
             "cycle": {
                 "current": min(self.matched_count + 1, self.target),
                 "completed": self.matched_count,

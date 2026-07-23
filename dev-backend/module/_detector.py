@@ -16,7 +16,7 @@ from module._onnx_detection import ONNXDetection
 from module._sop_state_machine import SOPStateMachine
 from module._hand_detection import HandTracker, HandDetectorWorker
 from module._trigger import TriggerController
-
+from module._sop_result_store import SOPResultStore
 logger = logging.getLogger(__name__)
 
 JPEG_QUALITY = 85
@@ -218,6 +218,13 @@ class DetectorWorker:
         self.model_name = model_name
         self.project_name = project_name
         self.sop_machine = self._create_sop_machine()
+        #结果保存器
+        self.result_store = SOPResultStore(
+            project_name=self.project_name,
+            model_name=self.model_name,
+            camera_name=self.camera.camera_name,
+            sop_config=self.sop_machine.sop_config,
+        )
         self.hand_worker: HandDetectorWorker | None = None
         # self._refresh_hand_tracker()
         self.result["sop"] = self.sop_machine.snapshot(reason="SOP waiting to start")
@@ -265,14 +272,18 @@ class DetectorWorker:
         self.paused = False
         self.waiting_for_trigger = wait_for_trigger
         self.sop_machine = self._create_sop_machine()
+        #结果触发器
+        self.result_store.set_sop_config(self.sop_machine.sop_config)
         if wait_for_trigger:
             sop_result = self.sop_machine.snapshot(reason="Waiting for configured trigger")
             with self.result_lock:
                 self.result["sop"] = sop_result
                 self.result["updated_at"] = time.time()
         else:
+            self.result_store.start_run(trigger_source="manual",trigger_payload={})
             self.sop_machine.start()
             self._refresh_hand_tracker()
+            self.result_store.consume_sop_snapshot(self.sop_machine.snapshot(reason="SOP started"))
         self._last_sop_state = self.sop_machine.snapshot().get("state")
         self.running = True
         self.detector_status.set(1)
@@ -322,6 +333,7 @@ class DetectorWorker:
         label_box_datas = detection.get("datas", [])
         with self.state_lock:
             sop_result = self.sop_machine.update(label_box_datas,hands=hands)
+            self.result_store.consume_sop_snapshot(sop_result)
             sop_state = sop_result.get("state")
             with self.result_lock:
                 self.result["step"] = 1 if self.result.get("step", 1) == 1 else 2
@@ -347,13 +359,29 @@ class DetectorWorker:
             if not self.running or not self.waiting_for_trigger:
                 return False
             with self.state_lock:
+                # =====================================
+                # 真正生产开始
+                #
+                # USB扫码枪：
+                # payload.value 可以作为产品追溯码
+                #
+                # HTTP：
+                # parameters 会完整保存
+                #
+                # Modbus：
+                # 保存信号信息
+                # =====================================
+                self.result_store.start_run(trigger_source=source, trigger_payload=payload)
                 self.sop_machine.start()
+
                 self.waiting_for_trigger = False
                 self._refresh_hand_tracker()
                 sop_result = self.sop_machine.snapshot(
                     matched=False,
                     reason=f"Detection started by {source} trigger",
                 )
+                # 先记录初始状态
+                self.result_store.consume_sop_snapshot(sop_result)
                 self._last_sop_state = sop_result.get("state")
                 with self.result_lock:
                     self.result["sop"] = sop_result
@@ -372,6 +400,7 @@ class DetectorWorker:
                 self.paused = True
                 self.sop_machine.pause()
                 sop_result = self.sop_machine.snapshot(matched=False,reason="SOP paused",)
+                self.result_store.consume_sop_snapshot(sop_result)
                 with self.result_lock:
                     self.result["sop"] = sop_result
                     self.result["hands"] = {}
@@ -389,6 +418,7 @@ class DetectorWorker:
                 self.sop_machine.resume()
                 self.paused = False
                 sop_result = self.sop_machine.snapshot(matched=False,reason="SOP resumed")
+                self.result_store.consume_sop_snapshot(sop_result)
                 with self.result_lock:
                     self.result["sop"] = sop_result
                     self.result["updated_at"] = time.time()
@@ -403,6 +433,9 @@ class DetectorWorker:
             if not self.running:return None
             keep_paused = self.paused
             with self.state_lock:
+                previous_run_id = self.result_store.current_run_id
+                self.result_store.finish_run(execution_status="reset", reason="Manual SOP reset")
+                self.result_store.start_run(trigger_source="reset", trigger_payload={"previous_run_id": previous_run_id},keep_session=True)
                 # start() 本身已经会清除所有步骤状态、
                 # matched_count、时间、失败状态和 current_index。
                 self.sop_machine.start()
@@ -412,6 +445,7 @@ class DetectorWorker:
                 else:
                     reason = "SOP reset"
                 sop_result = self.sop_machine.snapshot(matched=False,reason=reason)
+                self.result_store.consume_sop_snapshot(sop_result)
                 self._last_sop_state = sop_result.get("state")
 
                 with self.result_lock:
@@ -431,6 +465,7 @@ class DetectorWorker:
 
             return dict(self.result)
     def stop(self) -> None:
+        self.result_store.finish_run(execution_status="stopped", reason="Manual detection stop")
         self.running = False
         self.paused = False
         self.waiting_for_trigger = False

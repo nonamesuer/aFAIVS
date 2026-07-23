@@ -319,13 +319,6 @@ def resume_detection():
     })
 
 
-@api_detection.get("/stop_detection")
-async def stop_detection():
-    runtime = get_runtime()
-    await _stop_detection_runtime(runtime)
-    return JSONResponse({"status":True,"msg":"检测已停止","data":runtime_status()})
-
-
 @api_detection.post("/reset_detection")
 def reset_detection():
     """
