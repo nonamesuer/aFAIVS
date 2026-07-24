@@ -13,13 +13,14 @@ from urllib.request import Request, urlopen
 
 from pymodbus.client import ModbusTcpClient
 
-from module._base import get_main_config
+from module._base import get_main_config,JsonFile
 
 
 logger = logging.getLogger(__name__)
 
 MAX_STEP_FEEDBACK_SIGNALS = 3
 MAX_STEP_HTTP_ENDPOINTS = 5
+MOMENTARY_COIL_DELAY_SECONDS = 0.3
 WRITABLE_MODBUS_TYPES = {"coil", "holdingRegister"}
 
 
@@ -54,6 +55,7 @@ def _validate_modbus_feedback_signal(signal: Any) -> str:
     address = signal.get("address")
     data_type = signal.get("dataType")
     trigger_value = signal.get("triggerValue")
+    instantaneous = signal.get("instantaneous", False)
 
     if not _is_integer(slave_address) or not 1 <= slave_address <= 247:
         return "Modbus feedback slave address must be an integer between 1 and 247"
@@ -61,11 +63,16 @@ def _validate_modbus_feedback_signal(signal: Any) -> str:
         return "Modbus feedback address must be an integer between 0 and 65535"
     if data_type not in WRITABLE_MODBUS_TYPES:
         return "Modbus feedback supports only coil and holdingRegister data types"
+    if not isinstance(instantaneous, bool):
+        return "Modbus feedback instantaneous must be boolean"
     if data_type == "coil":
         if not isinstance(trigger_value, bool):
             return "Modbus coil feedback value must be boolean"
-    elif not _is_integer(trigger_value) or not 0 <= trigger_value <= 65535:
-        return "Modbus holding register feedback value must be an integer between 0 and 65535"
+    else:
+        if instantaneous:
+            return "Modbus feedback instantaneous is supported only for coil data type"
+        if not _is_integer(trigger_value) or not 0 <= trigger_value <= 65535:
+            return "Modbus holding register feedback value must be an integer between 0 and 65535"
     return ""
 
 
@@ -307,6 +314,15 @@ class StepFeedbackDispatcher:
                 raise RuntimeError("The HTTP feedback endpoint is no longer enabled in public configuration")
 
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            json_file = JsonFile(r"C:\Users\LAI8PK\Desktop\update\test.json")
+            cache_data = json_file.read_json_file()
+
+            print("cache_data",cache_data)
+            if not cache_data:
+                cache_data = [payload]
+            else:
+                cache_data.append(payload)
+            json_file.write_json_file(cache_data)
             request = Request(
                 url,
                 data=body,
@@ -375,6 +391,7 @@ class StepFeedbackDispatcher:
             client = ModbusTcpClient(host=host, port=port, timeout=timeout)
             if not client.connect():
                 raise ConnectionError(f"Cannot connect to Modbus server {host}:{port}")
+            momentary_signals = []
             for signal in signals:
                 validation_error = _validate_modbus_feedback_signal(signal)
                 if validation_error:
@@ -384,6 +401,23 @@ class StepFeedbackDispatcher:
                     raise RuntimeError(
                         f"Write failed at slave {signal['slaveAddress']}, address {signal['address']}: {result}"
                     )
+                if signal["dataType"] == "coil" and signal.get("instantaneous") is True:
+                    momentary_signals.append(signal)
+
+            if momentary_signals:
+                time.sleep(MOMENTARY_COIL_DELAY_SECONDS)
+                for signal in momentary_signals:
+                    reset_signal = {
+                        **signal,
+                        "triggerValue": not signal["triggerValue"],
+                        "instantaneous": False,
+                    }
+                    result = self._write_modbus_signal(client, reset_signal)
+                    if hasattr(result, "isError") and result.isError():
+                        raise RuntimeError(
+                            "Momentary reset failed at "
+                            f"slave {signal['slaveAddress']}, address {signal['address']}: {result}"
+                        )
             self._publish_status(
                 status="success",
                 channel="modbus",
@@ -391,7 +425,14 @@ class StepFeedbackDispatcher:
                 step=step,
                 run_id=run_id,
                 target=target,
-                message=f"Successfully wrote {len(signals)} Modbus feedback signal(s)",
+                message=(
+                    f"Successfully wrote {len(signals)} Modbus feedback signal(s)"
+                    + (
+                        f" and reset {len(momentary_signals)} momentary coil(s) after 300 ms"
+                        if momentary_signals
+                        else ""
+                    )
+                ),
             )
         except Exception as exc:
             message = str(exc) or exc.__class__.__name__

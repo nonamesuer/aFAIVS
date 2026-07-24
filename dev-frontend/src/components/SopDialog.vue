@@ -293,12 +293,12 @@
                         class="feedback-signal-card"
                       >
                         <el-row :gutter="8">
-                          <el-col :span="5">
+                          <el-col :span="4">
                             <el-form-item :label="$t('config.modbus_slave_address')">
                               <el-input-number v-model.number="signal.slaveAddress" :min="1" :max="247" controls-position="right" />
                             </el-form-item>
                           </el-col>
-                          <el-col :span="7">
+                          <el-col :span="6">
                             <el-form-item :label="$t('config.modbus_data_type')">
                               <el-select v-model="signal.dataType" @change="handleFeedbackDataTypeChange(signal)">
                                 <el-option :label="$t('config.modbus_type_coil')" value="coil" />
@@ -306,12 +306,12 @@
                               </el-select>
                             </el-form-item>
                           </el-col>
-                          <el-col :span="5">
+                          <el-col :span="4">
                             <el-form-item :label="$t('config.modbus_trigger_address')">
                               <el-input-number v-model.number="signal.address" :min="0" :max="65535" controls-position="right" />
                             </el-form-item>
                           </el-col>
-                          <el-col :span="6">
+                          <el-col :span="5">
                             <el-form-item :label="$t('config.modbus_trigger_value')">
                               <el-select v-if="signal.dataType === 'coil'" v-model="signal.triggerValue">
                                 <el-option :label="$t('config.modbus_bit_on')" :value="true" />
@@ -324,6 +324,20 @@
                                 :max="65535"
                                 controls-position="right"
                               />
+                            </el-form-item>
+                          </el-col>
+                          <el-col :span="4">
+                            <el-form-item :label="$t('config.modbus_instantaneous')">
+                              <el-tooltip
+                                v-if="signal.dataType === 'coil'"
+                                :content="$t('config.modbus_instantaneous_description')"
+                                placement="top"
+                              >
+                                <el-switch v-model="signal.instantaneous" />
+                              </el-tooltip>
+                              <span v-else class="feedback-signal-unavailable">
+                                {{ $t('config.modbus_coil_only') }}
+                              </span>
                             </el-form-item>
                           </el-col>
                           <el-col :span="1" class="feedback-signal-delete">
@@ -498,6 +512,7 @@ type FeedbackSignal = {
   dataType: FeedbackDataType
   address: number
   triggerValue: boolean | number
+  instantaneous: boolean
 }
 
 const createFeedbackSignal = (): FeedbackSignal => ({
@@ -505,6 +520,7 @@ const createFeedbackSignal = (): FeedbackSignal => ({
   dataType: 'coil',
   address: 0,
   triggerValue: true,
+  instantaneous: false,
 })
 
 const normalizeFeedbackSignal = (signal: any): FeedbackSignal => {
@@ -516,6 +532,7 @@ const normalizeFeedbackSignal = (signal: any): FeedbackSignal => {
     triggerValue: dataType === 'coil'
       ? Boolean(signal?.triggerValue ?? true)
       : (Number.isInteger(signal?.triggerValue) ? signal.triggerValue : 0),
+    instantaneous: dataType === 'coil' && signal?.instantaneous === true,
   }
 }
 
@@ -662,12 +679,15 @@ const removeFeedbackSignal = (group: FeedbackSignalGroup, index: number) => {
 
 const handleFeedbackDataTypeChange = (signal: FeedbackSignal) => {
   signal.triggerValue = signal.dataType === 'coil' ? true : 0
+  signal.instantaneous = false
 }
 
 const isValidFeedbackSignal = (signal: FeedbackSignal) => {
   if (!Number.isInteger(signal.slaveAddress) || signal.slaveAddress < 1 || signal.slaveAddress > 247) return false
   if (!Number.isInteger(signal.address) || signal.address < 0 || signal.address > 65535) return false
+  if (typeof signal.instantaneous !== 'boolean') return false
   if (signal.dataType === 'coil') return typeof signal.triggerValue === 'boolean'
+  if (signal.instantaneous) return false
   return signal.dataType === 'holdingRegister'
     && Number.isInteger(signal.triggerValue)
     && Number(signal.triggerValue) >= 0
@@ -959,6 +979,7 @@ const hideExecutionPreview = () => {
 .feedback-signal-count { color: var(--el-text-color-secondary); font-size: 12px; }
 .feedback-signal-card { padding: 8px 8px 0; margin-top: 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
 .feedback-signal-card :deep(.el-input-number), .feedback-signal-card :deep(.el-select) { width: 100%; }
+.feedback-signal-unavailable { color: var(--el-text-color-placeholder); font-size: 12px; }
 .feedback-signal-delete { display: flex; align-items: center; justify-content: center; padding-top: 24px; }
 // .validation-alert { margin-top: 16px; }
 .right-sidebar-wrapper { flex: 1; min-height: 0; overflow: auto; }

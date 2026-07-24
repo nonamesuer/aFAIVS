@@ -31,8 +31,10 @@
                     "fromRegion": "A1",
                     "resultFeedback": {
                         "http": {
-                            "enabled": false,
-                            "endpointUrls": []
+                            "enabled": true,
+                            "endpointUrls": [
+                                "http://127.0.0.1:20253/http/response_test"
+                            ]
                         },
                         "modbus": {
                             "enabled": true,
@@ -41,10 +43,19 @@
                                     "slaveAddress": 1,
                                     "dataType": "coil",
                                     "address": 0,
-                                    "triggerValue": true
+                                    "triggerValue": true,
+                                    "instantaneous": true
                                 }
                             ],
-                            "completionSignals": []
+                            "completionSignals": [
+                                {
+                                    "slaveAddress": 1,
+                                    "dataType": "coil",
+                                    "address": 1,
+                                    "triggerValue": true,
+                                    "instantaneous": false
+                                }
+                            ]
                         }
                     }
                 },
@@ -130,6 +141,6 @@
         ],
         "create_time": "2026-07-09 11:44:07",
         "enabled": true,
-        "modify_time": "2026-07-24 09:16:06"
+        "modify_time": "2026-07-24 10:19:59"
     }
 }

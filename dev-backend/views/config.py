@@ -474,3 +474,14 @@ def test_modbus_connection(payload: ModbusConnectionRequest):
             client.close()
         except Exception:
             logger.exception("Failed to close Modbus TCP test client")
+
+@api_config.post("/http/response_test")
+async def http_response_test(request: Request):
+    """测试 HTTP 响应，返回请求的 JSON 数据和状态码。"""
+    try:
+        body = await request.json()
+        print("body",body)
+        return JSONResponse(content={"status": True, "msg": "HTTP response test successful", "data": body})
+    except Exception as e:
+        logger.error(f"Error in HTTP response test: {e}")
+        return JSONResponse(content={"status": False, "msg": str(e)})

@@ -109,11 +109,16 @@
             ]
         },
         "resultFeedback": {
-            "enabled": false,
+            "enabled": true,
             "endpoints": [
                 {
                     "name": "API 1",
-                    "url": "http://127.0.0.1:8000/test",
+                    "url": "http://127.0.0.1:20253/http/response_test",
+                    "enabled": true
+                },
+                {
+                    "name": "API 2",
+                    "url": "http://127.0.0.1:8000",
                     "enabled": true
                 }
             ]
