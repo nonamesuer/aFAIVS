@@ -15,7 +15,21 @@
             </el-form-item> 
             <el-form-item :label="$t('config.targetarea_fill')" prop="targetAreaFill">
                 <el-switch v-model="boxStyleForm.targetAreaFill" />
-            </el-form-item> 
+            </el-form-item>
+            <el-form-item
+                :label="$t('config.area_fill_alpha')"
+                prop="areaFillAlpha"
+                style="width: 100%"
+            >
+                <el-slider
+                    v-model="areaFillPercent"
+                    :min="0"
+                    :max="100"
+                    :step="5"
+                    show-input
+                    style="width: 100%"
+                />
+            </el-form-item>
         </el-form>
         <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; margin-top: 10px">
             <div style="font-weight: 700; color: green; margin: 10px 0;">↓↓↓{{ $t('config.click_show_example') }}↓↓↓</div>
@@ -30,7 +44,7 @@
     </el-drawer>
 </template>
 <script setup lang="ts">
-import { ref, reactive, watch,onMounted } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import api from "@/api/index";
 import { ElMessage } from "element-plus";
@@ -45,6 +59,7 @@ interface BoxStyleConfig {
   fontScale: number
   fromAreaFill: boolean
   targetAreaFill: boolean
+  areaFillAlpha: number
 }
 const props = defineProps<{
   visible: boolean;
@@ -56,16 +71,28 @@ const emit = defineEmits<{
 }>();
 
 const boxStyleFormRef = ref(null);
+const normalizeAreaFillAlpha = (value: unknown): number => {
+  const alpha = Number(value);
+  if (!Number.isFinite(alpha)) return 0.5;
+  return Math.min(1, Math.max(0, alpha));
+};
 const createBoxStyleForm = (config?: Partial<BoxStyleConfig>): BoxStyleConfig => ({
   boxThickness: Number(config?.boxThickness ?? 2),
   fontThickness: Number(config?.fontThickness ?? 2),
   fontScale: Number(config?.fontScale ?? 0.5),
   fromAreaFill: Boolean(config?.fromAreaFill),
   targetAreaFill: Boolean(config?.targetAreaFill),
+  areaFillAlpha: normalizeAreaFillAlpha(config?.areaFillAlpha),
 })
 const boxStyleForm = ref<BoxStyleConfig>(
   createBoxStyleForm(props.boxStyleConfig),
 )
+const areaFillPercent = computed<number>({
+  get: () => Math.round(boxStyleForm.value.areaFillAlpha * 100),
+  set: (value) => {
+    boxStyleForm.value.areaFillAlpha = Number((value / 100).toFixed(2));
+  },
+});
 
 
 

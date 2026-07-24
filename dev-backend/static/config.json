@@ -79,7 +79,8 @@
         "fontThickness": 3,
         "fontScale": 0.7,
         "fromAreaFill": false,
-        "targetAreaFill": true
+        "targetAreaFill": true,
+        "areaFillAlpha": 0.5
     },
     "modbus": {
         "host": "127.0.0.1",

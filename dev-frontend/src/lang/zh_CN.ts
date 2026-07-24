@@ -96,6 +96,7 @@ export default{
         font_scale:"标记字体大小",
         fromarea_fill:"起始区域填充",
         targetarea_fill:"目标区域填充",
+        area_fill_alpha:"区域填充不透明度（%）",
         click_show_example:"点击查看示例",
         modbus_config:"Modbus 配置",
         modbus_config_description:"配置 Modbus TCP 服务器地址并测试连接",

@@ -237,6 +237,7 @@ const boxStyleConfig = ref({
   fontScale: 0.5,
   fromAreaFill: false,
   targetAreaFill: false,
+  areaFillAlpha: 0.5,
 });
 // Modbus TCP
 const modbusDialogVisible = ref(false);

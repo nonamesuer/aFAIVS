@@ -97,6 +97,7 @@ export default{
         font_scale:"Font Size",
         fromarea_fill:"Start Area Fill",
         targetarea_fill:"Target Area Fill",
+        area_fill_alpha:"Area Fill Opacity (%)",
         click_show_example:"Click to view example",
         modbus_config:"Modbus Configuration",
         modbus_config_description:"Configure the Modbus TCP server and test its connection",

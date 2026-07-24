@@ -16,7 +16,11 @@ from module._hand_detection import HandTracker, HandDetectorWorker
 from module._trigger import TriggerController
 from module._sop_result_store import SOPResultStore
 from module._step_feedback import StepFeedbackDispatcher
-from module._box_style import AREA_FILL_ALPHA, collect_sop_area_labels, should_fill_area
+from module._box_style import (
+    collect_sop_area_labels,
+    normalize_area_fill_alpha,
+    should_fill_area,
+)
 from PIL import ImageColor
 logger = logging.getLogger(__name__)
 
@@ -639,6 +643,10 @@ def process_frame(image: np.ndarray, result: dict | None = None) -> np.ndarray:
 
     filled_annotations = [annotation for annotation in annotations if annotation["fill"]]
     if filled_annotations:
+        area_fill_alpha = normalize_area_fill_alpha(
+            BOX_STYLE_CONFIG.get("areaFillAlpha"),
+            DEFAULT_BOX_STYLE_CONFIG["areaFillAlpha"],
+        )
         overlay = image.copy()
         for annotation in filled_annotations:
             x1, y1, x2, y2 = annotation["bounds"]
@@ -651,9 +659,9 @@ def process_frame(image: np.ndarray, result: dict | None = None) -> np.ndarray:
             )
         cv2.addWeighted(
             overlay,
-            AREA_FILL_ALPHA,
+            area_fill_alpha,
             image,
-            1.0 - AREA_FILL_ALPHA,
+            1.0 - area_fill_alpha,
             0,
             dst=image,
         )

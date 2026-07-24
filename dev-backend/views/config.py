@@ -5,9 +5,9 @@ import base64
 import cv2
 from fastapi.responses import JSONResponse  
 from fastapi import APIRouter, Request,HTTPException,File, UploadFile
-from module._base import CONFIG_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater
+from module._base import CONFIG_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater,DEFAULT_BOX_STYLE_CONFIG
 from module._step_feedback import validate_sop_step_feedback_config
-from module._box_style import AREA_FILL_ALPHA
+from module._box_style import normalize_area_fill_alpha
 from datetime import datetime
 from pydantic import BaseModel, Field
 from pymodbus.client import ModbusTcpClient
@@ -28,6 +28,20 @@ async def set_box_style_config(request: Request):
         body = await request.json()
         box_style_config = body.get("boxStyle")
         if not box_style_config:return JSONResponse(content={"status": False, "msg": "Missing boxStyle parameter"})
+        area_fill_alpha = box_style_config.get(
+            "areaFillAlpha",
+            DEFAULT_BOX_STYLE_CONFIG["areaFillAlpha"],
+        )
+        try:
+            area_fill_alpha = float(area_fill_alpha)
+        except (TypeError, ValueError):
+            return JSONResponse(content={"status": False, "msg": "areaFillAlpha must be a number between 0 and 1"})
+        if not np.isfinite(area_fill_alpha) or not 0 <= area_fill_alpha <= 1:
+            return JSONResponse(content={"status": False, "msg": "areaFillAlpha must be between 0 and 1"})
+        box_style_config = {
+            **box_style_config,
+            "areaFillAlpha": round(area_fill_alpha, 2),
+        }
         config_datas = get_main_config()
         config_datas["boxStyle"] = box_style_config
         JsonFile(CONFIG_PATH).write_json_file(config_datas)
@@ -46,6 +60,10 @@ async def display_box_style_config(request: Request):
         font_scale = box_style_config.get("fontScale", 0.5)
         from_area_fill = box_style_config.get("fromAreaFill", False)
         target_area_fill = box_style_config.get("targetAreaFill", False)
+        area_fill_alpha = normalize_area_fill_alpha(
+            box_style_config.get("areaFillAlpha"),
+            DEFAULT_BOX_STYLE_CONFIG["areaFillAlpha"],
+        )
         img = np.zeros((400, 400, 3), dtype=np.uint8)
         cv2.rectangle(img, (50, 50), (150,150), (0, 255, 0), thickness=box_thickness)
         (textSizeW, textSizeH), baseline = cv2.getTextSize('Example', cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
@@ -58,9 +76,9 @@ async def display_box_style_config(request: Request):
         if from_area_fill or target_area_fill:
             cv2.addWeighted(
                 overlay,
-                AREA_FILL_ALPHA,
+                area_fill_alpha,
                 img,
-                1.0 - AREA_FILL_ALPHA,
+                1.0 - area_fill_alpha,
                 0,
                 dst=img,
             )

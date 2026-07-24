@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 
-AREA_FILL_ALPHA = 0.5
+def normalize_area_fill_alpha(value: Any, fallback: float) -> float:
+    """Return a finite area-fill alpha clamped to the OpenCV range of 0..1."""
+    try:
+        alpha = float(value)
+    except (TypeError, ValueError):
+        alpha = float(fallback)
+    if not math.isfinite(alpha):
+        alpha = float(fallback)
+    return min(1.0, max(0.0, alpha))
 
 
 def collect_sop_area_labels(sop: Any) -> tuple[set[str], set[str]]:
