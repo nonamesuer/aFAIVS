@@ -163,6 +163,7 @@
             :modelsList="modelsList"
             :currentMainLabels="currentMainLabels"
             :steps="editSteps"
+            :resultFeedbackConfig="detectionIntegrationConfig.resultFeedback"
             @close="handleCloseSignalSet"
             @save="handleSavePositionRow"
             @modelChanged="(model) => handleChangeMainModel(model)"

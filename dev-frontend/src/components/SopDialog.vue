@@ -210,6 +210,137 @@
                     </div>
                   </div>
                 </div>
+
+                <section class="step-feedback-section">
+                  <div class="step-feedback-heading">
+                    <b>{{ $t('config.sop_step_config.step_feedback') }}</b>
+                    <span>{{ $t('config.sop_step_config.step_feedback_description') }}</span>
+                  </div>
+
+                  <el-form-item :label="$t('config.sop_step_config.feedback_methods')">
+                    <el-checkbox-group v-model="currentFeedbackMethods">
+                      <el-checkbox value="http" :disabled="!httpFeedbackAvailable">
+                        {{ $t('config.sop_step_config.http_step_feedback') }}
+                      </el-checkbox>
+                      <el-checkbox value="modbus">
+                        {{ $t('config.sop_step_config.modbus_step_feedback') }}
+                      </el-checkbox>
+                    </el-checkbox-group>
+                  </el-form-item>
+
+                  <el-alert
+                    v-if="!httpFeedbackAvailable"
+                    type="info"
+                    :closable="false"
+                    :title="$t('config.sop_step_config.http_step_feedback_unavailable')"
+                    show-icon
+                  />
+
+                  <el-form-item
+                    v-if="currentStep.context.resultFeedback.http.enabled"
+                    :label="$t('config.sop_step_config.select_feedback_endpoints')"
+                  >
+                    <el-select
+                      v-model="currentStep.context.resultFeedback.http.endpointUrls"
+                      multiple
+                      clearable
+                      collapse-tags
+                      collapse-tags-tooltip
+                      style="width: 100%"
+                    >
+                      <el-option
+                        v-for="endpoint in availableHttpFeedbackEndpoints"
+                        :key="endpoint.url"
+                        :label="`${endpoint.name} (${endpoint.url})`"
+                        :value="endpoint.url"
+                      />
+                    </el-select>
+                  </el-form-item>
+
+                  <div v-if="currentStep.context.resultFeedback.modbus.enabled" class="modbus-feedback-groups">
+                    <div
+                      v-for="group in feedbackSignalGroups"
+                      :key="group.key"
+                      class="modbus-feedback-group"
+                    >
+                      <div class="feedback-group-toolbar">
+                        <b>{{ group.label }}</b>
+                        <div>
+                          <span class="feedback-signal-count">
+                            {{ $t('config.sop_step_config.feedback_signal_count', { count: group.signals.length }) }}
+                          </span>
+                          <el-button
+                            type="primary"
+                            plain
+                            size="small"
+                            :disabled="group.signals.length >= MAX_STEP_FEEDBACK_SIGNALS"
+                            @click="addFeedbackSignal(group.key)"
+                          >
+                            + {{ $t('config.sop_step_config.add_feedback_signal') }}
+                          </el-button>
+                        </div>
+                      </div>
+
+                      <el-empty
+                        v-if="!group.signals.length"
+                        :description="$t('config.sop_step_config.no_feedback_signals')"
+                        :image-size="48"
+                      />
+
+                      <div
+                        v-for="(signal, signalIndex) in group.signals"
+                        :key="signalIndex"
+                        class="feedback-signal-card"
+                      >
+                        <el-row :gutter="8">
+                          <el-col :span="5">
+                            <el-form-item :label="$t('config.modbus_slave_address')">
+                              <el-input-number v-model.number="signal.slaveAddress" :min="1" :max="247" controls-position="right" />
+                            </el-form-item>
+                          </el-col>
+                          <el-col :span="7">
+                            <el-form-item :label="$t('config.modbus_data_type')">
+                              <el-select v-model="signal.dataType" @change="handleFeedbackDataTypeChange(signal)">
+                                <el-option :label="$t('config.modbus_type_coil')" value="coil" />
+                                <el-option :label="$t('config.modbus_type_holding_register')" value="holdingRegister" />
+                              </el-select>
+                            </el-form-item>
+                          </el-col>
+                          <el-col :span="5">
+                            <el-form-item :label="$t('config.modbus_trigger_address')">
+                              <el-input-number v-model.number="signal.address" :min="0" :max="65535" controls-position="right" />
+                            </el-form-item>
+                          </el-col>
+                          <el-col :span="6">
+                            <el-form-item :label="$t('config.modbus_trigger_value')">
+                              <el-select v-if="signal.dataType === 'coil'" v-model="signal.triggerValue">
+                                <el-option :label="$t('config.modbus_bit_on')" :value="true" />
+                                <el-option :label="$t('config.modbus_bit_off')" :value="false" />
+                              </el-select>
+                              <el-input-number
+                                v-else
+                                v-model.number="signal.triggerValue"
+                                :min="0"
+                                :max="65535"
+                                controls-position="right"
+                              />
+                            </el-form-item>
+                          </el-col>
+                          <el-col :span="1" class="feedback-signal-delete">
+                            <el-button
+                              type="danger"
+                              link
+                              :title="$t('button.delete')"
+                              @click="removeFeedbackSignal(group.key, signalIndex)"
+                            >
+                              <el-icon><Delete /></el-icon>
+                            </el-button>
+                          </el-col>
+                        </el-row>
+                      </div>
+                    </div>
+                  </div>
+                </section>
               </el-form>
             </div>
           </div>
@@ -340,6 +471,14 @@ const props = defineProps<{
   modelsList: Record<string, boolean>
   currentMainLabels: Record<string, string>
   steps: any[]
+  resultFeedbackConfig: {
+    enabled: boolean
+    endpoints: Array<{
+      name: string
+      url: string
+      enabled: boolean
+    }>
+  }
 }>()
 
 const emit = defineEmits<{
@@ -351,6 +490,53 @@ const emit = defineEmits<{
 
 const HAND_SIDES = ['l', 'r'] as const
 const ALL_HAND_POINTS = Array.from({ length: 21 }, (_value, index) => index)
+const MAX_STEP_FEEDBACK_SIGNALS = 3
+type FeedbackSignalGroup = 'errorSignals' | 'completionSignals'
+type FeedbackDataType = 'coil' | 'holdingRegister'
+type FeedbackSignal = {
+  slaveAddress: number
+  dataType: FeedbackDataType
+  address: number
+  triggerValue: boolean | number
+}
+
+const createFeedbackSignal = (): FeedbackSignal => ({
+  slaveAddress: 1,
+  dataType: 'coil',
+  address: 0,
+  triggerValue: true,
+})
+
+const normalizeFeedbackSignal = (signal: any): FeedbackSignal => {
+  const dataType: FeedbackDataType = signal?.dataType === 'holdingRegister' ? 'holdingRegister' : 'coil'
+  return {
+    slaveAddress: Number.isInteger(signal?.slaveAddress) ? signal.slaveAddress : 1,
+    dataType,
+    address: Number.isInteger(signal?.address) ? signal.address : 0,
+    triggerValue: dataType === 'coil'
+      ? Boolean(signal?.triggerValue ?? true)
+      : (Number.isInteger(signal?.triggerValue) ? signal.triggerValue : 0),
+  }
+}
+
+const normalizeStepFeedback = (feedback: any) => ({
+  http: {
+    enabled: feedback?.http?.enabled === true,
+    endpointUrls: Array.isArray(feedback?.http?.endpointUrls)
+      ? [...new Set(feedback.http.endpointUrls.filter((url: unknown) => typeof url === 'string' && url.trim()))].slice(0, 5)
+      : [],
+  },
+  modbus: {
+    enabled: feedback?.modbus?.enabled === true,
+    errorSignals: Array.isArray(feedback?.modbus?.errorSignals)
+      ? feedback.modbus.errorSignals.slice(0, MAX_STEP_FEEDBACK_SIGNALS).map(normalizeFeedbackSignal)
+      : [],
+    completionSignals: Array.isArray(feedback?.modbus?.completionSignals)
+      ? feedback.modbus.completionSignals.slice(0, MAX_STEP_FEEDBACK_SIGNALS).map(normalizeFeedbackSignal)
+      : [],
+  },
+})
+
 const stepsLocal = ref<any[]>([])
 const activeStepIndex = ref(0)
 const ruleStepRef = ref<FormInstance>();
@@ -395,11 +581,120 @@ const ensureContext = () => {
   if (!currentStep.value) return
   currentStep.value.context ||= {}
   currentStep.value.context.handPoints ||= { l: [], r: [] }
+  currentStep.value.context.resultFeedback = normalizeStepFeedback(currentStep.value.context.resultFeedback)
   for (const side of HAND_SIDES) {
     if (!Array.isArray(currentStep.value.context.handPoints[side])) {
       currentStep.value.context.handPoints[side] = []
     }
   }
+}
+
+watch(currentStep, () => ensureContext(), { immediate: true })
+
+const availableHttpFeedbackEndpoints = computed(() => {
+  if (!props.resultFeedbackConfig?.enabled) return []
+  const seenUrls = new Set<string>()
+  return (props.resultFeedbackConfig.endpoints || []).filter(endpoint => {
+    const name = String(endpoint?.name || '').trim()
+    const url = String(endpoint?.url || '').trim()
+    if (!endpoint?.enabled || !name || !url || seenUrls.has(url)) return false
+    seenUrls.add(url)
+    return true
+  })
+})
+
+const httpFeedbackAvailable = computed(() => availableHttpFeedbackEndpoints.value.length > 0)
+
+const currentFeedbackMethods = computed<string[]>({
+  get: () => {
+    const feedback = currentStep.value?.context?.resultFeedback
+    if (!feedback) return []
+    const methods: string[] = []
+    if (feedback.http.enabled && httpFeedbackAvailable.value) methods.push('http')
+    if (feedback.modbus.enabled) methods.push('modbus')
+    return methods
+  },
+  set: methods => {
+    if (!currentStep.value) return
+    ensureContext()
+    const feedback = currentStep.value.context.resultFeedback
+    feedback.http.enabled = httpFeedbackAvailable.value && methods.includes('http')
+    feedback.modbus.enabled = methods.includes('modbus')
+  },
+})
+
+watch(httpFeedbackAvailable, available => {
+  if (!available && currentStep.value?.context?.resultFeedback?.http) {
+    currentStep.value.context.resultFeedback.http.enabled = false
+  }
+})
+
+const feedbackSignalGroups = computed(() => {
+  const modbus = currentStep.value?.context?.resultFeedback?.modbus
+  return [
+    {
+      key: 'errorSignals' as FeedbackSignalGroup,
+      label: t('config.sop_step_config.operation_error_feedback'),
+      signals: (modbus?.errorSignals || []) as FeedbackSignal[],
+    },
+    {
+      key: 'completionSignals' as FeedbackSignalGroup,
+      label: t('config.sop_step_config.operation_complete_feedback'),
+      signals: (modbus?.completionSignals || []) as FeedbackSignal[],
+    },
+  ]
+})
+
+const addFeedbackSignal = (group: FeedbackSignalGroup) => {
+  if (!currentStep.value) return
+  ensureContext()
+  const signals = currentStep.value.context.resultFeedback.modbus[group] as FeedbackSignal[]
+  if (signals.length >= MAX_STEP_FEEDBACK_SIGNALS) {
+    ElMessage.warning(t('config.sop_step_config.max_step_feedback_signals'))
+    return
+  }
+  signals.push(createFeedbackSignal())
+}
+
+const removeFeedbackSignal = (group: FeedbackSignalGroup, index: number) => {
+  currentStep.value?.context?.resultFeedback?.modbus?.[group]?.splice(index, 1)
+}
+
+const handleFeedbackDataTypeChange = (signal: FeedbackSignal) => {
+  signal.triggerValue = signal.dataType === 'coil' ? true : 0
+}
+
+const isValidFeedbackSignal = (signal: FeedbackSignal) => {
+  if (!Number.isInteger(signal.slaveAddress) || signal.slaveAddress < 1 || signal.slaveAddress > 247) return false
+  if (!Number.isInteger(signal.address) || signal.address < 0 || signal.address > 65535) return false
+  if (signal.dataType === 'coil') return typeof signal.triggerValue === 'boolean'
+  return signal.dataType === 'holdingRegister'
+    && Number.isInteger(signal.triggerValue)
+    && Number(signal.triggerValue) >= 0
+    && Number(signal.triggerValue) <= 65535
+}
+
+const validateStepFeedback = (step: any): string => {
+  const feedback = normalizeStepFeedback(step?.context?.resultFeedback)
+  step.context ||= {}
+  step.context.resultFeedback = feedback
+
+  if (feedback.http.enabled) {
+    if (!httpFeedbackAvailable.value) return t('config.sop_step_config.http_step_feedback_unavailable')
+    const availableUrls = new Set(availableHttpFeedbackEndpoints.value.map(endpoint => endpoint.url))
+    if (!feedback.http.endpointUrls.length || feedback.http.endpointUrls.some((url: string) => !availableUrls.has(url))) {
+      return t('config.sop_step_config.step_http_endpoint_required')
+    }
+  }
+
+  if (feedback.modbus.enabled) {
+    const signals = [...feedback.modbus.errorSignals, ...feedback.modbus.completionSignals]
+    if (!signals.length) return t('config.sop_step_config.step_modbus_signal_required')
+    if (signals.some(signal => !isValidFeedbackSignal(signal))) {
+      return t('config.sop_step_config.invalid_step_modbus_signal')
+    }
+  }
+  return ''
 }
 
 const currentObjectDetectionPhases = computed<string[]>({
@@ -470,6 +765,7 @@ const handleAddNewStep = async () => {
       missTolerance: 5,
       handMargin: 5,
       handPoints: { l: [], r: [] },
+      resultFeedback: normalizeStepFeedback(null),
     },
     doneWhen: [],
     ngWhen: [],
@@ -510,6 +806,14 @@ const handleSave = async () => {
         ElMessage.error(validation.message)
         return
       }
+    }
+
+    const feedbackValidationError = validateStepFeedback(rawStep)
+    if (feedbackValidationError) {
+      activeStepIndex.value = index
+      await nextTick()
+      ElMessage.error(`${t('interacting.step')} ${rawStep?.id ?? index + 1}：${feedbackValidationError}`)
+      return
     }
   }
 
@@ -645,6 +949,17 @@ const hideExecutionPreview = () => {
 .hands-point-field { border-right: 1px solid #000; padding-right: 8px; }
 .point-tags { display: flex; gap: 5px; flex-wrap: wrap; }
 .hands-point-operator { margin-left: auto; display: flex; gap: 8px; cursor: pointer; }
+.step-feedback-section { margin-top: 16px; padding: 14px; border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--bs-element-bgcolor); }
+.step-feedback-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.step-feedback-heading span { color: var(--el-text-color-secondary); font-size: 12px; }
+.modbus-feedback-groups { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
+.modbus-feedback-group { padding: 10px; border: 1px dashed var(--el-border-color); border-radius: 6px; background: var(--bs-bgcolor); }
+.feedback-group-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.feedback-group-toolbar > div { display: flex; align-items: center; gap: 10px; }
+.feedback-signal-count { color: var(--el-text-color-secondary); font-size: 12px; }
+.feedback-signal-card { padding: 8px 8px 0; margin-top: 8px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
+.feedback-signal-card :deep(.el-input-number), .feedback-signal-card :deep(.el-select) { width: 100%; }
+.feedback-signal-delete { display: flex; align-items: center; justify-content: center; padding-top: 24px; }
 // .validation-alert { margin-top: 16px; }
 .right-sidebar-wrapper { flex: 1; min-height: 0; overflow: auto; }
 /* =========================================================

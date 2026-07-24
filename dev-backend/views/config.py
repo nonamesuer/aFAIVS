@@ -6,6 +6,7 @@ import cv2
 from fastapi.responses import JSONResponse  
 from fastapi import APIRouter, Request,HTTPException,File, UploadFile
 from module._base import CONFIG_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater
+from module._step_feedback import validate_sop_step_feedback_config
 from datetime import datetime
 from pydantic import BaseModel, Field
 from pymodbus.client import ModbusTcpClient
@@ -280,6 +281,9 @@ async def set_sop_config(request:Request):
             body["create_time"] = now
             body["enabled"] = False
         body["modify_time"] = now
+        validation_error = validate_sop_step_feedback_config(body, get_main_config())
+        if validation_error:
+            return {"status": False, "msg": validation_error}
         sop_config_datas[model_name] = body
         sop_config.set(sop_config_datas)
         return {"status": True,"datas":sop_config_datas, "msg": "SOP configuration set successfully."}

@@ -17,11 +17,13 @@ from module._sop_state_machine import SOPStateMachine
 from module._hand_detection import HandTracker, HandDetectorWorker
 from module._trigger import TriggerController
 from module._sop_result_store import SOPResultStore
+from module._step_feedback import StepFeedbackDispatcher
 logger = logging.getLogger(__name__)
 
 JPEG_QUALITY = 85
 SERVER_STREAM_FPS = 12.0
 ACTIVE_STATUS_VALUES = {1, 2}
+MAX_FEEDBACK_STATUS_EVENTS = 30
 
 
 def _build_ice_servers() -> list[RTCIceServer]:
@@ -215,6 +217,7 @@ class DetectorWorker:
             "score": 0.0,
             "ok_count": 0,
             "ng_count": 0,
+            "feedback": {"events": []},
             "updated_at": 0.0,
         }
         self.paused = False
@@ -233,6 +236,12 @@ class DetectorWorker:
             model_name=self.model_name,
             camera_name=self.camera.camera_name,
             sop_config=self.sop_machine.sop_config,
+        )
+        self.feedback_dispatcher = StepFeedbackDispatcher(
+            project_name=self.project_name,
+            model_name=self.model_name,
+            camera_name=self.camera.camera_name,
+            status_callback=self._handle_feedback_status,
         )
         self.hand_worker: HandDetectorWorker | None = None
         # self._refresh_hand_tracker()
@@ -285,6 +294,7 @@ class DetectorWorker:
         self.result_store.set_sop_config(self.sop_machine.sop_config)
         if wait_for_trigger:
             sop_result = self.sop_machine.snapshot(reason="Waiting for configured trigger")
+            self.feedback_dispatcher.reset(sop_result)
             with self.result_lock:
                 self.result["sop"] = sop_result
                 self.result["updated_at"] = time.time()
@@ -292,7 +302,9 @@ class DetectorWorker:
             self.result_store.start_run(trigger_source="manual",trigger_payload={})
             self.sop_machine.start()
             self._refresh_hand_tracker()
-            self.result_store.consume_sop_snapshot(self.sop_machine.snapshot(reason="SOP started"))
+            sop_result = self.sop_machine.snapshot(reason="SOP started")
+            self.feedback_dispatcher.reset(sop_result)
+            self.result_store.consume_sop_snapshot(sop_result)
         self._last_sop_state = self.sop_machine.snapshot().get("state")
         self.running = True
         self.detector_status.set(1)
@@ -343,7 +355,9 @@ class DetectorWorker:
         completed_now = False
         with self.state_lock:
             sop_result = self.sop_machine.update(label_box_datas,hands=hands)
+            run_id = self.result_store.current_run_id
             self.result_store.consume_sop_snapshot(sop_result)
+            self.feedback_dispatcher.process_snapshot(sop_result, run_id)
             sop_state = sop_result.get("state")
             with self.result_lock:
                 self.result["step"] = 1 if self.result.get("step", 1) == 1 else 2
@@ -367,9 +381,25 @@ class DetectorWorker:
             except Exception:
                 logger.exception("Failed to prepare the next triggered SOP run")
 
+    def _handle_feedback_status(self, event: dict) -> None:
+        """Receive status events from feedback worker threads."""
+        with self.result_lock:
+            feedback = self.result.setdefault("feedback", {"events": []})
+            events = feedback.setdefault("events", [])
+            events.append(dict(event))
+            if len(events) > MAX_FEEDBACK_STATUS_EVENTS:
+                del events[:-MAX_FEEDBACK_STATUS_EVENTS]
+            self.result["updated_at"] = time.time()
+
     def snapshot(self):
         with self.result_lock:
-            return dict(self.result)
+            snapshot = dict(self.result)
+            feedback = self.result.get("feedback", {})
+            feedback_events = feedback.get("events", []) if isinstance(feedback, dict) else []
+            snapshot["feedback"] = {
+                "events": [dict(event) for event in feedback_events if isinstance(event, dict)],
+            }
+            return snapshot
 
     def prepare_for_next_trigger(self) -> bool:
         """保持已完成结果可见，但暂停推理并等待下一件触发。"""
@@ -421,6 +451,7 @@ class DetectorWorker:
                     matched=False,
                     reason=f"Detection started by {source} trigger",
                 )
+                self.feedback_dispatcher.reset(sop_result)
                 # 先记录初始状态
                 self.result_store.consume_sop_snapshot(sop_result)
                 self._last_sop_state = sop_result.get("state")
@@ -497,6 +528,7 @@ class DetectorWorker:
                 else:
                     reason = "SOP reset"
                 sop_result = self.sop_machine.snapshot(matched=False,reason=reason)
+                self.feedback_dispatcher.reset(sop_result)
                 self.result_store.consume_sop_snapshot(sop_result)
                 self._last_sop_state = sop_result.get("state")
 
@@ -518,6 +550,7 @@ class DetectorWorker:
             return dict(self.result)
     def stop(self) -> None:
         self.result_store.finish_run(execution_status="stopped", reason="Manual detection stop")
+        self.feedback_dispatcher.shutdown()
         self.running = False
         self.paused = False
         self.waiting_for_trigger = False
@@ -543,6 +576,7 @@ class DetectorWorker:
                 "score": 0.0,
                 "ok_count": 0,
                 "ng_count": 0,
+                "feedback": {"events": []},
                 "updated_at": time.time(),
                 "sop": None,
             }

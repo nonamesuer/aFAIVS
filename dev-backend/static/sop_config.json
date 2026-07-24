@@ -28,7 +28,25 @@
                             12
                         ]
                     },
-                    "fromRegion": "A1"
+                    "fromRegion": "A1",
+                    "resultFeedback": {
+                        "http": {
+                            "enabled": false,
+                            "endpointUrls": []
+                        },
+                        "modbus": {
+                            "enabled": true,
+                            "errorSignals": [
+                                {
+                                    "slaveAddress": 1,
+                                    "dataType": "coil",
+                                    "address": 0,
+                                    "triggerValue": true
+                                }
+                            ],
+                            "completionSignals": []
+                        }
+                    }
                 },
                 "doneWhen": [],
                 "ngWhen": []
@@ -56,7 +74,18 @@
                         "target": true
                     },
                     "missTolerance": 5,
-                    "handMargin": 30
+                    "handMargin": 30,
+                    "resultFeedback": {
+                        "http": {
+                            "enabled": false,
+                            "endpointUrls": []
+                        },
+                        "modbus": {
+                            "enabled": false,
+                            "errorSignals": [],
+                            "completionSignals": []
+                        }
+                    }
                 },
                 "doneWhen": [],
                 "ngWhen": []
@@ -82,6 +111,17 @@
                     "handPoints": {
                         "l": [],
                         "r": []
+                    },
+                    "resultFeedback": {
+                        "http": {
+                            "enabled": false,
+                            "endpointUrls": []
+                        },
+                        "modbus": {
+                            "enabled": false,
+                            "errorSignals": [],
+                            "completionSignals": []
+                        }
                     }
                 },
                 "doneWhen": [],
@@ -90,6 +130,6 @@
         ],
         "create_time": "2026-07-09 11:44:07",
         "enabled": true,
-        "modify_time": "2026-07-21 11:38:19"
+        "modify_time": "2026-07-24 09:16:06"
     }
 }

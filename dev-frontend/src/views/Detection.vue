@@ -266,7 +266,7 @@
                 <el-card class="side-card side-card-alerts" shadow="never">
                     <template #header>
                         <div style="color: red">
-                            {{ $t('displaytext.errorsandalerts') }}：<span>{{ ngCount }}</span>
+                            {{ $t('displaytext.errorsandalerts') }}：<span>{{ alertDisplayCount }}</span>
                         </div>
                     </template>
 
@@ -363,6 +363,7 @@ const createEmptyDetectionResult = () => ({
     ng_count: 0,
     updated_at: 0,
     sop: null,
+    feedback: { events: [] },
 })
 
 const runtime = reactive({
@@ -413,6 +414,7 @@ let webRtcStarting = false
 let webRtcStartToken = 0
 let lastSopEventKey = ''
 let lastCriticalAlertKey = ''
+const handledFeedbackEventIds = new Set()
 let lastTriggerCycleAt = null
 let scannerBuffer = ''
 let scannerResetTimer = null
@@ -440,6 +442,9 @@ const showNextButton = computed(
 )
 const unconfirmedAlerts = computed(() =>
     alerts.value.filter((alert) => !alert.confirmed),
+)
+const alertDisplayCount = computed(() =>
+    Math.max(ngCount.value, unconfirmedAlerts.value.length),
 )
 
 const waitingTriggerText = computed(() => {
@@ -935,6 +940,81 @@ function applySopState(sop) {
     syncSopAlert(sop)
 }
 
+function getFeedbackEventText(feedbackEvent = {}) {
+    const channel = feedbackEvent.channel === 'modbus'
+        ? t('displaytext.modbusfeedbackname')
+        : t('displaytext.httpfeedbackname')
+    const eventType = feedbackEvent.eventType === 'operation_error'
+        ? t('displaytext.feedbackoperationerror')
+        : t('displaytext.feedbackoperationcompleted')
+    const status = {
+        pending: t('displaytext.feedbackpending'),
+        success: t('displaytext.feedbacksuccess'),
+        failed: t('displaytext.feedbackfailed'),
+    }[feedbackEvent.status] || feedbackEvent.status || ''
+    const target = feedbackEvent.target ? `[${feedbackEvent.target}]` : ''
+    const detail = feedbackEvent.message ? `：${feedbackEvent.message}` : ''
+
+    return t('displaytext.feedbackeventmessage', {
+        channel,
+        event: eventType,
+        status,
+        target,
+        detail,
+    })
+}
+
+function syncFeedbackEvents(feedback = {}) {
+    const feedbackEvents = Array.isArray(feedback.events)
+        ? feedback.events
+        : []
+
+    for (const feedbackEvent of feedbackEvents) {
+        const eventId = String(feedbackEvent?.id || '')
+        if (!eventId || handledFeedbackEventIds.has(eventId)) {
+            continue
+        }
+        handledFeedbackEventIds.add(eventId)
+
+        const failed = feedbackEvent.status === 'failed'
+        const text = getFeedbackEventText(feedbackEvent)
+        events.value = [
+            {
+                id: `feedback-event-${eventId}`,
+                time: getNowTime(),
+                level: failed
+                    ? 'error'
+                    : feedbackEvent.status === 'success'
+                      ? 'success'
+                      : 'info',
+                step: feedbackEvent.stepName || 'SOP',
+                text,
+            },
+            ...events.value,
+        ].slice(0, MAX_EVENT_COUNT)
+
+        if (!failed) {
+            continue
+        }
+
+        const alert = {
+            id: `feedback-alert-${eventId}`,
+            level: 'error',
+            code: `${String(feedbackEvent.channel || 'feedback').toUpperCase()}_FEEDBACK_FAILED`,
+            message: text,
+            confirmed: false,
+        }
+        alerts.value = [alert, ...alerts.value].slice(0, MAX_ALERT_COUNT)
+        showCriticalAlert(alert, 8000)
+    }
+
+    if (handledFeedbackEventIds.size > 200) {
+        const newestIds = Array.from(handledFeedbackEventIds).slice(-100)
+        handledFeedbackEventIds.clear()
+        newestIds.forEach((eventId) => handledFeedbackEventIds.add(eventId))
+    }
+}
+
 function applyDetectionResult(payload = {}) {
     const previous = detectionResult.value
 
@@ -950,9 +1030,11 @@ function applyDetectionResult(payload = {}) {
         ng_count: Number(payload.ng_count ?? previous.ng_count),
         updated_at: Number(payload.updated_at ?? Date.now() / 1000),
         sop: payload.sop ?? previous.sop,
+        feedback: payload.feedback ?? previous.feedback,
     }
 
     applySopState(detectionResult.value.sop)
+    syncFeedbackEvents(detectionResult.value.feedback)
 }
 
 async function updateFooterHintOverflow() {
@@ -1470,6 +1552,7 @@ function clearDetectionHistory() {
 }
 function resetStoppedUiState() {
     lastTriggerCycleAt = null
+    handledFeedbackEventIds.clear()
     detectionResult.value = createEmptyDetectionResult()
 
     processSteps.value = buildProcessSteps(
