@@ -75,8 +75,8 @@
     },
     "enableCamera": "TEF1",
     "boxStyle": {
-        "boxThickness": 9,
-        "fontThickness": 7,
+        "boxThickness": 2,
+        "fontThickness": 3,
         "fontScale": 0.7,
         "fromAreaFill": false,
         "targetAreaFill": true
@@ -88,8 +88,8 @@
     },
     "detectionIntegration": {
         "triggers": {
-            "httpApi": true,
-            "usbScanner": true,
+            "httpApi": false,
+            "usbScanner": false,
             "modbus": false,
             "httpParameters": [
                 "code",

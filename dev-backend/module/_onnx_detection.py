@@ -13,7 +13,6 @@ class ONNXDetection:
         self.confidence = confidence
         self.iouthres = iouthres
         self.other_params = other_params or {}
-        self.default_box_style_config = {"boxThickness": 2, "fontThickness": 2, "fontScale": 0.5, "showResultText": False}
         self.font = cv2.FONT_HERSHEY_SIMPLEX
         self.model_type = model_type  
         
@@ -67,7 +66,7 @@ class ONNXDetection:
         left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
         img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)#填充边框
         return img, (r, r), (dw, dh)
-    def postprocess(self, input_image, output, ratio, dw, dh, nm=0, box_style_config=None):
+    def postprocess(self, input_image, output, ratio, dw, dh, nm=0):
         return_default = (input_image, {}, [],{})
         if self.model_type == "detect":
             x = output[0]
@@ -106,42 +105,24 @@ class ONNXDetection:
                         # 限制边界框在图像边界内
                         x[..., [0, 2]] = x[:, [0, 2]].clip(0, self.img_width)
                         x[..., [1, 3]] = x[:, [1, 3]].clip(0, self.img_height)
-                        return self.draw_detect(input_image, x[..., :6],box_style_config)
+                        return self.draw_detect(input_image, x[..., :6])
                 return return_default
             else:
                 return return_default
-    def draw_detect(self, input_image,boxes,box_style_config=None):
-        if box_style_config is None:
-            box_style_config = self.default_box_style_config
+    def draw_detect(self, input_image,boxes):
         count_labels = {}
         score_result = []
         label_box_datas={"type":"rectangle","datas":[]}
         if len(boxes) >0:
-            fontScale = box_style_config.get("fontScale", 0.5)
-            box_thickness = box_style_config.get("boxThickness", 2)
-            font_thickness = box_style_config.get("fontThickness", 2)
-            # show_result_lefttop = box_style_config.get("showResultText", False)
             for box in boxes:
                 x1, y1, x2, y2, conf, class_id = box
                 class_id = int(class_id)
                 class_name = self.class_name[class_id]
-                # count_labels[class_name] = count_labels.get(class_name, 0) + 1
                 score = "{:.2f}".format(conf)
-                # score_result.append([class_name,  score])
                 label_box_datas["datas"].append({"label": class_name, "points": [[x1, y1],[ x2, y2]], "score": score,"class_id":class_id})
-                # cv2.rectangle(input_image, (int(x1), int(y1)), (int(x2), int(y2)), self.classes[class_name], box_thickness)
-                # cv2.putText(input_image, f'{class_name}: {score}', (int(x1), int(y1) - 5), self.font, fontScale, self.classes[class_name], font_thickness, cv2.LINE_AA)
-            # if show_result_lefttop:
-            #     text_y = 20
-            #     for class_name, count in count_labels.items():
-            #         label = f'{class_name}: {count}'
-            #         (textSizeW, textSizeH), baseline = cv2.getTextSize(label, self.font, fontScale, font_thickness)
-            #         text_y = max(text_y, textSizeH + 10)  # 确保文本不会重叠
-            #         cv2.putText(input_image, label, (10, text_y), self.font, fontScale, self.classes[class_name], font_thickness, cv2.LINE_AA)
-            #         text_y += textSizeH + 5
         return (input_image,count_labels,score_result,label_box_datas)
-    def predict(self,input_image,box_style_config=None):
+    def predict(self,input_image):
         img_data, ratio, (pad_w, pad_h) = self.preprocess_img(input_image)
         outputs = self.session.run(None, {self.model_inputs[0].name: img_data})
-        return self.postprocess(input_image,outputs, ratio, pad_w, pad_h, 0,box_style_config)
+        return self.postprocess(input_image,outputs, ratio, pad_w, pad_h, 0)
 

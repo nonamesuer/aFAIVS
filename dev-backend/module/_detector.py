@@ -4,13 +4,11 @@ import logging
 import os
 import threading
 import time
-
 import cv2
 import numpy as np
 from aiortc import RTCPeerConnection, RTCConfiguration, RTCIceServer, RTCSessionDescription, VideoStreamTrack
 from av import VideoFrame
-
-from module._base import get_main_config,CapStatus,DetectorStatus,JsonFile,SopConfig
+from module._base import get_main_config,DEFAULT_BOX_STYLE_CONFIG,DEFAULT_BOX_COLOR,CapStatus,DetectorStatus,JsonFile,SopConfig
 from module._camera import CameraManager
 from module._onnx_detection import ONNXDetection
 from module._sop_state_machine import SOPStateMachine
@@ -18,13 +16,15 @@ from module._hand_detection import HandTracker, HandDetectorWorker
 from module._trigger import TriggerController
 from module._sop_result_store import SOPResultStore
 from module._step_feedback import StepFeedbackDispatcher
+from PIL import ImageColor
 logger = logging.getLogger(__name__)
 
 JPEG_QUALITY = 85
 SERVER_STREAM_FPS = 12.0
 ACTIVE_STATUS_VALUES = {1, 2}
 MAX_FEEDBACK_STATUS_EVENTS = 30
-
+BOX_STYLE_CONFIG = {}
+BOX_COLOR = {}
 
 def _build_ice_servers() -> list[RTCIceServer]:
     """读取 WebRTC ICE 配置；不配置时使用默认 STUN。"""
@@ -62,6 +62,11 @@ class DetectionRuntime:
         self.paused = False
         self.trigger_controller = TriggerController(self.detector.activate_trigger)
         self.detector.on_sop_completed = self._prepare_next_trigger_cycle
+        global BOX_STYLE_CONFIG,BOX_COLOR
+        BOX_STYLE_CONFIG = get_main_config().get("boxStyle", DEFAULT_BOX_STYLE_CONFIG)
+        cache_file = JsonFile(os.path.join(model_path, "cache.json")).read_json_file() if model_path else {}
+        BOX_COLOR = cache_file.get("labeling", DEFAULT_BOX_COLOR)
+        BOX_COLOR = {k: list(reversed(ImageColor.getrgb(v))) for k, v in BOX_COLOR.items()}
 
     def _prepare_next_trigger_cycle(self) -> None:
         """触发模式下，当前 SOP 完成后等待下一件的新触发信号。"""
@@ -168,13 +173,8 @@ class DetectionRuntime:
                 continue
             
             processed_frame = process_frame(frame, self.detector.snapshot())
-            success, buffer = cv2.imencode(
-                ".jpg",
-                processed_frame,
-                [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY],
-            )
-            if not success:
-                continue
+            success, buffer = cv2.imencode(".jpg",processed_frame,[int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY],)
+            if not success:continue
 
             yield (
                 b"--frame\r\n"
@@ -605,10 +605,6 @@ class CameraTrack(VideoStreamTrack):
 
 def process_frame(image: np.ndarray, result: dict | None = None) -> np.ndarray:
     """叠加检测结果并返回处理后画面。"""
-
-    # cv2.putText(image, "SOP Analysis Running", (50, 50),
-    #             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
     detections = result.get("detections") if result else []
     for item in detections or []:
         bbox = item.get("points", [])
@@ -619,10 +615,11 @@ def process_frame(image: np.ndarray, result: dict | None = None) -> np.ndarray:
             x2, y2 = [int(value) for value in bbox[1]]
         else:
             continue
-        label = f"{item.get('label', 'unknown')} {float(item.get('score', 0.0)):.2f}"
-        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 200, 255), 2)
-        cv2.putText(image, label, (x1, max(24, y1 - 8)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 255), 2)
+        obj_label = item.get("label", "default")
+        label = f"{obj_label} {float(item.get('score', 0.0)):.2f}"
+        color = BOX_COLOR.get(obj_label, BOX_COLOR.get("default", DEFAULT_BOX_COLOR["default"]))
+        cv2.rectangle(image, (x1, y1), (x2, y2), color, BOX_STYLE_CONFIG.get("boxThickness", 2))
+        cv2.putText(image, label, (x1, max(24, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, BOX_STYLE_CONFIG.get("fontScale", 0.5), color, BOX_STYLE_CONFIG.get("fontThickness", 2))
     if result:
         HandTracker.draw_hands(image, result.get("hands"))
         HandTracker.draw_action_points(image, result.get("hand_action_points"))

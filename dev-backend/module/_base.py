@@ -19,6 +19,8 @@ SOP_CONFIG_NAME = "sop_config.json"
 MEDIAPIPE_MODEL_PATH = os.path.join(LIB_PATH, "hand_landmarker.task")
 DEFAULT_RESOLUTIONS=[[320,240],[640,480],[800,600],[1024,768],[1280,720],[1280,960],[1600,1200],[1920,1080],[2048,1536],
         [2320,1744],[2560,1440],[3840,2160],[4160,2340]]
+DEFAULT_BOX_STYLE_CONFIG = {"boxThickness": 2, "fontThickness": 2, "fontScale": 0.5, "fromAreaFill": False,"targetAreaFill":False}
+DEFAULT_BOX_COLOR = {"default":(0, 123, 192)}
 DEFAULT_MAIN_CONFIG = {
     "paths": {
         "modelPath": MODELS_PATH,
