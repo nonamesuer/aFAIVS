@@ -944,9 +944,13 @@ function getFeedbackEventText(feedbackEvent = {}) {
     const channel = feedbackEvent.channel === 'modbus'
         ? t('displaytext.modbusfeedbackname')
         : t('displaytext.httpfeedbackname')
-    const eventType = feedbackEvent.eventType === 'operation_error'
-        ? t('displaytext.feedbackoperationerror')
-        : t('displaytext.feedbackoperationcompleted')
+    const eventType = {
+        operation_error: t('displaytext.feedbackoperationerror'),
+        step_success: t('displaytext.feedbackstepsuccess'),
+        sop_completed: t('displaytext.feedbacksopcompleted'),
+        // Keep displaying feedback events produced by an older backend.
+        operation_completed: t('displaytext.feedbackstepsuccess'),
+    }[feedbackEvent.eventType] || feedbackEvent.eventType || ''
     const status = {
         pending: t('displaytext.feedbackpending'),
         success: t('displaytext.feedbacksuccess'),

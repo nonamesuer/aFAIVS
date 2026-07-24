@@ -218,14 +218,23 @@
                   </div>
 
                   <el-form-item :label="$t('config.sop_step_config.feedback_methods')">
-                    <el-checkbox-group v-model="currentFeedbackMethods">
-                      <el-checkbox value="http" :disabled="!httpFeedbackAvailable">
+                    <div class="feedback-method-options">
+                      <div class="http-feedback-options">
+                        <el-checkbox v-model="currentHttpFeedbackEnabled" :disabled="!httpFeedbackAvailable">
                         {{ $t('config.sop_step_config.http_step_feedback') }}
                       </el-checkbox>
-                      <el-checkbox value="modbus">
+                        <el-checkbox
+                          v-model="applyHttpFeedbackToAllSteps"
+                          :disabled="!currentHttpFeedbackEnabled"
+                        >
+                          {{ $t('config.sop_step_config.apply_http_feedback_to_all_steps') }}
+                        </el-checkbox>
+                      </div>
+                      <el-divider direction="vertical" style="border-left:1px solid #000"/>
+                      <el-checkbox v-model="currentModbusFeedbackEnabled">
                         {{ $t('config.sop_step_config.modbus_step_feedback') }}
                       </el-checkbox>
-                    </el-checkbox-group>
+                    </div>
                   </el-form-item>
 
                   <el-alert
@@ -539,6 +548,7 @@ const normalizeFeedbackSignal = (signal: any): FeedbackSignal => {
 const normalizeStepFeedback = (feedback: any) => ({
   http: {
     enabled: feedback?.http?.enabled === true,
+    applyToAllSteps: feedback?.http?.applyToAllSteps === true,
     endpointUrls: Array.isArray(feedback?.http?.endpointUrls)
       ? [...new Set(feedback.http.endpointUrls.filter((url: unknown) => typeof url === 'string' && url.trim()))].slice(0, 5)
       : [],
@@ -578,6 +588,26 @@ watch(
   () => props.steps,
   newSteps => {
     stepsLocal.value = JSON.parse(JSON.stringify(newSteps || []))
+    for (const step of stepsLocal.value) {
+      step.context ||= {}
+      step.context.resultFeedback = normalizeStepFeedback(step.context.resultFeedback)
+    }
+    const allMarked = stepsLocal.value.length > 0
+      && stepsLocal.value.every(step => step.context.resultFeedback.http.applyToAllSteps === true)
+    const firstHttp = stepsLocal.value[0]?.context?.resultFeedback?.http
+    const allHttpConfigsMatch = Boolean(firstHttp)
+      && firstHttp.enabled
+      && stepsLocal.value.every(step => {
+        const http = step.context.resultFeedback.http
+        return http.enabled
+          && http.endpointUrls.length === firstHttp.endpointUrls.length
+          && http.endpointUrls.every((url: string) => firstHttp.endpointUrls.includes(url))
+      })
+    if (!allMarked || !allHttpConfigsMatch) {
+      for (const step of stepsLocal.value) {
+        step.context.resultFeedback.http.applyToAllSteps = false
+      }
+    }
     activeStepIndex.value = Math.min(activeStepIndex.value, Math.max(stepsLocal.value.length - 1, 0))
   },
   { immediate: true, deep: true },
@@ -594,11 +624,18 @@ const getStepTypeLabel = (type: string) => {
   return found ? [found.type, found.color] : ['', 'info']
 }
 
+const ensureStepFeedback = (step: any) => {
+  if (!step) return null
+  step.context ||= {}
+  step.context.resultFeedback = normalizeStepFeedback(step.context.resultFeedback)
+  return step.context.resultFeedback
+}
+
 const ensureContext = () => {
   if (!currentStep.value) return
   currentStep.value.context ||= {}
   currentStep.value.context.handPoints ||= { l: [], r: [] }
-  currentStep.value.context.resultFeedback = normalizeStepFeedback(currentStep.value.context.resultFeedback)
+  ensureStepFeedback(currentStep.value)
   for (const side of HAND_SIDES) {
     if (!Array.isArray(currentStep.value.context.handPoints[side])) {
       currentStep.value.context.handPoints[side] = []
@@ -622,29 +659,88 @@ const availableHttpFeedbackEndpoints = computed(() => {
 
 const httpFeedbackAvailable = computed(() => availableHttpFeedbackEndpoints.value.length > 0)
 
-const currentFeedbackMethods = computed<string[]>({
-  get: () => {
-    const feedback = currentStep.value?.context?.resultFeedback
-    if (!feedback) return []
-    const methods: string[] = []
-    if (feedback.http.enabled && httpFeedbackAvailable.value) methods.push('http')
-    if (feedback.modbus.enabled) methods.push('modbus')
-    return methods
+const allStepsMarkedForHttpFeedback = () =>
+  stepsLocal.value.length > 0
+  && stepsLocal.value.every(step =>
+    step?.context?.resultFeedback?.http?.applyToAllSteps === true
+  )
+
+const clearHttpFeedbackApplyToAll = () => {
+  for (const step of stepsLocal.value) {
+    const feedback = ensureStepFeedback(step)
+    if (feedback) feedback.http.applyToAllSteps = false
+  }
+}
+
+const syncHttpFeedbackToAllSteps = (sourceStep: any) => {
+  const sourceFeedback = ensureStepFeedback(sourceStep)
+  if (!sourceFeedback) return
+  const endpointUrls = [...sourceFeedback.http.endpointUrls]
+  for (const step of stepsLocal.value) {
+    const feedback = ensureStepFeedback(step)
+    if (!feedback) continue
+    feedback.http.enabled = true
+    feedback.http.endpointUrls = [...endpointUrls]
+    feedback.http.applyToAllSteps = true
+  }
+}
+
+const currentHttpFeedbackEnabled = computed<boolean>({
+  get: () =>
+    httpFeedbackAvailable.value
+    && currentStep.value?.context?.resultFeedback?.http?.enabled === true,
+  set: enabled => {
+    const feedback = ensureStepFeedback(currentStep.value)
+    if (!feedback) return
+    feedback.http.enabled = httpFeedbackAvailable.value && enabled
+    if (!feedback.http.enabled) {
+      clearHttpFeedbackApplyToAll()
+    }
   },
-  set: methods => {
-    if (!currentStep.value) return
-    ensureContext()
-    const feedback = currentStep.value.context.resultFeedback
-    feedback.http.enabled = httpFeedbackAvailable.value && methods.includes('http')
-    feedback.modbus.enabled = methods.includes('modbus')
+})
+
+const currentModbusFeedbackEnabled = computed<boolean>({
+  get: () => currentStep.value?.context?.resultFeedback?.modbus?.enabled === true,
+  set: enabled => {
+    const feedback = ensureStepFeedback(currentStep.value)
+    if (feedback) feedback.modbus.enabled = enabled
+  },
+})
+
+const applyHttpFeedbackToAllSteps = computed<boolean>({
+  get: () => allStepsMarkedForHttpFeedback(),
+  set: enabled => {
+    if (!enabled) {
+      clearHttpFeedbackApplyToAll()
+      return
+    }
+    if (!currentHttpFeedbackEnabled.value) return
+    syncHttpFeedbackToAllSteps(currentStep.value)
   },
 })
 
 watch(httpFeedbackAvailable, available => {
-  if (!available && currentStep.value?.context?.resultFeedback?.http) {
-    currentStep.value.context.resultFeedback.http.enabled = false
+  if (!available) {
+    clearHttpFeedbackApplyToAll()
+    for (const step of stepsLocal.value) {
+      const feedback = ensureStepFeedback(step)
+      if (feedback) feedback.http.enabled = false
+    }
   }
 })
+
+watch(
+  () => currentStep.value?.context?.resultFeedback?.http?.endpointUrls,
+  endpointUrls => {
+    if (!allStepsMarkedForHttpFeedback() || !Array.isArray(endpointUrls)) return
+    for (const step of stepsLocal.value) {
+      if (step === currentStep.value) continue
+      const feedback = ensureStepFeedback(step)
+      if (feedback) feedback.http.endpointUrls = [...endpointUrls]
+    }
+  },
+  { deep: true },
+)
 
 const feedbackSignalGroups = computed(() => {
   const modbus = currentStep.value?.context?.resultFeedback?.modbus
@@ -769,8 +865,11 @@ const handleAddNewStep = async () => {
   const newId = stepsLocal.value.length
     ? Math.max(...stepsLocal.value.map(step => Number(step.id) || 0)) + 1
     : 1
+  const inheritedHttpFeedback = allStepsMarkedForHttpFeedback()
+    ? normalizeStepFeedback(currentStep.value?.context?.resultFeedback).http
+    : null
 
-  stepsLocal.value.push({
+  const newStep = {
     id: newId,
     name: '安装P1零件',
     type: 'p_object',
@@ -789,7 +888,15 @@ const handleAddNewStep = async () => {
     },
     doneWhen: [],
     ngWhen: [],
-  })
+  }
+  if (inheritedHttpFeedback) {
+    newStep.context.resultFeedback.http = {
+      enabled: true,
+      applyToAllSteps: true,
+      endpointUrls: [...inheritedHttpFeedback.endpointUrls],
+    }
+  }
+  stepsLocal.value.push(newStep)
   activeStepIndex.value = stepsLocal.value.length - 1
 }
 
@@ -972,6 +1079,9 @@ const hideExecutionPreview = () => {
 .step-feedback-section { margin-top: 16px; padding: 14px; border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--bs-element-bgcolor); }
 .step-feedback-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
 .step-feedback-heading span { color: var(--el-text-color-secondary); font-size: 12px; }
+.feedback-method-options { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 24px;}
+.http-feedback-options { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;}
+.http-feedback-options :deep(.el-checkbox) { margin-right: 0; }
 .modbus-feedback-groups { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
 .modbus-feedback-group { padding: 10px; border: 1px dashed var(--el-border-color); border-radius: 6px; background: var(--bs-bgcolor); }
 .feedback-group-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }

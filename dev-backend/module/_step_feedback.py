@@ -22,6 +22,7 @@ MAX_STEP_FEEDBACK_SIGNALS = 3
 MAX_STEP_HTTP_ENDPOINTS = 5
 MOMENTARY_COIL_DELAY_SECONDS = 0.3
 WRITABLE_MODBUS_TYPES = {"coil", "holdingRegister"}
+HTTP_FEEDBACK_DEBUG_FILE_LOCK = threading.Lock()
 
 
 def _is_integer(value: Any) -> bool:
@@ -155,6 +156,7 @@ class StepFeedbackDispatcher:
         self.camera_name = camera_name or ""
         self.status_callback = status_callback
         self._previous_states: dict[str, str] = {}
+        self._previous_sop_state = ""
         self._status_lock = threading.Lock()
         self._status_sequence = 0
         # HTTP endpoints and Modbus are independent tasks. A slow endpoint must
@@ -168,12 +170,15 @@ class StepFeedbackDispatcher:
         return str(step.get("id", index))
 
     def reset(self, snapshot: dict[str, Any] | None = None) -> None:
+        current_snapshot = snapshot or {}
         self._previous_states = {}
-        for index, step in enumerate((snapshot or {}).get("steps", [])):
+        self._previous_sop_state = str(current_snapshot.get("state", ""))
+        for index, step in enumerate(current_snapshot.get("steps", [])):
             if isinstance(step, dict):
                 self._previous_states[self._step_key(step, index)] = str(step.get("state", "pending"))
 
     def process_snapshot(self, snapshot: dict[str, Any], run_id: str | None) -> None:
+        steps = snapshot.get("steps", [])
         for index, step in enumerate(snapshot.get("steps", [])):
             if not isinstance(step, dict):
                 continue
@@ -186,7 +191,7 @@ class StepFeedbackDispatcher:
             if current_state == "failed" and previous_state != "failed":
                 event_type = "operation_error"
             elif current_state == "done" and previous_state != "done":
-                event_type = "operation_completed"
+                event_type = "step_success"
             if event_type:
                 self._schedule_event(
                     event_type,
@@ -195,12 +200,40 @@ class StepFeedbackDispatcher:
                     run_id,
                 )
 
+        current_sop_state = str(snapshot.get("state", ""))
+        previous_sop_state = self._previous_sop_state
+        self._previous_sop_state = current_sop_state
+        if current_sop_state != "completed" or previous_sop_state == "completed":
+            return
+
+        # The final step has just emitted step_success above. Send one extra
+        # HTTP-only event so receivers can distinguish "last step succeeded"
+        # from "the whole SOP run completed".
+        final_step = next(
+            (
+                step
+                for step in reversed(steps)
+                if isinstance(step, dict) and str(step.get("state", "")) == "done"
+            ),
+            None,
+        )
+        if final_step is not None:
+            self._schedule_event(
+                "sop_completed",
+                deepcopy(final_step),
+                deepcopy(snapshot),
+                run_id,
+                include_modbus=False,
+            )
+
     def _schedule_event(
         self,
         event_type: str,
         step: dict[str, Any],
         snapshot: dict[str, Any],
         run_id: str | None,
+        *,
+        include_modbus: bool = True,
     ) -> None:
         context = step.get("context", {})
         feedback = context.get("resultFeedback", {}) if isinstance(context, dict) else {}
@@ -209,6 +242,7 @@ class StepFeedbackDispatcher:
 
         payload = {
             "eventType": event_type,
+            "eventScope": "sop" if event_type == "sop_completed" else "step",
             "status": "ng" if event_type == "operation_error" else "ok",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "projectName": self.project_name,
@@ -245,7 +279,11 @@ class StepFeedbackDispatcher:
                     )
 
         modbus_feedback = feedback.get("modbus", {})
-        if isinstance(modbus_feedback, dict) and modbus_feedback.get("enabled") is True:
+        if (
+            include_modbus
+            and isinstance(modbus_feedback, dict)
+            and modbus_feedback.get("enabled") is True
+        ):
             group_name = "errorSignals" if event_type == "operation_error" else "completionSignals"
             signals = modbus_feedback.get(group_name, [])
             if isinstance(signals, list) and signals:
@@ -314,15 +352,6 @@ class StepFeedbackDispatcher:
                 raise RuntimeError("The HTTP feedback endpoint is no longer enabled in public configuration")
 
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            json_file = JsonFile(r"C:\Users\LAI8PK\Desktop\update\test.json")
-            cache_data = json_file.read_json_file()
-
-            print("cache_data",cache_data)
-            if not cache_data:
-                cache_data = [payload]
-            else:
-                cache_data.append(payload)
-            json_file.write_json_file(cache_data)
             request = Request(
                 url,
                 data=body,
@@ -333,6 +362,20 @@ class StepFeedbackDispatcher:
                 if not 200 <= response.status < 300:
                     raise RuntimeError(f"HTTP {response.status}")
                 response_status = response.status
+
+            # Keep the local test log from blocking or corrupting actual HTTP
+            # feedback. Final-step success and SOP completion can be dispatched
+            # concurrently, so the read/append/write cycle must be serialized.
+            try:
+                with HTTP_FEEDBACK_DEBUG_FILE_LOCK:
+                    json_file = JsonFile(r"C:\Users\LAI8PK\Desktop\update\test.json")
+                    cache_data = json_file.read_json_file()
+                    if not isinstance(cache_data, list):
+                        cache_data = []
+                    cache_data.append(payload)
+                    json_file.write_json_file(cache_data)
+            except Exception:
+                logger.exception("Failed to append HTTP feedback debug payload")
 
             self._publish_status(
                 status="success",

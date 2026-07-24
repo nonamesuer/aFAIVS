@@ -32,6 +32,7 @@
                     "resultFeedback": {
                         "http": {
                             "enabled": true,
+                            "applyToAllSteps": true,
                             "endpointUrls": [
                                 "http://127.0.0.1:20253/http/response_test"
                             ]
@@ -88,8 +89,11 @@
                     "handMargin": 30,
                     "resultFeedback": {
                         "http": {
-                            "enabled": false,
-                            "endpointUrls": []
+                            "enabled": true,
+                            "applyToAllSteps": true,
+                            "endpointUrls": [
+                                "http://127.0.0.1:20253/http/response_test"
+                            ]
                         },
                         "modbus": {
                             "enabled": false,
@@ -125,8 +129,11 @@
                     },
                     "resultFeedback": {
                         "http": {
-                            "enabled": false,
-                            "endpointUrls": []
+                            "enabled": true,
+                            "applyToAllSteps": true,
+                            "endpointUrls": [
+                                "http://127.0.0.1:20253/http/response_test"
+                            ]
                         },
                         "modbus": {
                             "enabled": false,
@@ -141,6 +148,6 @@
         ],
         "create_time": "2026-07-09 11:44:07",
         "enabled": true,
-        "modify_time": "2026-07-24 10:19:59"
+        "modify_time": "2026-07-24 11:22:33"
     }
 }
