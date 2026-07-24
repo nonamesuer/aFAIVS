@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 
 from pymodbus.client import ModbusTcpClient
 
-from module._base import get_main_config,JsonFile
+from module._base import get_main_config
 
 
 logger = logging.getLogger(__name__)
@@ -366,16 +366,16 @@ class StepFeedbackDispatcher:
             # Keep the local test log from blocking or corrupting actual HTTP
             # feedback. Final-step success and SOP completion can be dispatched
             # concurrently, so the read/append/write cycle must be serialized.
-            try:
-                with HTTP_FEEDBACK_DEBUG_FILE_LOCK:
-                    json_file = JsonFile(r"C:\Users\LAI8PK\Desktop\update\test.json")
-                    cache_data = json_file.read_json_file()
-                    if not isinstance(cache_data, list):
-                        cache_data = []
-                    cache_data.append(payload)
-                    json_file.write_json_file(cache_data)
-            except Exception:
-                logger.exception("Failed to append HTTP feedback debug payload")
+            # try:
+            #     with HTTP_FEEDBACK_DEBUG_FILE_LOCK:
+            #         json_file = JsonFile(r"C:\Users\LAI8PK\Desktop\update\test.json")
+            #         cache_data = json_file.read_json_file()
+            #         if not isinstance(cache_data, list):
+            #             cache_data = []
+            #         cache_data.append(payload)
+            #         json_file.write_json_file(cache_data)
+            # except Exception:
+            #     logger.exception("Failed to append HTTP feedback debug payload")
 
             self._publish_status(
                 status="success",
