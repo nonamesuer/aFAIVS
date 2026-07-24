@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi import APIRouter, Request,HTTPException,File, UploadFile
 from module._base import CONFIG_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater
 from module._step_feedback import validate_sop_step_feedback_config
+from module._box_style import AREA_FILL_ALPHA
 from datetime import datetime
 from pydantic import BaseModel, Field
 from pymodbus.client import ModbusTcpClient
@@ -49,10 +50,20 @@ async def display_box_style_config(request: Request):
         cv2.rectangle(img, (50, 50), (150,150), (0, 255, 0), thickness=box_thickness)
         (textSizeW, textSizeH), baseline = cv2.getTextSize('Example', cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
         cv2.putText(img, 'Example', (50, 50-textSizeH), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), thickness=font_thickness, lineType=cv2.LINE_AA)
+        overlay = img.copy()
         if from_area_fill:
-            cv2.rectangle(img, (200, 50), (300,150), (250, 180, 255), thickness=cv2.FILLED)
+            cv2.rectangle(overlay, (200, 50), (300,150), (0, 255, 255), thickness=cv2.FILLED)
         if target_area_fill:
-            cv2.rectangle(img, (50, 250), (150,350), (180, 180, 255), thickness=cv2.FILLED)
+            cv2.rectangle(overlay, (50, 250), (150,350), (0, 0, 255), thickness=cv2.FILLED)
+        if from_area_fill or target_area_fill:
+            cv2.addWeighted(
+                overlay,
+                AREA_FILL_ALPHA,
+                img,
+                1.0 - AREA_FILL_ALPHA,
+                0,
+                dst=img,
+            )
         cv2.rectangle(img, (200, 50), (300,150), (0, 255, 255), thickness=box_thickness)
         cv2.putText(img, 'Start', (200, 50-textSizeH), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), thickness=font_thickness, lineType=cv2.LINE_AA)
         cv2.rectangle(img, (50, 250), (150,350), (0, 0, 255), thickness=box_thickness)

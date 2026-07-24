@@ -16,6 +16,7 @@ from module._hand_detection import HandTracker, HandDetectorWorker
 from module._trigger import TriggerController
 from module._sop_result_store import SOPResultStore
 from module._step_feedback import StepFeedbackDispatcher
+from module._box_style import AREA_FILL_ALPHA, collect_sop_area_labels, should_fill_area
 from PIL import ImageColor
 logger = logging.getLogger(__name__)
 
@@ -606,6 +607,10 @@ class CameraTrack(VideoStreamTrack):
 def process_frame(image: np.ndarray, result: dict | None = None) -> np.ndarray:
     """叠加检测结果并返回处理后画面。"""
     detections = result.get("detections") if result else []
+    from_area_labels, target_area_labels = collect_sop_area_labels(
+        result.get("sop") if result else None
+    )
+    annotations = []
     for item in detections or []:
         bbox = item.get("points", [])
         if len(bbox) == 4:
@@ -618,8 +623,46 @@ def process_frame(image: np.ndarray, result: dict | None = None) -> np.ndarray:
         obj_label = item.get("label", "default")
         label = f"{obj_label} {float(item.get('score', 0.0)):.2f}"
         color = BOX_COLOR.get(obj_label, BOX_COLOR.get("default", DEFAULT_BOX_COLOR["default"]))
+        annotations.append(
+            {
+                "bounds": (x1, y1, x2, y2),
+                "label": label,
+                "color": color,
+                "fill": should_fill_area(
+                    obj_label,
+                    from_area_labels,
+                    target_area_labels,
+                    BOX_STYLE_CONFIG,
+                ),
+            }
+        )
+
+    filled_annotations = [annotation for annotation in annotations if annotation["fill"]]
+    if filled_annotations:
+        overlay = image.copy()
+        for annotation in filled_annotations:
+            x1, y1, x2, y2 = annotation["bounds"]
+            cv2.rectangle(
+                overlay,
+                (x1, y1),
+                (x2, y2),
+                annotation["color"],
+                thickness=cv2.FILLED,
+            )
+        cv2.addWeighted(
+            overlay,
+            AREA_FILL_ALPHA,
+            image,
+            1.0 - AREA_FILL_ALPHA,
+            0,
+            dst=image,
+        )
+
+    for annotation in annotations:
+        x1, y1, x2, y2 = annotation["bounds"]
+        color = annotation["color"]
         cv2.rectangle(image, (x1, y1), (x2, y2), color, BOX_STYLE_CONFIG.get("boxThickness", 2))
-        cv2.putText(image, label, (x1, max(24, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, BOX_STYLE_CONFIG.get("fontScale", 0.5), color, BOX_STYLE_CONFIG.get("fontThickness", 2))
+        cv2.putText(image, annotation["label"], (x1, max(24, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, BOX_STYLE_CONFIG.get("fontScale", 0.5), color, BOX_STYLE_CONFIG.get("fontThickness", 2))
     if result:
         HandTracker.draw_hands(image, result.get("hands"))
         HandTracker.draw_action_points(image, result.get("hand_action_points"))
