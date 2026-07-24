@@ -1441,3 +1441,37 @@
         }
     }
 }
+/* tab */
+.el-tabs{
+    
+    &.el-tabs--top{
+        .el-tabs__header{
+            margin: 0;
+            border-bottom: 1px solid #c5c8cb;
+            .el-tabs__nav-wrap{
+                margin-bottom: 0;
+                &::after{
+                    height: 0;
+                }
+                .el-tabs__nav{
+                    transform: translateX(0px);
+                    .el-tabs__active-bar{
+                        display: none;
+                    }
+                    .el-tabs__item{
+                        padding: 0 15px;
+                        &:hover{
+                            color:unset;
+                        }
+                        &.is-active{
+                            color: var(--bs-primary-hover-color);
+                            border-bottom: 3px solid var(--bs-primary-hover-color);
+                        }
+                        
+                    }
+                }
+                
+            }
+        }
+    }
+}

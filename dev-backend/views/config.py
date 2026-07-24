@@ -5,14 +5,30 @@ import base64
 import cv2
 from fastapi.responses import JSONResponse  
 from fastapi import APIRouter, Request,HTTPException,File, UploadFile
-from module._base import CONFIG_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater,DEFAULT_BOX_STYLE_CONFIG
+from module._base import CONFIG_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater,DEFAULT_BOX_STYLE_CONFIG,DEFAULT_HAND_STYLE_CONFIG
 from module._step_feedback import validate_sop_step_feedback_config
 from module._box_style import normalize_area_fill_alpha
+from module._hand_detection import HandTracker
+from module._hand_style import normalize_hand_style_config
 from datetime import datetime
 from pydantic import BaseModel, Field
 from pymodbus.client import ModbusTcpClient
 logger = logging.getLogger(__name__)
 api_config = APIRouter()
+
+
+def _hand_preview_points() -> dict[str, list[tuple[float, float]]]:
+    left_points = [
+        (155, 300),
+        (125, 270), (102, 240), (88, 210), (82, 180),
+        (142, 250), (138, 205), (136, 160), (134, 115),
+        (165, 245), (165, 192), (165, 140), (165, 92),
+        (187, 250), (193, 205), (198, 163), (202, 125),
+        (207, 260), (220, 225), (231, 195), (240, 168),
+    ]
+    right_points = [(640 - x, y) for x, y in left_points]
+    return {"l": left_points, "r": right_points}
+
 
 @api_config.get("/get_config")
 def get_config():
@@ -93,6 +109,110 @@ async def display_box_style_config(request: Request):
     except Exception as e:
         logger.exception(f"Error displaying box style configuration: {e}")
         return JSONResponse(content={"status": False, "msg": "Failed to display box style configuration"})
+
+
+@api_config.post("/set_hand_style_config")
+async def set_hand_style_config(request: Request):
+    try:
+        body = await request.json()
+        hand_style_config = body.get("handStyle")
+        if not isinstance(hand_style_config, dict):
+            return JSONResponse(
+                content={"status": False, "msg": "Missing handStyle parameter"}
+            )
+        try:
+            hand_style_config = normalize_hand_style_config(
+                hand_style_config,
+                DEFAULT_HAND_STYLE_CONFIG,
+                strict=True,
+            )
+        except ValueError as exc:
+            return JSONResponse(content={"status": False, "msg": str(exc)})
+
+        config_datas = get_main_config()
+        config_datas["handStyle"] = hand_style_config
+        JsonFile(CONFIG_PATH).write_json_file(config_datas)
+        return JSONResponse(
+            content={
+                "status": True,
+                "msg": "Hand style configuration set successfully",
+                "datas": hand_style_config,
+            }
+        )
+    except Exception as exc:
+        logger.exception(f"Error setting hand style configuration: {exc}")
+        return JSONResponse(
+            content={"status": False, "msg": "Failed to set hand style configuration"}
+        )
+
+
+@api_config.post("/display_hand_style_config")
+async def display_hand_style_config(request: Request):
+    try:
+        body = await request.json()
+        hand_style_config = body.get("handStyle")
+        if not isinstance(hand_style_config, dict):
+            return JSONResponse(
+                content={"status": False, "msg": "Missing handStyle parameter"}
+            )
+        try:
+            hand_style_config = normalize_hand_style_config(
+                hand_style_config,
+                DEFAULT_HAND_STYLE_CONFIG,
+                strict=True,
+            )
+        except ValueError as exc:
+            return JSONResponse(content={"status": False, "msg": str(exc)})
+
+        image = np.full((360, 640, 3), 32, dtype=np.uint8)
+        cv2.putText(
+            image,
+            "LEFT HAND",
+            (95, 38),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.75,
+            (230, 230, 230),
+            2,
+            lineType=cv2.LINE_AA,
+        )
+        cv2.putText(
+            image,
+            "RIGHT HAND",
+            (405, 38),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.75,
+            (230, 230, 230),
+            2,
+            lineType=cv2.LINE_AA,
+        )
+        HandTracker.draw_hands(
+            image,
+            _hand_preview_points(),
+            hand_style_config,
+        )
+
+        encoded, buffer = cv2.imencode(
+            ".webp",
+            image,
+            [int(cv2.IMWRITE_WEBP_QUALITY), 90],
+        )
+        if not encoded:
+            raise RuntimeError("Failed to encode hand style preview")
+        frame = f"data:image/webp;base64,{base64.b64encode(buffer).decode('utf-8')}"
+        return JSONResponse(
+            content={
+                "status": True,
+                "frame": frame,
+                "msg": "Hand style preview generated successfully",
+            }
+        )
+    except Exception as exc:
+        logger.exception(f"Error displaying hand style configuration: {exc}")
+        return JSONResponse(
+            content={"status": False, "msg": "Failed to display hand style configuration"}
+        )
+
+
 @api_config.get("/open_models_folder")
 def open_models_folder():
     try:

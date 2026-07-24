@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from aiortc import RTCPeerConnection, RTCConfiguration, RTCIceServer, RTCSessionDescription, VideoStreamTrack
 from av import VideoFrame
-from module._base import get_main_config,DEFAULT_BOX_STYLE_CONFIG,DEFAULT_BOX_COLOR,CapStatus,DetectorStatus,JsonFile,SopConfig
+from module._base import get_main_config,DEFAULT_BOX_STYLE_CONFIG,DEFAULT_HAND_STYLE_CONFIG,DEFAULT_BOX_COLOR,CapStatus,DetectorStatus,JsonFile,SopConfig
 from module._camera import CameraManager
 from module._onnx_detection import ONNXDetection
 from module._sop_state_machine import SOPStateMachine
@@ -29,6 +29,7 @@ SERVER_STREAM_FPS = 12.0
 ACTIVE_STATUS_VALUES = {1, 2}
 MAX_FEEDBACK_STATUS_EVENTS = 30
 BOX_STYLE_CONFIG = {}
+HAND_STYLE_CONFIG = {}
 BOX_COLOR = {}
 
 def _build_ice_servers() -> list[RTCIceServer]:
@@ -67,8 +68,10 @@ class DetectionRuntime:
         self.paused = False
         self.trigger_controller = TriggerController(self.detector.activate_trigger)
         self.detector.on_sop_completed = self._prepare_next_trigger_cycle
-        global BOX_STYLE_CONFIG,BOX_COLOR
-        BOX_STYLE_CONFIG = get_main_config().get("boxStyle", DEFAULT_BOX_STYLE_CONFIG)
+        global BOX_STYLE_CONFIG,HAND_STYLE_CONFIG,BOX_COLOR
+        main_config = get_main_config()
+        BOX_STYLE_CONFIG = main_config.get("boxStyle", DEFAULT_BOX_STYLE_CONFIG)
+        HAND_STYLE_CONFIG = main_config.get("handStyle", DEFAULT_HAND_STYLE_CONFIG)
         cache_file = JsonFile(os.path.join(model_path, "cache.json")).read_json_file() if model_path else {}
         BOX_COLOR = cache_file.get("labeling", DEFAULT_BOX_COLOR)
         BOX_COLOR = {k: list(reversed(ImageColor.getrgb(v))) for k, v in BOX_COLOR.items()}
@@ -672,6 +675,10 @@ def process_frame(image: np.ndarray, result: dict | None = None) -> np.ndarray:
         cv2.rectangle(image, (x1, y1), (x2, y2), color, BOX_STYLE_CONFIG.get("boxThickness", 2))
         cv2.putText(image, annotation["label"], (x1, max(24, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, BOX_STYLE_CONFIG.get("fontScale", 0.5), color, BOX_STYLE_CONFIG.get("fontThickness", 2))
     if result:
-        HandTracker.draw_hands(image, result.get("hands"))
+        HandTracker.draw_hands(
+            image,
+            result.get("hands"),
+            HAND_STYLE_CONFIG,
+        )
         HandTracker.draw_action_points(image, result.get("hand_action_points"))
     return image

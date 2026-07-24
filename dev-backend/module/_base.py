@@ -27,6 +27,20 @@ DEFAULT_BOX_STYLE_CONFIG = {
     "targetAreaFill": False,
     "areaFillAlpha": 0.5,
 }
+DEFAULT_HAND_STYLE_CONFIG = {
+    "left": {
+        "keypointSize": 4,
+        "keypointColor": "#FF0000",
+        "connectionWidth": 2,
+        "connectionColor": "#FF0000",
+    },
+    "right": {
+        "keypointSize": 4,
+        "keypointColor": "#00FF00",
+        "connectionWidth": 2,
+        "connectionColor": "#00FF00",
+    },
+}
 DEFAULT_BOX_COLOR = {"default":(0, 123, 192)}
 DEFAULT_MAIN_CONFIG = {
     "paths": {
@@ -46,6 +60,7 @@ DEFAULT_MAIN_CONFIG = {
         "targetAreaFill": False,
         "areaFillAlpha": 0.5
     },
+    "handStyle": deepcopy(DEFAULT_HAND_STYLE_CONFIG),
     "modbus": {
         "host": "127.0.0.1",
         "port": 502,

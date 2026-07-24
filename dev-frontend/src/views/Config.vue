@@ -80,6 +80,11 @@
                     <span class="common-config-title">{{ $t('button.title.box_style_setting') }}</span>
                     <span class="common-config-description">{{ $t('config.box_style_description') }}</span>
                 </div>
+                <div class="common-config-entry" @click="handStyleVisible = true">
+                    <el-icon class="common-config-icon"><Pointer /></el-icon>
+                    <span class="common-config-title">{{ $t('config.hand_style_config') }}</span>
+                    <span class="common-config-description">{{ $t('config.hand_style_description') }}</span>
+                </div>
                 <div class="common-config-entry" @click="modbusDialogVisible = true">
                     <el-icon class="common-config-icon"><Connection /></el-icon>
                     <span class="common-config-title">{{ $t('config.modbus_config') }}</span>
@@ -177,6 +182,10 @@
           v-model:visible="boxStyleVisible"
           v-model:box-style-config="boxStyleConfig"
         />
+        <HandStyleDrawer
+          v-model:visible="handStyleVisible"
+          v-model:hand-style-config="handStyleConfig"
+        />
         <ModbusDialog
           v-model:visible="modbusDialogVisible"
           v-model:modbus-config="modbusConfig"
@@ -192,12 +201,13 @@ import { ref, onMounted,onBeforeMount,watch, nextTick, reactive, computed, onUnm
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/store";
 import { ElMessage, FormInstance, FormRules } from "element-plus";
-import { FolderOpened,Brush,Crop,Connection,SetUp } from "@element-plus/icons-vue";
+import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer } from "@element-plus/icons-vue";
 import { MesAlertWTitle, MesConfirmWTitle } from "@/assets/js/secondpk";
 import api from "@/api/index";
 import SopDialog from "@/components/SopDialog.vue";
 import ResolutionDrawer from "@/components/ResolutionDrawer.vue";
 import BoxStyleDrawer from "@/components/BoxStyleDrawer.vue";
+import HandStyleDrawer from "@/components/HandStyleDrawer.vue";
 import PathDialog from "@/components/PathDIalog.vue";
 import ModbusDialog from "@/components/ModbusDialog.vue";
 import DetectionIntegrationDialog from "@/components/DetectionIntegrationDialog.vue";
@@ -238,6 +248,22 @@ const boxStyleConfig = ref({
   fromAreaFill: false,
   targetAreaFill: false,
   areaFillAlpha: 0.5,
+});
+// 手部关键点样式
+const handStyleVisible = ref(false);
+const handStyleConfig = ref({
+  left: {
+    keypointSize: 4,
+    keypointColor: "#FF0000",
+    connectionWidth: 2,
+    connectionColor: "#FF0000",
+  },
+  right: {
+    keypointSize: 4,
+    keypointColor: "#00FF00",
+    connectionWidth: 2,
+    connectionColor: "#00FF00",
+  },
 });
 // Modbus TCP
 const modbusDialogVisible = ref(false);
@@ -326,6 +352,18 @@ const getConfig = () => {
       pathConfig.value = { ...pathConfig.value, modelPath, sopPath, resultPath, saveDetectionDatasets };
     };
     if (datas.boxStyle) {boxStyleConfig.value = {...boxStyleConfig.value,...datas.boxStyle, }};
+    if (datas.handStyle) {
+      handStyleConfig.value = {
+        left: {
+          ...handStyleConfig.value.left,
+          ...(datas.handStyle.left || {}),
+        },
+        right: {
+          ...handStyleConfig.value.right,
+          ...(datas.handStyle.right || {}),
+        },
+      };
+    };
     if (datas.modbus) {modbusConfig.value = {...modbusConfig.value,...datas.modbus, }};
     if (datas.detectionIntegration) {
       const triggerConfig = datas.detectionIntegration.triggers || {};

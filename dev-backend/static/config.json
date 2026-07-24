@@ -124,5 +124,19 @@
                 }
             ]
         }
+    },
+    "handStyle": {
+        "left": {
+            "keypointSize": 4,
+            "keypointColor": "#FF0000",
+            "connectionWidth": 2,
+            "connectionColor": "#FF0000"
+        },
+        "right": {
+            "keypointSize": 4,
+            "keypointColor": "#FF0000",
+            "connectionWidth": 2,
+            "connectionColor": "#00FF00"
+        }
     }
 }

@@ -10,8 +10,12 @@ from mediapipe.tasks.python.vision import (
     HandLandmarkerOptions,
     RunningMode,
 )
-from module._base import MEDIAPIPE_MODEL_PATH
+from module._base import DEFAULT_HAND_STYLE_CONFIG, MEDIAPIPE_MODEL_PATH
 from module._base import CapStatus, DetectorStatus
+from module._hand_style import (
+    hex_to_bgr,
+    normalize_hand_style_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +28,7 @@ class HandTracker:
     """
 
     LANDMARK_COUNT = 21
-    HAND_COLORS = {"l": (0, 0, 255), "r": (0, 255, 0)}
+    SIDE_STYLE_KEYS = {"l": "left", "r": "right"}
     ACTION_POINT_COLOR = (0, 255, 255)
     HAND_CONNECTIONS = [
         (0, 1), (1, 2), (2, 3), (3, 4),          # 拇指
@@ -90,21 +94,56 @@ class HandTracker:
             hands[label] = points
         return hands
     @classmethod
-    def draw_hands(cls,image,hands:dict | None) -> None:
+    def draw_hands(
+        cls,
+        image,
+        hands: dict | None,
+        hand_style_config: dict | None = None,
+    ) -> None:
         """在图像上绘制手部关键点和骨架。hands 为 detect() 的返回值。"""
         if hands is None:return
+        hand_style = normalize_hand_style_config(
+            hand_style_config,
+            DEFAULT_HAND_STYLE_CONFIG,
+        )
         for side,points in hands.items():
             if not points:continue
-            color = cls.HAND_COLORS.get(side,(255, 255, 0))
+            style_key = cls.SIDE_STYLE_KEYS.get(side, "right")
+            side_style = hand_style[style_key]
+            keypoint_color = hex_to_bgr(side_style["keypointColor"])
+            connection_color = hex_to_bgr(side_style["connectionColor"])
             for a,b in cls.HAND_CONNECTIONS:
                 if a < len(points) and b < len(points):
                     pa = (int(points[a][0]), int(points[a][1]))
                     pb = (int(points[b][0]), int(points[b][1]))
-                    cv2.line(image, pa, pb, color, 2)
+                    cv2.line(
+                        image,
+                        pa,
+                        pb,
+                        connection_color,
+                        side_style["connectionWidth"],
+                        lineType=cv2.LINE_AA,
+                    )
             for x,y in points:
-                cv2.circle(image, (int(x), int(y)), 4, color, -1)
+                cv2.circle(
+                    image,
+                    (int(x), int(y)),
+                    side_style["keypointSize"],
+                    keypoint_color,
+                    -1,
+                    lineType=cv2.LINE_AA,
+                )
             wrist_x,wrist_y = points[0]
-            cv2.putText(image, side.upper(), (int(wrist_x) - 10, int(wrist_y) + 25),cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            cv2.putText(
+                image,
+                side.upper(),
+                (int(wrist_x) - 10, int(wrist_y) + 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                keypoint_color,
+                2,
+                lineType=cv2.LINE_AA,
+            )
     @classmethod
     def draw_action_points(cls, image, action_points: list[tuple[float, float]] | None) -> None:
         """把SOP状态机实际用来判断抓取/放下的动作点单独高亮出来，方便调试。"""
