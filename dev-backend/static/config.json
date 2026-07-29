@@ -89,7 +89,7 @@
     },
     "detectionIntegration": {
         "triggers": {
-            "httpApi": false,
+            "httpApi": true,
             "usbScanner": false,
             "modbus": false,
             "httpParameters": [

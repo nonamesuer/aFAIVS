@@ -103,24 +103,28 @@
                 </template>
             </el-divider>
             <div class="sop-config-container">
-              <div class="sop-card" v-for="(conf,modelName,index) in sopConfigDatas" :key="index">
-                <div class="card-color-bar" :style="{ backgroundColor: missingModels.includes(modelName) ? 'var(--bs-danger-color)' : !modelsList[modelName] ? 'var(--bs-warning-color)' : (conf.enabled ? 'var(--bs-success-color)' : 'var(--bs-info-color)') }"></div>
+              <div class="sop-card" v-for="(conf,sopName) in sopConfigDatas" :key="sopName">
+                <div class="card-color-bar" :style="{ backgroundColor: missingModels.includes(sopName) ? 'var(--bs-danger-color)' : !modelsList[conf.model] ? 'var(--bs-warning-color)' : (conf.enabled ? 'var(--bs-success-color)' : 'var(--bs-info-color)') }"></div>
                 <div class="card-content">
                   <div class="card-content-top">
                     <div class="card-content-top-left">
-                      <el-checkbox size="large" label="" @change="(value) => handleChangeEnable(value, modelName)" v-model="conf.enabled" :disabled="missingModels.includes(modelName) || !modelsList[modelName]"></el-checkbox>
+                      <el-checkbox size="large" label="" @change="(value) => handleChangeEnable(value, sopName)" v-model="conf.enabled" :disabled="missingModels.includes(sopName) || !modelsList[conf.model]"></el-checkbox>
                       <div class="card-content-top-left-title">
-                        <div class="subtitle">{{ $t('config.model') }}</div>
-                        <div class="title">{{ modelName }}</div>
+                        <div class="subtitle">{{ $t('config.sop_name') }}</div>
+                        <div class="title">{{ sopName }}</div>
                       </div>
                     </div>
                     <div class="card-content-top-right">
-                      <el-icon size="24" style="cursor: pointer;"  @click="handelEditSop(modelName)"><Edit /></el-icon>
-                      <el-icon size="24" style="cursor: pointer;" @click="handelDeleteSop(modelName)"><Delete /></el-icon>
+                      <el-icon size="24" style="cursor: pointer;"  @click="handelEditSop(sopName)"><Edit /></el-icon>
+                      <el-icon size="24" style="cursor: pointer;" @click="handelDeleteSop(sopName)"><Delete /></el-icon>
                     </div>
 
                   </div>
                   <div class="card-content-info">
+                    <div>
+                        <div class="label">{{ $t('config.model') }}</div>
+                        <div class="value">{{ conf.model }}</div>
+                    </div>
                     <div>
                         <div class="label">{{ $t('config.confidence') }}</div>
                         <div class="value">{{ conf.confidence }}</div>
@@ -165,6 +169,7 @@
         <SopDialog 
             v-model:visible="sopDialogVisible"
             :modelCameraForm="modelCameraForm"
+            :existingSopNames="Object.keys(sopConfigDatas)"
             :modelsList="modelsList"
             :currentMainLabels="currentMainLabels"
             :steps="editSteps"
@@ -320,6 +325,8 @@ const detectionIntegrationConfig = ref<DetectionIntegrationConfig>({
 // 参数配置相关
 const signalSetVisible = ref(false);
 const modelCameraForm = ref({
+  sopName: "",
+  originalSopName: "",
   model: "",
   confidence: 50,
 });
@@ -564,11 +571,20 @@ const handleDeleteResolution=(resolutionStr: string)=>{
 }
 //SOP配置
 const handleAddSOP = ()=>{
+    editSteps.value = [];
+    modelCameraForm.value = {
+      sopName: "",
+      originalSopName: "",
+      model: "",
+      confidence: 50,
+    };
     sopDialogVisible.value = true;
 }
 const handleCloseSignalSet = () => {
   sopDialogVisible.value = false;
   editSteps.value = [];
+  modelCameraForm.value.sopName = "";
+  modelCameraForm.value.originalSopName = "";
   modelCameraForm.value.model = "";
   modelCameraForm.value.confidence = 50;
 };
@@ -587,35 +603,62 @@ const handleSavePositionRow = (data: any) => {
   }).finally(() => { appStore.setLoading(false); });
   
 };
-const handelDeleteSop = (modelName: string) => {
-  MesConfirmWTitle("warning", t("message.warning"), `${t("message.messagetext.askdelete")}[${modelName}]`, "", t("button.delete"), t("button.cancel"))
-    .then(() => {
-      appStore.setLoading(true);
-      api.deleteSopConfig({ model: modelName }).then((res) => {
-        if (!res.data.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), res.data.msg, "OK");
-        delete sopConfigDatas.value[modelName];
-        MesConfirmWTitle("info", t("message.messagetext.successdelete"), t("message.messagetext.modeldelete"),t('message.messagetext.modeldeleteconfirm'),t("button.delete"), t("button.cancel")).then(()=>{
-          api.deleteModel({ model: modelName }).then((resp) => {
-            if (!resp.data.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), resp.data.msg, "OK");
-            delete modelsList.value[modelName];
-            ElMessage.success(t("message.messagetext.successdelete"));
-          }).catch((err) => {
-            MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), err.message || t("message.messagetext.error_service"));
-          }).finally(() => { appStore.setLoading(false); });
-        }).catch(() => {});
-        ElMessage.success(t("message.messagetext.successdelete"));
-      }).catch((err) => {
-        MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), err.message || t("message.messagetext.error_service"));
-      }).finally(() => { appStore.setLoading(false); });
-    }).catch(() => {});
+const handelDeleteSop = async (sopName: string) => {
+  try {
+    await MesConfirmWTitle("warning", t("message.warning"), `${t("message.messagetext.askdelete")}[${sopName}]`, "", t("button.delete"), t("button.cancel"));
+  } catch {
+    return;
+  }
+
+  const modelName = sopConfigDatas.value[sopName]?.model;
+  appStore.setLoading(true);
+  try {
+    const res = await api.deleteSopConfig({ sopName });
+    if (!res.data.status) {
+      return MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), res.data.msg, "OK");
+    }
+    delete sopConfigDatas.value[sopName];
+    ElMessage.success(t("message.messagetext.successdelete"));
+  } catch (err: any) {
+    return MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), err.message || t("message.messagetext.error_service"));
+  } finally {
+    appStore.setLoading(false);
+  }
+
+  const modelStillUsed = Object.values(sopConfigDatas.value).some((config: any) => config?.model === modelName);
+  if (!modelName || modelStillUsed || !modelsList.value[modelName]) return;
+
+  try {
+    await MesConfirmWTitle("info", t("message.messagetext.successdelete"), t("message.messagetext.modeldelete"), t('message.messagetext.modeldeleteconfirm'), t("button.delete"), t("button.cancel"));
+  } catch {
+    return;
+  }
+
+  appStore.setLoading(true);
+  try {
+    const resp = await api.deleteModel({ model: modelName });
+    if (!resp.data.status) {
+      return MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), resp.data.msg, "OK");
+    }
+    delete modelsList.value[modelName];
+    ElMessage.success(t("message.messagetext.successdelete"));
+  } catch (err: any) {
+    MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), err.message || t("message.messagetext.error_service"));
+  } finally {
+    appStore.setLoading(false);
+  }
 };
 
-const handelEditSop = (modelName: string) => {
+const handelEditSop = (sopName: string) => {
+  const cof = sopConfigDatas.value[sopName];
+  if (!cof) return;
+  const modelName = cof.model;
   if(!modelsList.value[modelName]) return ElMessage.error(t("message.messagetext.modelconfigerror"));  
   sopDialogVisible.value = true;
   handleChangeMainModel(modelName);
+  modelCameraForm.value.sopName = sopName;
+  modelCameraForm.value.originalSopName = sopName;
   modelCameraForm.value.model = modelName;
-  const cof = sopConfigDatas.value[modelName];
   modelCameraForm.value.confidence = cof.confidence * 100;
   if (cof) {
     editSteps.value = cof.steps || [];
@@ -625,22 +668,23 @@ const handelEditSop = (modelName: string) => {
 
 const checkSopConfigModelsExist = () => {
   const existingModels = Object.keys(modelsList.value);
-  const sopModels = Object.keys(sopConfigDatas.value);
-  missingModels.value = sopModels.filter(model => !existingModels.includes(model));
+  missingModels.value = Object.entries(sopConfigDatas.value)
+    .filter(([, config]: [string, any]) => !existingModels.includes(config?.model))
+    .map(([sopName]) => sopName);
 };
-const handleChangeEnable = (value: boolean, modelName: string) => {
-  const conf = sopConfigDatas.value[modelName];
+const handleChangeEnable = (value: boolean, sopName: string) => {
+  const conf = sopConfigDatas.value[sopName];
   if (!conf) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedmodify"), t("message.messagetext.refreshpage"), "OK");
   if(value){
-    const enabledModels = Object.keys(sopConfigDatas.value).filter(model => sopConfigDatas.value[model].enabled && model !== modelName);
-    if(enabledModels.length > 0){
-      for (const enabledModel of enabledModels) {
-        sopConfigDatas.value[enabledModel].enabled = false;
+    const enabledSopNames = Object.keys(sopConfigDatas.value).filter(name => sopConfigDatas.value[name].enabled && name !== sopName);
+    if(enabledSopNames.length > 0){
+      for (const enabledSopName of enabledSopNames) {
+        sopConfigDatas.value[enabledSopName].enabled = false;
       }
     }
   }
   appStore.setLoading(true);
-  api.updateSopConfig({ model: modelName, fields:["enabled"], values: [value] }).then((res) => {
+  api.updateSopConfig({ sopName, fields:["enabled"], values: [value] }).then((res) => {
     if (!res.data.status) return MesAlertWTitle("error", t("message.error"), (value)?t("message.messagetext.failedenabled"):t("message.messagetext.faileddisabled"), res.data.msg, "OK");
     conf.enabled = value;
     ElMessage.success((value)?t("message.messagetext.successenbaled"):t("message.messagetext.successdisabled"));

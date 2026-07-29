@@ -10,6 +10,10 @@ from module._step_feedback import validate_sop_step_feedback_config
 from module._box_style import normalize_area_fill_alpha
 from module._hand_detection import HandTracker
 from module._hand_style import normalize_hand_style_config
+from module._sop_config import (
+    normalize_sop_name,
+    upsert_sop_definition,
+)
 from datetime import datetime
 from pydantic import BaseModel, Field
 from pymodbus.client import ModbusTcpClient
@@ -249,6 +253,19 @@ async def delete_model(request: Request):
     model = data.get("model")
     try:
         if not model:return JSONResponse(content={"status":False,"msg":"Missing model parameter"})
+        referenced_by = [
+            sop_name
+            for sop_name, definition in SopConfig().get().items()
+            if isinstance(definition, dict) and definition.get("model") == model
+        ]
+        if referenced_by:
+            return JSONResponse(content={
+                "status": False,
+                "msg": (
+                    f"Model '{model}' is still referenced by SOP: "
+                    + ", ".join(referenced_by)
+                ),
+            })
         models_path = get_models_path()
         model_folder = os.path.join(models_path, model)
         if not os.path.exists(model_folder):return JSONResponse(content={"status":True,"msg":"Model folder does not exist"})
@@ -414,69 +431,96 @@ async def delete_resolution_list(request:Request):
 @api_config.post("/set_sop_config")
 async def set_sop_config(request:Request):
     try:
-        body = await request.json() 
-        model_name = body.get("model", "")
-        if not model_name:return {"status": False, "msg": "Model name is required."}
+        body = await request.json()
         sop_config = SopConfig()
         sop_config_datas = sop_config.get()
-        existing_sop = sop_config_datas.get(model_name)
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
-        #这里要写当 existing_sop不存在时，设置 create_time 和 enabled 为 False 的逻辑；如果存在则将body的数据覆盖到existing_sop中，existing_sop中已经存在的不变
-        if existing_sop:
-            for key, value in existing_sop.items():
-                if key not in body:
-                    body[key] = value
-        else:
-            body["create_time"] = now
-            body["enabled"] = False
-        body["modify_time"] = now
-        validation_error = validate_sop_step_feedback_config(body, get_main_config())
+        sop_config_datas, sop_name, definition = upsert_sop_definition(
+            sop_config_datas,
+            body,
+            now=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        model_name = definition["model"]
+        if not os.path.isdir(os.path.join(get_models_path(), model_name)):
+            return {
+                "status": False,
+                "msg": f"Model folder '{model_name}' was not found.",
+            }
+        validation_error = validate_sop_step_feedback_config(
+            definition,
+            get_main_config(),
+        )
         if validation_error:
             return {"status": False, "msg": validation_error}
-        sop_config_datas[model_name] = body
         sop_config.set(sop_config_datas)
-        return {"status": True,"datas":sop_config_datas, "msg": "SOP configuration set successfully."}
+        return {
+            "status": True,
+            "datas": sop_config_datas,
+            "sopName": sop_name,
+            "msg": "SOP configuration set successfully.",
+        }
+    except ValueError as e:
+        return {"status": False, "msg": str(e)}
     except Exception as e:
-        logger.error(f"Error setting SOP configuration: {e}")
+        logger.exception(f"Error setting SOP configuration: {e}")
         return {"status": False, "msg": str(e)}
 @api_config.delete("/delete_sop_config")
 async def delete_sop_config(request:Request):
     try:
         body = await request.json()
-        model_name = body.get("model", "")
-        if not model_name:return {"status": False, "msg": "Model name is required."}
+        sop_name = normalize_sop_name(
+            body.get("sopName", body.get("model"))
+        )
         sop_config = SopConfig()
         sop_config_datas = sop_config.get()
-        if not sop_config_datas or model_name not in sop_config_datas:
-            return {"status": False, "msg": "SOP configuration not found for the specified model."}
-        del sop_config_datas[model_name]
+        if not sop_config_datas or sop_name not in sop_config_datas:
+            return {
+                "status": False,
+                "msg": f"SOP configuration '{sop_name}' was not found.",
+            }
+        del sop_config_datas[sop_name]
         sop_config.set(sop_config_datas)
-        return {"status": True, "msg": "SOP configuration deleted successfully."}
+        return {
+            "status": True,
+            "datas": sop_config_datas,
+            "msg": "SOP configuration deleted successfully.",
+        }
+    except ValueError as e:
+        return {"status": False, "msg": str(e)}
     except Exception as e:
-        logger.error(f"Error deleting SOP configuration: {e}")
+        logger.exception(f"Error deleting SOP configuration: {e}")
         return {"status": False, "msg": str(e)}
 @api_config.post("/update_sop_config")
 async def update_sop_config(request:Request):
     try:
         body = await request.json()
-        model_name = body.get("model", "")
+        sop_name = normalize_sop_name(
+            body.get("sopName", body.get("model"))
+        )
         fields = body.get("fields", [])
         values = body.get("values", [])
-        if not model_name:return {"status": False, "msg": "Model name is required."}
         if not fields or not values or len(fields) != len(values):return {"status": False, "msg": "Fields and values must be provided and have the same length."}
         sop_config_datas = SopConfig().get()
-        if not sop_config_datas or model_name not in sop_config_datas:
-            return {"status": False, "msg": "SOP configuration not found for the specified model."}
+        if not sop_config_datas or sop_name not in sop_config_datas:
+            return {
+                "status": False,
+                "msg": f"SOP configuration '{sop_name}' was not found.",
+            }
         for field, value in zip(fields, values):
-            sop_config_datas[model_name][field] = value
+            sop_config_datas[sop_name][field] = value
             if field == "enabled" and value is True:
-                for other_model in sop_config_datas:
-                    if other_model != model_name:
-                        sop_config_datas[other_model]["enabled"] = False
+                for other_sop_name in sop_config_datas:
+                    if other_sop_name != sop_name:
+                        sop_config_datas[other_sop_name]["enabled"] = False
         SopConfig().set(sop_config_datas)
-        return {"status": True, "msg": "SOP configuration updated successfully."}
+        return {
+            "status": True,
+            "datas": sop_config_datas,
+            "msg": "SOP configuration updated successfully.",
+        }
+    except ValueError as e:
+        return {"status": False, "msg": str(e)}
     except Exception as e:
-        logger.error(f"Error updating SOP configuration: {e}")
+        logger.exception(f"Error updating SOP configuration: {e}")
         return {"status": False, "msg": str(e)}
 MAX_RESULT_FEEDBACK_ENDPOINTS = 5
 MAX_HTTP_TRIGGER_PARAMETERS = 3

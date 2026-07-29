@@ -1,5 +1,52 @@
 {
-    "CY": {
+    "CY_test1": {
+        "model": "CY1",
+        "confidence": 0.5,
+        "steps": [
+            {
+                "id": 1,
+                "name": "安装P1零件",
+                "type": "p_object",
+                "hint": "捡起P1零件并放置到CY中",
+                "target": 1,
+                "timeout": 30,
+                "context": {
+                    "expectedObject": "P1",
+                    "fromRegion": "",
+                    "toRegion": "CY",
+                    "objectDetection": {
+                        "source": true,
+                        "transit": false,
+                        "target": true
+                    },
+                    "missTolerance": 5,
+                    "handMargin": 5,
+                    "handPoints": {
+                        "l": [],
+                        "r": []
+                    },
+                    "resultFeedback": {
+                        "http": {
+                            "enabled": false,
+                            "applyToAllSteps": false,
+                            "endpointUrls": []
+                        },
+                        "modbus": {
+                            "enabled": false,
+                            "errorSignals": [],
+                            "completionSignals": []
+                        }
+                    }
+                },
+                "doneWhen": [],
+                "ngWhen": []
+            }
+        ],
+        "create_time": "2026-07-24 16:16:26",
+        "enabled": false,
+        "modify_time": "2026-07-29 11:15:09"
+    },
+    "CY_test2": {
         "model": "CY",
         "confidence": 0.5,
         "steps": [
@@ -12,116 +59,14 @@
                 "timeout": 30,
                 "context": {
                     "expectedObject": "P1",
+                    "fromRegion": "",
                     "toRegion": "CY",
-                    "missTolerance": 30,
                     "objectDetection": {
                         "source": true,
-                        "transit": true,
-                        "target": true
-                    },
-                    "handMargin": 30,
-                    "handPoints": {
-                        "l": [],
-                        "r": [
-                            4,
-                            8,
-                            12
-                        ]
-                    },
-                    "fromRegion": "A1",
-                    "resultFeedback": {
-                        "http": {
-                            "enabled": true,
-                            "applyToAllSteps": true,
-                            "endpointUrls": [
-                                "http://127.0.0.1:20253/http/response_test"
-                            ]
-                        },
-                        "modbus": {
-                            "enabled": true,
-                            "errorSignals": [
-                                {
-                                    "slaveAddress": 1,
-                                    "dataType": "coil",
-                                    "address": 0,
-                                    "triggerValue": true,
-                                    "instantaneous": true
-                                }
-                            ],
-                            "completionSignals": [
-                                {
-                                    "slaveAddress": 1,
-                                    "dataType": "coil",
-                                    "address": 1,
-                                    "triggerValue": true,
-                                    "instantaneous": false
-                                }
-                            ]
-                        }
-                    }
-                },
-                "doneWhen": [],
-                "ngWhen": []
-            },
-            {
-                "id": 2,
-                "name": "安装P2零件",
-                "type": "p_object",
-                "hint": "捡起P2零件并放置到CY中",
-                "target": 1,
-                "timeout": 30,
-                "context": {
-                    "expectedObject": "P2",
-                    "toRegion": "CY",
-                    "handPoints": {
-                        "l": [],
-                        "r": [
-                            8,
-                            4
-                        ]
-                    },
-                    "objectDetection": {
-                        "source": true,
-                        "transit": true,
+                        "transit": false,
                         "target": true
                     },
                     "missTolerance": 5,
-                    "handMargin": 30,
-                    "resultFeedback": {
-                        "http": {
-                            "enabled": true,
-                            "applyToAllSteps": true,
-                            "endpointUrls": [
-                                "http://127.0.0.1:20253/http/response_test"
-                            ]
-                        },
-                        "modbus": {
-                            "enabled": false,
-                            "errorSignals": [],
-                            "completionSignals": []
-                        }
-                    }
-                },
-                "doneWhen": [],
-                "ngWhen": []
-            },
-            {
-                "id": 3,
-                "name": "安装P1零件",
-                "type": "p_object",
-                "hint": "捡起P1零件并放置到CY中",
-                "target": 1,
-                "timeout": 30,
-                "context": {
-                    "expectedObject": "P1",
-                    "fromRegion": "A1",
-                    "toRegion": "CY",
-                    "objectDetection": {
-                        "source": true,
-                        "transit": true,
-                        "target": true
-                    },
-                    "missTolerance": 30,
                     "handMargin": 5,
                     "handPoints": {
                         "l": [],
@@ -129,11 +74,9 @@
                     },
                     "resultFeedback": {
                         "http": {
-                            "enabled": true,
-                            "applyToAllSteps": true,
-                            "endpointUrls": [
-                                "http://127.0.0.1:20253/http/response_test"
-                            ]
+                            "enabled": false,
+                            "applyToAllSteps": false,
+                            "endpointUrls": []
                         },
                         "modbus": {
                             "enabled": false,
@@ -148,6 +91,6 @@
         ],
         "create_time": "2026-07-09 11:44:07",
         "enabled": true,
-        "modify_time": "2026-07-24 11:22:33"
+        "modify_time": "2026-07-29 11:21:07"
     }
 }

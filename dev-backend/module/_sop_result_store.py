@@ -403,7 +403,7 @@ class SOPResultStore:
                         self.project_name,
                         str(
                             self.sop_config.get(
-                                "model",
+                                "sopName",
                                 self.project_name,
                             )
                         ),

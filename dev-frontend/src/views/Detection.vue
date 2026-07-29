@@ -11,6 +11,11 @@
                                 <div class="text-auto-hidden">{{ cameraName }}</div>
                                 <el-divider direction="vertical" />
 
+                                <div class="text-auto-hidden" v-if="sopConfiguration.sopName">
+                                    {{ sopConfiguration.sopName }}
+                                </div>
+                                <el-divider v-if="sopConfiguration.sopName" direction="vertical" />
+
                                 <div class="text-auto-hidden" v-if="sopConfiguration.model">
                                     {{ sopConfiguration.model || '' }}
                                 </div>
@@ -806,11 +811,15 @@ function resolveSopConfig(data = {}) {
         return data
     }
 
-    return (
-        Object.values(data).find(
-            (item) => item && Array.isArray(item.steps),
-        ) || {}
+    const entry = Object.entries(data).find(
+        ([, item]) => item && Array.isArray(item.steps),
     )
+    if (!entry) return {}
+    const [sopName, config] = entry
+    return {
+        ...config,
+        sopName: config.sopName || sopName,
+    }
 }
 
 function buildProcessSteps(steps = [], runtimeStep = false) {
@@ -1634,7 +1643,7 @@ async function handleStartDetection() {
         request: () =>
             api.startDetection({
                 camera_name: cameraName.value,
-                project_name: sopConfiguration.value.model,
+                sop_name: sopConfiguration.value.sopName || sopConfiguration.value.model,
             }),
         title: t('message.messagetext.failedstart'),
         fallbackMessage: t(

@@ -350,7 +350,10 @@ class SOPStateMachine:
         ready_check_timeout: float = 10.0,
     ):
         self.sop_config = sop_config or {}
-        self.sop_name = str(self.sop_config.get("model", ""))
+        self.sop_name = str(
+            self.sop_config.get("sopName")
+            or self.sop_config.get("model", "")
+        )
         self.confidence = self._normalize_confidence(self.sop_config.get("confidence", 0), min_score)
         self.stable_frames = max(1, int(stable_frames))
         self.steps = [
@@ -622,6 +625,8 @@ class SOPStateMachine:
     def snapshot(self, matched: bool = False, reason: str = "") -> dict[str, Any]:
         done_count = sum(1 for step in self.steps if step.state == SOPStepState.DONE)
         return {
+            "sop_name": self.sop_name,
+            "model": str(self.sop_config.get("model", "")),
             "state": self.state.value,
             "current_step": self.current_step.to_dict() if self.current_step else None,
             "steps": [step.to_dict() for step in self.steps],
@@ -1689,9 +1694,9 @@ def select_enabled_sop_config(sop_map: dict[str, Any] | None) -> dict[str, Any]:
         return {}
     if isinstance(sop_map.get("steps"), list):
         return sop_map
-    for value in sop_map.values():
+    for sop_name, value in sop_map.items():
         if isinstance(value, dict) and value.get("enabled") is True:
-            return value
+            return {**value, "sopName": str(sop_name)}
     return {}
 
 

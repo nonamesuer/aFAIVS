@@ -15,6 +15,7 @@ from module._sop_state_machine import SOPStateMachine
 from module._hand_detection import HandTracker, HandDetectorWorker
 from module._trigger import TriggerController
 from module._sop_result_store import SOPResultStore
+from module._sop_config import resolve_sop_definition
 from module._step_feedback import StepFeedbackDispatcher
 from module._box_style import (
     collect_sop_area_labels,
@@ -60,9 +61,9 @@ async def _wait_ice_gathering_complete(pc: RTCPeerConnection, timeout_s: float =
 class DetectionRuntime:
     """检测服务运行时：统一管理采集线程和检测线程生命周期。"""
 
-    def __init__(self, camera_index: int,camera_name: str, model_path: str | None = None, model_name: str | None = None, project_name: str | None = None):
+    def __init__(self, camera_index: int,camera_name: str, model_path: str | None = None, model_name: str | None = None, project_name: str | None = None, sop_name: str | None = None):
         self.camera = CameraManager(camera_index=camera_index,camera_name=camera_name, target_fps=30.0)
-        self.detector = DetectorWorker(camera=self.camera, model_path=model_path, model_name=model_name, project_name=project_name, infer_period_ms=70)
+        self.detector = DetectorWorker(camera=self.camera, model_path=model_path, model_name=model_name, project_name=project_name, sop_name=sop_name, infer_period_ms=70)
         self.peer_connections: set[RTCPeerConnection] = set()
         self.running = False
         self.paused = False
@@ -203,7 +204,7 @@ class DetectionRuntime:
 class DetectorWorker:
     """后台检测线程：配置 ONNX_MODEL_PATH 后使用真实 ONNX 模型，否则使用模拟结果。"""
 
-    def __init__(self, camera: CameraManager, model_path: str | None = None, model_name: str | None = None, project_name: str | None = None, infer_period_ms: int = 70,hand_infer_period_ms: int = 50):
+    def __init__(self, camera: CameraManager, model_path: str | None = None, model_name: str | None = None, project_name: str | None = None, sop_name: str | None = None, infer_period_ms: int = 70,hand_infer_period_ms: int = 50):
         if not model_path or not model_name:
             raise RuntimeError("Model path and model name are required")
 
@@ -237,6 +238,7 @@ class DetectorWorker:
         self.model_path = model_path
         self.model_name = model_name
         self.project_name = project_name
+        self.sop_name = sop_name or project_name
         self.sop_machine = self._create_sop_machine()
         #结果保存器
         self.result_store = SOPResultStore(
@@ -247,6 +249,7 @@ class DetectorWorker:
         )
         self.feedback_dispatcher = StepFeedbackDispatcher(
             project_name=self.project_name,
+            sop_name=self.sop_name,
             model_name=self.model_name,
             camera_name=self.camera.camera_name,
             status_callback=self._handle_feedback_status,
@@ -284,9 +287,10 @@ class DetectorWorker:
     def _create_sop_machine(self) -> SOPStateMachine:
         try:
             config = SopConfig().get()
-            project_config = config.get(self.project_name) if self.project_name else None
-            sop_task = SOPStateMachine.from_sop_map(project_config or config, stable_frames=3)
-            return sop_task
+            if self.sop_name:
+                _, project_config = resolve_sop_definition(config, self.sop_name)
+                return SOPStateMachine(project_config, stable_frames=3)
+            return SOPStateMachine.from_sop_map(config, stable_frames=3)
         except Exception as e:
             logger.exception("Failed to initialize SOP state machine")
             machine = SOPStateMachine({}, stable_frames=3)

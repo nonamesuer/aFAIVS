@@ -76,6 +76,12 @@ export default{
     config:{
         models:"Models",
         model:"Model",
+        model_required:"Please select a model",
+        sop_name:"SOP Name",
+        sop_name_placeholder:"For example: CY_S1",
+        sop_name_required:"Please enter an SOP name",
+        sop_name_invalid:"Use only letters, numbers, underscores, and hyphens",
+        sop_name_duplicate:"This SOP name already exists",
         labels:"Labels",
         camera:"Camera",
         cameras:"Cameras",

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from module._detector import DetectionRuntime
 from module._base import get_main_config,get_models_path,SopConfig,WEBSOCKET_CLIENTS,get_camera_index,CapStatus,DetectorStatus
+from module._sop_config import resolve_sop_model
 logger = logging.getLogger(__name__)
 api_detection = APIRouter(prefix="/detection")
 _runtime_lock = threading.Lock()
@@ -22,11 +23,11 @@ def get_runtime() -> DetectionRuntime | None:
     return _runtime
 
 
-def get_or_create_runtime(camera_index, camera_name, model_path=None, model_name=None, project_name=None) -> DetectionRuntime:
+def get_or_create_runtime(camera_index, camera_name, model_path=None, model_name=None, project_name=None, sop_name=None) -> DetectionRuntime:
     global _runtime
     with _runtime_lock:
         if _runtime is None:
-            _runtime = DetectionRuntime(camera_index=camera_index, camera_name=camera_name, model_path=model_path, model_name=model_name, project_name=project_name)
+            _runtime = DetectionRuntime(camera_index=camera_index, camera_name=camera_name, model_path=model_path, model_name=model_name, project_name=project_name, sop_name=sop_name)
         return _runtime
 
 
@@ -228,21 +229,41 @@ def trigger_http(request: Request):
 
 
 @api_detection.get("/start_detection")
-def start_detection(camera_name: str,project_name: str):
+def start_detection(
+    camera_name: str,
+    sop_name: str | None = None,
+    project_name: str | None = None,
+):
+    """Start a named SOP. project_name remains as a legacy alias."""
+    try:
+        resolved_sop_name, model_project, _definition = resolve_sop_model(
+            SopConfig().get(),
+            sop_name or project_name,
+        )
+    except ValueError as exc:
+        return JSONResponse({"status": False, "msg": str(exc)})
+
     path = get_models_path()
-    model_path = os.path.join(path, project_name)
+    model_path = os.path.join(path, model_project)
     if not os.path.exists(model_path):
-        return JSONResponse({"status":False,"msg":f"Model {project_name} not found"})
+        return JSONResponse({"status":False,"msg":f"Model {model_project} not found"})
     onnx_files = [f for f in os.listdir(model_path) if f.endswith(".onnx")]
     cache_file = os.path.join(model_path, "cache.json")
     if not onnx_files or not os.path.exists(cache_file):
-        return JSONResponse({"status":False,"msg":f"Model {project_name} is incomplete,please check the model folder"})
+        return JSONResponse({"status":False,"msg":f"Model {model_project} is incomplete,please check the model folder"})
     model_name = onnx_files[0]  # 使用第一个 ONNX 文件作为模型名称
     index = get_camera_index(camera_name)
     if index is None:
         logger.error(f"Camera {camera_name} not found in available devices")
         return JSONResponse({"status":False,"msg":f"Camera {camera_name} not found"})
-    runtime = get_or_create_runtime(camera_index=index,camera_name=camera_name,model_path=model_path,model_name=model_name,project_name=project_name)
+    runtime = get_or_create_runtime(
+        camera_index=index,
+        camera_name=camera_name,
+        model_path=model_path,
+        model_name=model_name,
+        project_name=model_project,
+        sop_name=resolved_sop_name,
+    )
     try:
         runtime.start()
     except RuntimeError as e:
@@ -375,7 +396,16 @@ def get_sop_configration():
         sop_config_datas = SopConfig().get()
         config_datas = get_main_config()
         enabled_sop = next(
-            ({key: value} for key, value in sop_config_datas.items() if isinstance(value, dict) and value.get("enabled", False)),
+            (
+                {
+                    key: {
+                        **value,
+                        "sopName": key,
+                    }
+                }
+                for key, value in sop_config_datas.items()
+                if isinstance(value, dict) and value.get("enabled", False)
+            ),
             {},
         )
         enable_camera = config_datas.get("enableCamera", None)
@@ -394,8 +424,6 @@ def register_detection(app: FastAPI) -> None:
             _runtime.stop()
 
     app.include_router(api_detection, tags=["DETECTION"])
-
-
 
 
 

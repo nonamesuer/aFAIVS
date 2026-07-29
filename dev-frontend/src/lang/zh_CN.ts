@@ -75,6 +75,12 @@ export default{
     config:{
         models:"模型",
         model:"模型",
+        model_required:"请选择模型",
+        sop_name:"工序方案名称",
+        sop_name_placeholder:"例如：CY_S1",
+        sop_name_required:"请输入工序方案名称",
+        sop_name_invalid:"名称只能包含字母、数字、下划线和连字符",
+        sop_name_duplicate:"该工序方案名称已存在",
         labels:"\u6807\u7B7E",
         camera:"\u6444\u50CF\u5934",
         cameras:"\u6444\u50CF\u5934",

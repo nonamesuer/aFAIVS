@@ -147,11 +147,13 @@ class StepFeedbackDispatcher:
         self,
         *,
         project_name: str | None,
+        sop_name: str | None = None,
         model_name: str | None,
         camera_name: str | None,
         status_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.project_name = project_name or ""
+        self.sop_name = sop_name or self.project_name
         self.model_name = model_name or ""
         self.camera_name = camera_name or ""
         self.status_callback = status_callback
@@ -246,6 +248,7 @@ class StepFeedbackDispatcher:
             "status": "ng" if event_type == "operation_error" else "ok",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "projectName": self.project_name,
+            "sopName": self.sop_name,
             "modelName": self.model_name,
             "cameraName": self.camera_name,
             "runId": run_id,

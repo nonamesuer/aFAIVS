@@ -8,7 +8,22 @@
     @update:model-value="$emit('update:visible', $event)"
   >
     <template #header>
-      <el-form v-if="visible" :model="modelCameraForm" :inline="true">
+      <el-form
+        v-if="visible"
+        ref="modelFormRef"
+        :model="modelCameraForm"
+        :rules="modelFormRules"
+        :inline="true"
+      >
+        <el-form-item :label="$t('config.sop_name')" prop="sopName" required style="margin-right: 5px;">
+          <el-input
+            v-model="modelCameraForm.sopName"
+            :placeholder="$t('config.sop_name_placeholder')"
+            maxlength="64"
+            show-word-limit
+            style="width: 220px"
+          />
+        </el-form-item>
         <el-form-item :label="$t('config.model')" prop="model" required style="margin-right: 5px;">
           <el-select v-model="modelCameraForm.model" style="width: 200px" @change="(model) => $emit('modelChanged', model)">
             <el-option
@@ -467,7 +482,7 @@
     </div>
     <template #footer>
       <el-button type="primary" plain @click="handleReset">{{ $t('button.reset') }}</el-button>
-      <el-button v-if="modelCameraForm.model" type="primary" size="large" @click="handleSave">
+      <el-button type="primary" size="large" @click="handleSave">
         {{ $t('button.save') }}
       </el-button>
     </template>
@@ -492,6 +507,7 @@ const props = defineProps<{
   visible: boolean
   modelCameraForm: any
   modelsList: Record<string, boolean>
+  existingSopNames: string[]
   currentMainLabels: Record<string, string>
   steps: any[]
   resultFeedbackConfig: {
@@ -512,6 +528,23 @@ const emit = defineEmits<{
 }>()
 
 const HAND_SIDES = ['l', 'r'] as const
+const modelFormRef = ref<FormInstance>()
+const validateSopName = (_rule: unknown, value: unknown, callback: (error?: Error) => void) => {
+  const sopName = String(value || '').trim()
+  if (!sopName) return callback(new Error(t('config.sop_name_required')))
+  if (!/^[\p{L}\p{N}_-]+$/u.test(sopName)) {
+    return callback(new Error(t('config.sop_name_invalid')))
+  }
+  const originalName = String(props.modelCameraForm.originalSopName || '').trim()
+  if (props.existingSopNames.includes(sopName) && sopName !== originalName) {
+    return callback(new Error(t('config.sop_name_duplicate')))
+  }
+  callback()
+}
+const modelFormRules: FormRules = {
+  sopName: [{ validator: validateSopName, trigger: ['blur', 'change'] }],
+  model: [{ required: true, message: t('config.model_required'), trigger: 'change' }],
+}
 const ALL_HAND_POINTS = Array.from({ length: 21 }, (_value, index) => index)
 const MAX_STEP_FEEDBACK_SIGNALS = 3
 type FeedbackSignalGroup = 'errorSignals' | 'completionSignals'
@@ -912,6 +945,12 @@ const handleReset = () => {
 }
 
 const handleSave = async () => {
+  try {
+    await modelFormRef.value?.validate()
+  } catch {
+    return
+  }
+  props.modelCameraForm.sopName = String(props.modelCameraForm.sopName || '').trim()
   if(!stepsLocal.value.length) {
     ElMessage.error(t('message.messagetext.blankSopConfig'))
     return
@@ -949,6 +988,8 @@ const handleSave = async () => {
   )
 
   emit('save', {
+    sopName: props.modelCameraForm.sopName,
+    originalSopName: props.modelCameraForm.originalSopName || '',
     camera: props.modelCameraForm.camera,
     model: props.modelCameraForm.model,
     confidence: props.modelCameraForm.confidence / 100,
