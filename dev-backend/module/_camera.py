@@ -16,11 +16,9 @@ from module._base import (
 
 from module._camera_settings import (
     CameraSettings,
-    apply_display_quality,
     configure_capture,
     crop_display_area,
     load_camera_settings,
-    normalize_camera_settings,
 )
 
 
@@ -96,9 +94,6 @@ class CameraManager:
         self.reconnnect_times = 0
 
         self.cap_status = CapStatus()
-
-        # 区分用户实时修改参数和真实断线。
-        self._reconfiguring = False
 
     # =====================================================
     # 配置读取
@@ -412,196 +407,6 @@ class CameraManager:
         self.heartbeat_thread = None
 
         self.reconnnect_times = 0
-        self._reconfiguring = False
-
-    # =====================================================
-    # 实时应用新配置
-    # =====================================================
-
-    def apply_settings(
-        self,
-        values: dict,
-    ) -> dict:
-        """
-        配置保存后，将配置应用到正在运行的相机。
-
-        area / clarity:
-            不需要重开相机，立即生效。
-
-        width / height:
-            需要安全释放并重新打开 VideoCapture。
-        """
-
-        new_settings = (
-            normalize_camera_settings(
-                values
-            )
-        )
-
-        with self.settings_lock:
-            old_settings = self.settings
-
-            resolution_changed = (
-                old_settings.width
-                != new_settings.width
-
-                or old_settings.height
-                != new_settings.height
-            )
-
-            self.settings = new_settings
-
-        if (
-            self.running
-            and resolution_changed
-        ):
-            self._reconfigure_capture(
-                new_settings,
-                old_settings,
-            )
-
-        logger.info(
-            "Camera %s settings updated: %s",
-            self.camera_name,
-            self.settings_snapshot(),
-        )
-
-        return self.settings_snapshot()
-
-    def _reconfigure_capture(
-        self,
-        new_settings: CameraSettings,
-        old_settings: CameraSettings,
-    ) -> None:
-        """
-        运行中修改真实采集分辨率。
-
-        新配置失败时，自动恢复旧分辨率。
-        """
-
-        self._reconfiguring = True
-        self.cap_status.set(2)
-
-        with self.frame_lock:
-            self.latest_frame = None
-
-        with self.capture_lock:
-            old_capture = self.cap
-            self.cap = None
-
-            if old_capture is not None:
-                old_capture.release()
-
-        try:
-            index = get_camera_index(
-                self.camera_name
-            )
-
-            if index is None:
-                raise RuntimeError(
-                    "Camera is not available"
-                )
-
-            self.camera_index = index
-
-            new_capture, new_report = (
-                self._open_capture(
-                    index,
-                    new_settings,
-                )
-            )
-
-            first_frame = (
-                self._read_first_frame(
-                    new_capture
-                )
-            )
-
-            if first_frame is None:
-                new_capture.release()
-
-                raise RuntimeError(
-                    (
-                        f"摄像头 "
-                        f"{self.camera_name} "
-                        "应用新分辨率后"
-                        "无法读取画面"
-                    )
-                )
-
-            self._install_capture(
-                new_capture,
-                first_frame,
-                new_report,
-            )
-
-            self.cap_status.set(1)
-
-        except Exception as new_error:
-
-            logger.exception(
-                "应用相机新分辨率失败，"
-                "开始恢复旧配置"
-            )
-
-            with self.settings_lock:
-                self.settings = (
-                    old_settings
-                )
-
-            try:
-                rollback_capture, (
-                    rollback_report
-                ) = self._open_capture(
-                    self.camera_index,
-                    old_settings,
-                )
-
-                rollback_frame = (
-                    self._read_first_frame(
-                        rollback_capture
-                    )
-                )
-
-                if rollback_frame is None:
-                    rollback_capture.release()
-
-                    raise RuntimeError(
-                        "恢复旧相机配置后"
-                        "仍无法读取画面"
-                    )
-
-                self._install_capture(
-                    rollback_capture,
-                    rollback_frame,
-                    rollback_report,
-                )
-
-                self.cap_status.set(1)
-
-            except Exception as rollback_error:
-
-                self.cap_status.set(3)
-                self.running = False
-
-                raise RuntimeError(
-                    (
-                        "应用新相机配置失败，"
-                        "且无法恢复旧配置："
-                        f"{rollback_error}"
-                    )
-                ) from new_error
-
-            raise RuntimeError(
-                (
-                    "应用新相机配置失败，"
-                    "已恢复旧配置："
-                    f"{new_error}"
-                )
-            ) from new_error
-
-        finally:
-            self._reconfiguring = False
 
     # =====================================================
     # 帧读取
@@ -692,11 +497,12 @@ class CameraManager:
     def prepare_display_frame(
         self,
         frame,
-        *,
-        apply_quality: bool = False,
     ):
         """
-        只对浏览器显示帧进行裁剪和质量处理。
+        只对浏览器显示帧进行中心裁剪。
+
+        clarity 由 MJPEG/JPEG 编码阶段使用。WebRTC 自带视频编码，
+        不再为每一帧执行额外的 JPEG 编码和解码。
         """
 
         if frame is None:
@@ -711,14 +517,6 @@ class CameraManager:
                 settings.area,
             )
         )
-
-        if apply_quality:
-            display_frame = (
-                apply_display_quality(
-                    display_frame,
-                    settings.clarity,
-                )
-            )
 
         return display_frame
 
@@ -759,10 +557,6 @@ class CameraManager:
 
         while self.running:
 
-            if self._reconfiguring:
-                time.sleep(0.1)
-                continue
-
             alive = (
                 self._check_camera_alive()
             )
@@ -797,9 +591,6 @@ class CameraManager:
     def _check_camera_alive(
         self,
     ) -> bool:
-
-        if self._reconfiguring:
-            return True
 
         if self.cap_status.get() == 2:
             return True
@@ -874,15 +665,10 @@ class CameraManager:
                     await asyncio.sleep(2)
                     continue
 
-                # 重连时重新加载磁盘中的最新配置。
-                settings = (
-                    load_camera_settings(
-                        self.camera_name
-                    )
-                )
-
                 with self.settings_lock:
-                    self.settings = settings
+                    # 自动断线重连属于同一次检测运行，继续使用本次
+                    # 启动时的配置，避免 WebRTC 中途改变画面尺寸。
+                    settings = self.settings
 
                 try:
                     new_capture, report = (

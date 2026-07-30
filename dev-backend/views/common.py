@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 
 import cv2
 
@@ -72,6 +73,8 @@ async def websocket_endpoint(
             "camera_name": None,
             "settings": None,
             "capture_report": None,
+            "capture_lock":
+                threading.Lock(),
         },
     )
 
@@ -217,7 +220,14 @@ async def websocket_endpoint(
                 )
 
                 if capture is not None:
-                    capture.release()
+                    capture_lock = state.get(
+                        "capture_lock"
+                    )
+                    if capture_lock is not None:
+                        with capture_lock:
+                            capture.release()
+                    else:
+                        capture.release()
 
                 camera_streams.pop(
                     camera_id,

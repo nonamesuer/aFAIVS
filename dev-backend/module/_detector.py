@@ -30,7 +30,7 @@ from PIL import ImageColor
 logger = logging.getLogger(__name__)
 
 # JPEG_QUALITY = 85
-SERVER_STREAM_FPS = 12.0
+SERVER_STREAM_FPS = 30.0
 ACTIVE_STATUS_VALUES = {1, 2}
 MAX_FEEDBACK_STATUS_EVENTS = 30
 BOX_STYLE_CONFIG = {}
@@ -249,7 +249,6 @@ class DetectionRuntime:
                 self.camera
                 .prepare_display_frame(
                     processed_frame,
-                    apply_quality=False,
                 )
             )
 
@@ -720,7 +719,6 @@ class CameraTrack(VideoStreamTrack):
             self.runtime.camera
             .prepare_display_frame(
                 processed_frame,
-                apply_quality=True,
             )
         )
 

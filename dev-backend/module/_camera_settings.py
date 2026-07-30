@@ -28,7 +28,8 @@ class CameraSettings:
         0 表示不裁剪。
 
     clarity:
-        浏览器显示编码质量。
+        MJPEG 和配置预览的 JPEG 编码质量。
+        WebRTC 使用自身的视频编码和码率控制。
         不影响 ONNX 和 MediaPipe。
     """
 
@@ -362,50 +363,3 @@ def encode_jpeg(
         )
 
     return buffer.tobytes()
-
-
-def apply_display_quality(
-    frame: np.ndarray,
-    clarity: int,
-) -> np.ndarray:
-    """
-    WebRTC 接收的是 ndarray，不能直接设置 JPEG quality。
-
-    因此先用 clarity 编码，再解码回 ndarray，
-    只降低浏览器显示帧质量。
-
-    ONNX 和 MediaPipe 仍然使用原始帧。
-    """
-
-    quality = min(
-        100,
-        max(
-            1,
-            int(
-                clarity
-                or DEFAULT_DISPLAY_CLARITY
-            ),
-        ),
-    )
-
-    if quality >= 100:
-        return frame
-
-    encoded = encode_jpeg(
-        frame,
-        quality,
-    )
-
-    decoded = cv2.imdecode(
-        np.frombuffer(
-            encoded,
-            dtype=np.uint8,
-        ),
-        cv2.IMREAD_COLOR,
-    )
-
-    return (
-        decoded
-        if decoded is not None
-        else frame
-    )

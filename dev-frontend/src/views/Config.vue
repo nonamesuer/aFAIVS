@@ -229,6 +229,8 @@ const currentMainLabels = ref<Record<string, string>>({});
 const currentMainCamera = ref(null);
 const configCameraVisible = ref(false);
 const ws = ref(null);
+let previewFrameRendering = false;
+let previewFrameUrl: string | null = null;
 //分辨率
 const resolutionsDes = ref("");
 const resolutionsList = ref<number[][]>([]);
@@ -514,21 +516,14 @@ const closeCameraPreviewSocket = () => {
   if (img) {
     img.src = "";
   }
+  if (previewFrameUrl) {
+    URL.revokeObjectURL(previewFrameUrl);
+    previewFrameUrl = null;
+  }
+  previewFrameRendering = false;
 };
 
 
-const restartCameraPreview = async (
-  cameraIndex: number
-) => {
-  closeCameraPreviewSocket();
-
-  currentMainCamera.value =
-    cameraIndex;
-
-  await nextTick();
-
-  videoStream();
-};
 const configCameraDialogClosed = () => {
   closeCameraPreviewSocket();
   currentMainCamera.value = null;
@@ -539,18 +534,27 @@ const videoStream = () => {
   ws.value.binaryType = "arraybuffer";
   const img = document.getElementById("video-stream");
   ws.value.onmessage = async (event) => {
+    if (previewFrameRendering || !img) return;
     const buffer = new Uint8Array(event.data);
+    if (buffer.byteLength < 4) return;
     const magic = new DataView(buffer.buffer).getUint32(0);
     const payload = buffer.slice(4); // 去掉4字节头
     if (magic === MAGIC_CAMERA) {
+      previewFrameRendering = true;
       const blob = new Blob([payload], { type: "image/jpeg" });
-      let url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
+      previewFrameUrl = url;
       const imgToUpdate = img;
       imgToUpdate.src = url;
-      // 图片加载完成后撤销 URL
-      imgToUpdate.onload = () => { URL.revokeObjectURL(url); };
-      // 处理加载失败的情况
-      imgToUpdate.onerror = () => { URL.revokeObjectURL(url); };
+      const finishFrame = () => {
+        URL.revokeObjectURL(url);
+        if (previewFrameUrl === url) {
+          previewFrameUrl = null;
+        }
+        previewFrameRendering = false;
+      };
+      imgToUpdate.onload = finishFrame;
+      imgToUpdate.onerror = finishFrame;
     }
   };
 };
@@ -582,7 +586,7 @@ const handleSubmitResolution=(data: { resolutions: string; area: number; clarity
         height,
         area,
         clarity,
-    }).then(async (res) => {
+    }).then((res) => {
   if (!res.data.status) {
     return ElMessage({
       message: res.data.msg,
@@ -627,49 +631,6 @@ const handleSubmitResolution=(data: { resolutions: string; area: number; clarity
 
   resolutionsDrawerVisible.value =
     false;
-
-  // ========================================
-  // 如果当前预览的就是刚修改的相机，
-  // 关闭并重连预览，让后端重新读取配置。
-  // ========================================
-
-  const previewIndex =
-    currentMainCamera.value;
-
-  if (
-    configCameraVisible.value &&
-    previewIndex !== null &&
-    cameraList.value[previewIndex] ===
-      temSetResolutionCapName.value
-  ) {
-    await restartCameraPreview(
-      previewIndex
-    );
-  }
-
-  // ========================================
-  // 检查驱动是否真正采用请求分辨率。
-  // ========================================
-
-  const cameraState =
-    res.data.cameraState;
-
-  if (
-    cameraState &&
-    cameraState.resolution_matched ===
-      false
-  ) {
-    ElMessage.warning(
-      `请求分辨率 ` +
-      `${cameraState.width}x` +
-      `${cameraState.height}，` +
-      `相机实际输出 ` +
-      `${cameraState.actual_width}x` +
-      `${cameraState.actual_height}`
-    );
-
-    return;
-  }
 
   ElMessage.success(
     t(

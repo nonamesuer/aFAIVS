@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
+import time
 from typing import Any
 
 from module._camera_settings import (
@@ -13,11 +14,34 @@ from module._camera_settings import (
 
 logger = logging.getLogger(__name__)
 
+PREVIEW_STREAM_FPS = 15.0
 
 camera_streams: dict[
     int,
     dict[str, Any],
 ] = {}
+
+
+def _read_preview_frame(state: dict[str, Any]):
+    capture = state.get("capture")
+    capture_lock = state.get("capture_lock")
+    if capture is None or capture_lock is None:
+        return False, None
+    with capture_lock:
+        if not capture.isOpened():
+            return False, None
+        return capture.read()
+
+
+def _encode_preview_frame(frame, settings) -> bytes:
+    display_frame = crop_display_area(
+        frame,
+        settings.area,
+    )
+    return encode_jpeg(
+        display_frame,
+        settings.clarity,
+    )
 
 
 async def stream_camera(
@@ -38,6 +62,8 @@ async def stream_camera(
         ">I",
         0xFFFF0000,
     )
+    frame_interval = 1.0 / PREVIEW_STREAM_FPS
+    next_tick = time.monotonic()
 
     try:
         while True:
@@ -62,21 +88,17 @@ async def stream_camera(
             if not clients:
                 break
 
-            capture = state.get(
-                "capture"
-            )
-
             settings = state.get(
                 "settings"
             )
 
-            if (
-                capture is None
-                or settings is None
-            ):
+            if settings is None:
                 break
 
-            ret, frame = capture.read()
+            ret, frame = await asyncio.to_thread(
+                _read_preview_frame,
+                state,
+            )
 
             if (
                 not ret
@@ -84,15 +106,11 @@ async def stream_camera(
             ):
                 break
 
-            frame = crop_display_area(
-                frame,
-                settings.area,
-            )
-
             try:
-                frame_bytes = encode_jpeg(
+                frame_bytes = await asyncio.to_thread(
+                    _encode_preview_frame,
                     frame,
-                    settings.clarity,
+                    settings,
                 )
 
             except Exception:
@@ -139,7 +157,15 @@ async def stream_camera(
                         client
                     )
 
-            await asyncio.sleep(0.03)
+            next_tick += frame_interval
+            sleep_time = max(
+                0.0,
+                next_tick - time.monotonic(),
+            )
+            if sleep_time:
+                await asyncio.sleep(sleep_time)
+            elif next_tick < time.monotonic() - 1:
+                next_tick = time.monotonic()
 
     except Exception:
         logger.exception(
@@ -163,7 +189,14 @@ async def stream_camera(
             )
 
             if capture is not None:
-                capture.release()
+                capture_lock = state.get(
+                    "capture_lock"
+                )
+                if capture_lock is not None:
+                    with capture_lock:
+                        capture.release()
+                else:
+                    capture.release()
 
             camera_streams.pop(
                 camera_id,
