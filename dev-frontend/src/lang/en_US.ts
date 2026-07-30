@@ -293,6 +293,7 @@ export default{
             failedGetBoxStyleConfig:"Failed to get box style configuration",
             modbusConnectionSuccess:"Modbus-TCP connection successful",
             modbusConnectionFailed:"Modbus-TCP connection failed",
+            externalStartFailed:"Failed to start detection from external API",
         },
     },
     description:{
@@ -311,6 +312,7 @@ export default{
         httptriggername:"HTTP API",
         usbtriggername:"USB scanner",
         modbustriggername:"Modbus",
+        externalapitriggername:"external start API",
         noconfigcamera:"No camera configured",
         left:"Left",
         right:"Right",

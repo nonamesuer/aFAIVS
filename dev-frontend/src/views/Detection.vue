@@ -11,6 +11,11 @@
                                 <div class="text-auto-hidden">{{ cameraName }}</div>
                                 <el-divider direction="vertical" />
 
+                                <template v-if="runtime.externalReference">
+                                    <div class="text-auto-hidden">SN: {{ runtime.externalReference }}</div>
+                                    <el-divider direction="vertical" />
+                                </template>
+
                                 <div class="text-auto-hidden" v-if="sopConfiguration.sopName">
                                     {{ sopConfiguration.sopName }}
                                 </div>
@@ -357,6 +362,7 @@ const MAX_EVENT_COUNT = 50
 const MAX_ALERT_COUNT = 30
 const RECONNECT_DELAY_MS = 3000
 const TIMEOUT_TICK_MS = 1000
+const EXTERNAL_STATUS_POLL_MS = 1000
 
 const createEmptyDetectionResult = () => ({
     step: null,
@@ -382,6 +388,14 @@ const runtime = reactive({
     triggerMethods: [],
     triggerSource: null,
     triggeredAt: null,
+    runtimeId: null,
+    cameraName: null,
+    sopName: null,
+    projectName: null,
+    modelName: null,
+    externalMode: false,
+    externalReference: null,
+    externalStart: null,
 })
 
 const stream = reactive({
@@ -414,6 +428,7 @@ let reconnectTimer = null
 let resultReconnectTimer = null
 let criticalAlertTimer = null
 let timeoutTicker = null
+let externalStatusTimer = null
 let manuallyStopped = false
 let webRtcStarting = false
 let webRtcStartToken = 0
@@ -423,6 +438,7 @@ const handledFeedbackEventIds = new Set()
 let lastTriggerCycleAt = null
 let scannerBuffer = ''
 let scannerResetTimer = null
+let lastExternalRequestId = null
 
 const okCount = computed(() => Number(detectionResult.value.ok_count || 0))
 const ngCount = computed(() => Number(detectionResult.value.ng_count || 0))
@@ -457,6 +473,7 @@ const waitingTriggerText = computed(() => {
         http: t('displaytext.httptriggername'),
         usb: t('displaytext.usbtriggername'),
         modbus: t('displaytext.modbustriggername'),
+        external_api: t('displaytext.externalapitriggername'),
     }
     const labels = runtime.triggerMethods
         .map((method) => methodLabels[method])
@@ -644,6 +661,14 @@ function applyRuntimeStatus(payload = {}) {
         : []
     runtime.triggerSource = payload.trigger_source || null
     runtime.triggeredAt = payload.triggered_at || null
+    runtime.runtimeId = payload.runtime_id || null
+    runtime.cameraName = payload.camera_name || null
+    runtime.sopName = payload.sop_name || null
+    runtime.projectName = payload.project_name || null
+    runtime.modelName = payload.model_name || null
+    runtime.externalMode = Boolean(payload.external_mode)
+    runtime.externalReference = payload.external_reference || null
+    runtime.externalStart = payload.external_start || null
 }
 
 function clearScannerBuffer() {
@@ -1064,19 +1089,24 @@ async function updateFooterHintOverflow() {
     )
 }
 
-async function getSopConfiguration() {
-    appStore.setLoading(true)
+async function getSopConfiguration({
+    showLoading = true,
+    showError = true,
+} = {}) {
+    if (showLoading) appStore.setLoading(true)
 
     try {
         const { data: response } = await api.getSopConfigration()
         if (!response.status) {
-            MesAlertWTitle(
-                'error',
-                t('message.error'),
-                t('message.messagetext.failed_get_config'),
-                response.msg,
-                'OK',
-            )
+            if (showError) {
+                MesAlertWTitle(
+                    'error',
+                    t('message.error'),
+                    t('message.messagetext.failed_get_config'),
+                    response.msg,
+                    'OK',
+                )
+            }
             return
         }
 
@@ -1087,12 +1117,14 @@ async function getSopConfiguration() {
             sopConfiguration.value.steps || [],
         )
     } catch (error) {
-        showApiError(
-            t('message.messagetext.failed_get_config'),
-            error,
-        )
+        if (showError) {
+            showApiError(
+                t('message.messagetext.failed_get_config'),
+                error,
+            )
+        }
     } finally {
-        appStore.setLoading(false)
+        if (showLoading) appStore.setLoading(false)
     }
 }
 
@@ -1244,6 +1276,7 @@ function connectResultSocket() {
                         applyRuntimeStatus(payload.runtime_status)
                     }
                 } else if (payload.camera_status) {
+                    console.log('接收到相机状态:', payload.camera_status)
                     handleCameraStatus(payload.camera_status)
                 }
             } catch (error) {
@@ -1542,6 +1575,14 @@ async function refreshDetectionStatus() {
     try {
         const { data: response } = await api.statusDetection()
         applyRuntimeStatus(response)
+        handleExternalStartFeedback(response)
+        if (runtime.externalMode && runtime.active) {
+            await getSopConfiguration({
+                showLoading: false,
+                showError: false,
+            })
+            resetProcessSteps()
+        }
         if (runtime.running || runtime.active) {
             startClientStreams()
         } else {
@@ -1556,6 +1597,65 @@ async function refreshDetectionStatus() {
         appStore.setLoading(false)
     }
 }
+
+function handleExternalStartFeedback(status = {}) {
+    const external = status.external_start
+    if (!external || !external.request_id) return
+    if (external.request_id === lastExternalRequestId) return
+
+    lastExternalRequestId = external.request_id
+    if (external.state === 'failed') {
+        MesAlertWTitle(
+            'error',
+            t('message.error'),
+            t('message.messagetext.externalStartFailed'),
+            external.message || t('message.messagetext.externalStartFailed'),
+            'OK',
+        )
+        return
+    }
+}
+
+async function pollDetectionStatus() {
+    try {
+        const previousRuntimeId = runtime.runtimeId
+        const wasActive = runtime.active
+        const previousCamera = runtime.cameraName
+        const previousSop = runtime.sopName
+        const { data: status } = await api.statusDetection()
+
+        applyRuntimeStatus(status || {})
+        handleExternalStartFeedback(status || {})
+
+        const externalRuntimeChanged =
+            runtime.externalMode &&
+            runtime.active &&
+            (
+                previousRuntimeId !== runtime.runtimeId ||
+                previousCamera !== runtime.cameraName ||
+                previousSop !== runtime.sopName
+            )
+
+        if (externalRuntimeChanged) {
+            await getSopConfiguration({
+                showLoading: false,
+                showError: false,
+            })
+            resetProcessSteps()
+        }
+
+        if (runtime.active && (!wasActive || externalRuntimeChanged)) {
+            startClientStreams()
+        } else if (!runtime.active && wasActive) {
+            stopClientStreams(
+                t('message.messagetext.closedDetection'),
+            )
+        }
+    } catch (error) {
+        console.warn('轮询检测运行时状态失败:', error)
+    }
+}
+
 function clearDetectionHistory() {
     events.value = []
     alerts.value = []
@@ -1802,6 +1902,10 @@ onMounted(async () => {
     }, TIMEOUT_TICK_MS)
 
     await refreshDetectionStatus()
+    externalStatusTimer = window.setInterval(
+        pollDetectionStatus,
+        EXTERNAL_STATUS_POLL_MS,
+    )
 })
 
 onBeforeUnmount(() => {
@@ -1821,6 +1925,10 @@ onBeforeUnmount(() => {
     if (timeoutTicker) {
         clearInterval(timeoutTicker)
         timeoutTicker = null
+    }
+    if (externalStatusTimer) {
+        clearInterval(externalStatusTimer)
+        externalStatusTimer = null
     }
 
     stopStream()

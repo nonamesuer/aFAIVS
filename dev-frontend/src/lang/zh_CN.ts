@@ -292,6 +292,7 @@ export default{
             failedGetBoxStyleConfig:"获取标记框样式配置失败",
             modbusConnectionSuccess:"Modbus-TCP 连接成功",
             modbusConnectionFailed:"Modbus-TCP 连接失败",
+            externalStartFailed:"外部接口启动检测失败",
         },
 
     },
@@ -311,6 +312,7 @@ export default{
         httptriggername:"HTTP API",
         usbtriggername:"USB 扫码枪",
         modbustriggername:"Modbus",
+        externalapitriggername:"外部启动 API",
         noconfigcamera:"未配置相机",
         left:"左",
         right:"右",

@@ -59,6 +59,16 @@ class CameraManager:
                 return None
             return self.latest_frame.copy()
 
+    def wait_for_first_frame(self, timeout: float = 3.0) -> bool:
+        """等待摄像头真正产出首帧，避免只打开设备句柄就报告启动成功。"""
+        deadline = time.monotonic() + max(0.1, float(timeout))
+        while self.running and time.monotonic() < deadline:
+            with self.frame_lock:
+                if self.latest_frame is not None:
+                    return True
+            time.sleep(0.02)
+        return False
+
     def stop(self) -> None:
         self.running = False
         self.cap_status.set(0)

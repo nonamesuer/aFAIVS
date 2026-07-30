@@ -2300,6 +2300,14 @@ class SOPResultStore:
         payload: dict,
     ) -> str:
 
+        if source == "external_api":
+            return str(
+                payload.get(
+                    "SN",
+                    "",
+                )
+            )
+
         if source == "usb":
             return str(
                 payload.get(

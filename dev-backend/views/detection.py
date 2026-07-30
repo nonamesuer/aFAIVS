@@ -3,7 +3,9 @@ import json
 import threading
 import logging
 import os
-from fastapi import APIRouter, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+import time
+import uuid
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse,JSONResponse
 from pydantic import BaseModel
 
@@ -14,6 +16,16 @@ logger = logging.getLogger(__name__)
 api_detection = APIRouter(prefix="/detection")
 _runtime_lock = threading.Lock()
 _runtime: DetectionRuntime | None = None
+_external_start_lock = asyncio.Lock()
+_external_start_status = {
+    "request_id": None,
+    "state": "idle",
+    "message": "",
+    "sn": None,
+    "sop_name": None,
+    "camera_name": None,
+    "updated_at": None,
+}
 ACTIVE_STATUS_VALUES = {1, 2}
 
 
@@ -39,7 +51,32 @@ def runtime_status() -> dict:
         "active": bool(_runtime and _runtime.running),
     }
     if _runtime is not None:
-        status.update(_runtime.trigger_controller.status())
+        if _runtime.external_mode:
+            status.update({
+                "trigger_configured": True,
+                "waiting_for_trigger": bool(
+                    _runtime.running and _runtime.detector.waiting_for_trigger
+                ),
+                "detecting": bool(
+                    _runtime.running and not _runtime.detector.waiting_for_trigger
+                ),
+                "trigger_methods": ["external_api"],
+                "trigger_source": (
+                    "external_api" if _runtime.external_reference else None
+                ),
+                "triggered_at": _runtime.external_triggered_at,
+            })
+        else:
+            status.update(_runtime.trigger_controller.status())
+        status.update({
+            "runtime_id": _runtime.runtime_id,
+            "camera_name": _runtime.camera_name,
+            "project_name": _runtime.project_name,
+            "sop_name": _runtime.sop_name,
+            "model_name": _runtime.model_name,
+            "external_mode": _runtime.external_mode,
+            "external_reference": _runtime.external_reference,
+        })
     else:
         status.update({
             "trigger_configured": False,
@@ -48,8 +85,36 @@ def runtime_status() -> dict:
             "trigger_methods": [],
             "trigger_source": None,
             "triggered_at": None,
+            "runtime_id": None,
+            "camera_name": None,
+            "project_name": None,
+            "sop_name": None,
+            "model_name": None,
+            "external_mode": False,
+            "external_reference": None,
         })
+    status["external_start"] = dict(_external_start_status)
     return status
+
+
+def _set_external_start_status(
+    state: str,
+    message: str,
+    *,
+    request_id: str,
+    sn: str | None,
+    sop_name: str | None,
+    camera_name: str | None,
+) -> None:
+    _external_start_status.update({
+        "request_id": request_id,
+        "state": state,
+        "message": message,
+        "sn": sn,
+        "sop_name": sop_name,
+        "camera_name": camera_name,
+        "updated_at": time.time(),
+    })
 
 
 async def _send_detection_results(websocket: WebSocket) -> None:
@@ -227,6 +292,153 @@ def trigger_http(request: Request):
     return JSONResponse({"status": accepted, "msg": message, "data": runtime_status()})
 
 
+@api_detection.get("/external/start")
+async def external_start_detection(
+    SN: str | None = Query(default=None),
+    SOP_NAME: str | None = Query(default=None),
+    CAP_NAME: str | None = Query(default=None),
+):
+    """
+    外部系统直接启动检测。
+
+    该接口不依赖前端“开始”按钮。相同相机和 SOP 的后续产品会复用
+    已打开的运行时；只有上一件完成并进入等待状态后才接受新的 SN。
+    """
+    global _runtime
+
+    request_id = uuid.uuid4().hex
+    sn = str(SN or "").strip()
+    sop_name = str(SOP_NAME or "").strip()
+    camera_name = str(CAP_NAME or "").strip()
+
+    def failed(message: str) -> JSONResponse:
+        _set_external_start_status(
+            "failed",
+            message,
+            request_id=request_id,
+            sn=sn or None,
+            sop_name=sop_name or None,
+            camera_name=camera_name or None,
+        )
+        return JSONResponse({
+            "status": False,
+            "msg": message,
+            "data": runtime_status(),
+        })
+
+    if not sn:
+        return failed("SN 不能为空")
+    if not sop_name:
+        return failed("SOP_NAME 不能为空")
+    if not camera_name:
+        return failed("CAP_NAME 不能为空")
+
+    try:
+        resolved_sop_name, model_project, _definition = resolve_sop_model(
+            SopConfig().get(),
+            sop_name,
+        )
+    except ValueError as exc:
+        return failed(str(exc))
+
+    model_path = os.path.join(get_models_path(), model_project)
+    if not os.path.isdir(model_path):
+        return failed(f"模型 {model_project} 不存在")
+    onnx_files = sorted(
+        name for name in os.listdir(model_path) if name.endswith(".onnx")
+    )
+    if not onnx_files or not os.path.isfile(os.path.join(model_path, "cache.json")):
+        return failed(f"模型 {model_project} 不完整，请检查 ONNX 和 cache.json")
+
+    camera_index = get_camera_index(camera_name)
+    if camera_index is None:
+        return failed(f"未找到摄像头 {camera_name}")
+
+    async with _external_start_lock:
+        current = get_runtime()
+        if current and current.running:
+            sop_state = str(
+                (current.detector.snapshot().get("sop") or {}).get("state") or ""
+            ).lower()
+            same_runtime = (
+                current.external_mode
+                and current.camera_name == camera_name
+                and current.sop_name == resolved_sop_name
+                and current.project_name == model_project
+            )
+
+            if same_runtime:
+                if not current.detector.waiting_for_trigger:
+                    return failed(
+                        "当前已有 SOP 正在执行，请等待本次工序完成后再触发"
+                    )
+                if not current.start_external_cycle(sn):
+                    return failed("外部触发未被运行时接受，请稍后重试")
+                _set_external_start_status(
+                    "success",
+                    "已复用当前相机并启动下一件 SOP",
+                    request_id=request_id,
+                    sn=sn,
+                    sop_name=resolved_sop_name,
+                    camera_name=camera_name,
+                )
+                return JSONResponse({
+                    "status": True,
+                    "msg": "已启动下一件 SOP",
+                    "data": runtime_status(),
+                })
+
+            if sop_state not in {"", "completed", "idle"}:
+                return failed(
+                    "当前已有 SOP 正在执行，不能切换 SOP 或摄像头"
+                )
+            await _stop_detection_runtime(current)
+
+        _set_external_start_status(
+            "starting",
+            "正在启动摄像头和 SOP",
+            request_id=request_id,
+            sn=sn,
+            sop_name=resolved_sop_name,
+            camera_name=camera_name,
+        )
+
+        runtime = None
+        try:
+            runtime = DetectionRuntime(
+                camera_index=camera_index,
+                camera_name=camera_name,
+                model_path=model_path,
+                model_name=onnx_files[0],
+                project_name=model_project,
+                sop_name=resolved_sop_name,
+            )
+            with _runtime_lock:
+                _runtime = runtime
+            await asyncio.to_thread(runtime.start, True)
+            if not runtime.start_external_cycle(sn):
+                raise RuntimeError("摄像头已启动，但 SOP 未能接受外部触发")
+        except Exception as exc:
+            logger.exception("外部接口启动检测失败")
+            if runtime is not None:
+                await _stop_detection_runtime(runtime)
+            return failed(str(exc))
+
+        _set_external_start_status(
+            "success",
+            "摄像头和 SOP 启动成功",
+            request_id=request_id,
+            sn=sn,
+            sop_name=resolved_sop_name,
+            camera_name=camera_name,
+        )
+        return JSONResponse({
+            "status": True,
+            "msg": "外部检测启动成功",
+            "data": runtime_status(),
+        })
+
+
 
 @api_detection.get("/start_detection")
 def start_detection(
@@ -395,6 +607,20 @@ def get_sop_configration():
     try:
         sop_config_datas = SopConfig().get()
         config_datas = get_main_config()
+        runtime = get_runtime()
+        if runtime and runtime.running and runtime.sop_name:
+            active_config = sop_config_datas.get(runtime.sop_name)
+            if isinstance(active_config, dict):
+                return JSONResponse({
+                    "status": True,
+                    "data": {
+                        runtime.sop_name: {
+                            **active_config,
+                            "sopName": runtime.sop_name,
+                        }
+                    },
+                    "enableCamera": runtime.camera_name,
+                })
         enabled_sop = next(
             (
                 {
@@ -424,6 +650,3 @@ def register_detection(app: FastAPI) -> None:
             _runtime.stop()
 
     app.include_router(api_detection, tags=["DETECTION"])
-
-
-

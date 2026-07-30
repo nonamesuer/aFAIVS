@@ -4,6 +4,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 import cv2
 import numpy as np
 from aiortc import RTCPeerConnection, RTCConfiguration, RTCIceServer, RTCSessionDescription, VideoStreamTrack
@@ -62,6 +63,14 @@ class DetectionRuntime:
     """检测服务运行时：统一管理采集线程和检测线程生命周期。"""
 
     def __init__(self, camera_index: int,camera_name: str, model_path: str | None = None, model_name: str | None = None, project_name: str | None = None, sop_name: str | None = None):
+        self.runtime_id = uuid.uuid4().hex
+        self.camera_name = camera_name
+        self.project_name = project_name
+        self.sop_name = sop_name
+        self.model_name = model_name
+        self.external_mode = False
+        self.external_reference: str | None = None
+        self.external_triggered_at: float | None = None
         self.camera = CameraManager(camera_index=camera_index,camera_name=camera_name, target_fps=30.0)
         self.detector = DetectorWorker(camera=self.camera, model_path=model_path, model_name=model_name, project_name=project_name, sop_name=sop_name, infer_period_ms=70)
         self.peer_connections: set[RTCPeerConnection] = set()
@@ -79,19 +88,44 @@ class DetectionRuntime:
 
     def _prepare_next_trigger_cycle(self) -> None:
         """触发模式下，当前 SOP 完成后等待下一件的新触发信号。"""
-        if not self.trigger_controller.requires_trigger:
+        if not self.external_mode and not self.trigger_controller.requires_trigger:
             return
         if self.detector.prepare_for_next_trigger():
-            self.trigger_controller.rearm()
+            if not self.external_mode:
+                self.trigger_controller.rearm()
 
-    def start(self) -> None:
+    def start(self, external_mode: bool = False) -> None:
         if self.running:
             return
+        self.external_mode = bool(external_mode)
         self.camera.start()
-        self.detector.start(wait_for_trigger=self.trigger_controller.requires_trigger)
-        self.trigger_controller.start()
+        if not self.camera.wait_for_first_frame():
+            self.camera.stop()
+            raise RuntimeError(f"摄像头 {self.camera_name} 已打开但未能读取画面")
+        wait_for_trigger = self.external_mode or self.trigger_controller.requires_trigger
+        self.detector.start(wait_for_trigger=wait_for_trigger)
+        if not self.external_mode:
+            self.trigger_controller.start()
         self.running = True
         self.paused = False
+
+    def start_external_cycle(self, sn: str) -> bool:
+        """在已打开的外部运行时中启动一件产品，不重复启动相机和模型。"""
+        if not self.running or self.paused:
+            return False
+        if not self.detector.waiting_for_trigger:
+            return False
+        payload = {
+            "value": [sn],
+            "SN": sn,
+            "SOP_NAME": self.sop_name,
+            "CAP_NAME": self.camera_name,
+        }
+        accepted = self.detector.activate_trigger("external_api", payload)
+        if accepted:
+            self.external_reference = sn
+            self.external_triggered_at = time.time()
+        return accepted
     def pause(self) -> bool:
         if not self.running:
             return False

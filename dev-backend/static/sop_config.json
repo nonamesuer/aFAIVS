@@ -1,51 +1,4 @@
 {
-    "CY_test1": {
-        "model": "CY1",
-        "confidence": 0.5,
-        "steps": [
-            {
-                "id": 1,
-                "name": "安装P1零件",
-                "type": "p_object",
-                "hint": "捡起P1零件并放置到CY中",
-                "target": 1,
-                "timeout": 30,
-                "context": {
-                    "expectedObject": "P1",
-                    "fromRegion": "",
-                    "toRegion": "CY",
-                    "objectDetection": {
-                        "source": true,
-                        "transit": false,
-                        "target": true
-                    },
-                    "missTolerance": 5,
-                    "handMargin": 5,
-                    "handPoints": {
-                        "l": [],
-                        "r": []
-                    },
-                    "resultFeedback": {
-                        "http": {
-                            "enabled": false,
-                            "applyToAllSteps": false,
-                            "endpointUrls": []
-                        },
-                        "modbus": {
-                            "enabled": false,
-                            "errorSignals": [],
-                            "completionSignals": []
-                        }
-                    }
-                },
-                "doneWhen": [],
-                "ngWhen": []
-            }
-        ],
-        "create_time": "2026-07-24 16:16:26",
-        "enabled": false,
-        "modify_time": "2026-07-29 11:15:09"
-    },
     "CY_test2": {
         "model": "CY",
         "confidence": 0.5,
@@ -92,5 +45,52 @@
         "create_time": "2026-07-09 11:44:07",
         "enabled": true,
         "modify_time": "2026-07-29 11:21:07"
+    },
+    "CY_test1": {
+        "model": "CY1",
+        "confidence": 0.5,
+        "steps": [
+            {
+                "id": 1,
+                "name": "安装P1零件",
+                "type": "p_object",
+                "hint": "捡起P1零件并放置到CY中",
+                "target": 1,
+                "timeout": 30,
+                "context": {
+                    "expectedObject": "P1",
+                    "fromRegion": "",
+                    "toRegion": "CY",
+                    "objectDetection": {
+                        "source": true,
+                        "transit": false,
+                        "target": true
+                    },
+                    "missTolerance": 5,
+                    "handMargin": 5,
+                    "handPoints": {
+                        "l": [],
+                        "r": []
+                    },
+                    "resultFeedback": {
+                        "http": {
+                            "enabled": false,
+                            "applyToAllSteps": false,
+                            "endpointUrls": []
+                        },
+                        "modbus": {
+                            "enabled": false,
+                            "errorSignals": [],
+                            "completionSignals": []
+                        }
+                    }
+                },
+                "doneWhen": [],
+                "ngWhen": []
+            }
+        ],
+        "create_time": "2026-07-24 16:16:26",
+        "enabled": false,
+        "modify_time": "2026-07-30 13:10:06"
     }
 }
