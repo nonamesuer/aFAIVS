@@ -3,6 +3,7 @@ import os
 import numpy as np
 import base64
 import cv2
+import asyncio
 from fastapi.responses import JSONResponse  
 from fastapi import APIRouter, Request,HTTPException,File, UploadFile
 from module._base import CONFIG_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater,DEFAULT_BOX_STYLE_CONFIG,DEFAULT_HAND_STYLE_CONFIG
@@ -424,32 +425,179 @@ async def set_config_paths(request: Request):
         logger.exception(f"Error setting config paths")
         return JSONResponse(content={"status":False,"msg":"Failed to set paths"})
     
-@api_config.post("/set_cap_resolutions")
-async def set_cap_resolutions(request:Request):
+@api_config.post(
+    "/set_cap_resolutions"
+)
+async def set_cap_resolutions(
+    request: Request,
+):
+
     cap_name = ""
+
     try:
         body = await request.json()
+
         if not isinstance(body, dict):
-            return {"status": False, "msg": "Invalid request body."}
-        config_datas = get_main_config()
-        resolutions = config_datas.get("resolutions", DEFAULT_RESOLUTIONS)
-        cap_name, resolution_config = _normalize_camera_resolution(
+            return {
+                "status": False,
+                "msg":
+                    "Invalid request body.",
+            }
+
+        config_datas = (
+            get_main_config()
+        )
+
+        resolutions = config_datas.get(
+            "resolutions",
+            DEFAULT_RESOLUTIONS,
+        )
+
+        (
+            cap_name,
+            resolution_config,
+        ) = _normalize_camera_resolution(
             body,
             resolutions,
         )
-        camera_resolutions = config_datas.setdefault("cameraResolution", {})
-        camera_resolutions[cap_name] = resolution_config
-        JsonFile(CONFIG_PATH).write_json_file(config_datas)
+
+        camera_resolutions = (
+            config_datas.setdefault(
+                "cameraResolution",
+                {},
+            )
+        )
+
+        # 用于实时应用失败后的配置回滚。
+        previous_config = (
+            camera_resolutions.get(
+                cap_name
+            )
+        )
+
+        camera_resolutions[
+            cap_name
+        ] = resolution_config
+
+        JsonFile(
+            CONFIG_PATH
+        ).write_json_file(
+            config_datas
+        )
+
+        runtime_applied = False
+        camera_state = None
+
+        try:
+            # 放在函数内部导入，
+            # 避免 config.py 和 detection.py
+            # 产生模块级循环依赖。
+            from views.detection import (
+                get_runtime,
+            )
+
+            runtime = get_runtime()
+
+            if (
+                runtime is not None
+                and runtime.running
+                and runtime.camera_name
+                == cap_name
+            ):
+                camera_state = (
+                    await asyncio.to_thread(
+                        runtime.camera
+                        .apply_settings,
+                        resolution_config,
+                    )
+                )
+
+                runtime_applied = True
+
+        except Exception as apply_error:
+
+            logger.exception(
+                (
+                    "Failed to apply "
+                    "camera settings live "
+                    "for %s"
+                ),
+                cap_name,
+            )
+
+            # 当前运行中的相机应用失败时，
+            # 恢复原配置，避免 JSON 与实际状态不一致。
+            if previous_config is None:
+                camera_resolutions.pop(
+                    cap_name,
+                    None,
+                )
+
+            else:
+                camera_resolutions[
+                    cap_name
+                ] = previous_config
+
+            JsonFile(
+                CONFIG_PATH
+            ).write_json_file(
+                config_datas
+            )
+
+            return {
+                "status": False,
+
+                "msg": (
+                    "Camera settings could "
+                    "not be applied and the "
+                    "previous configuration "
+                    "was restored: "
+                    f"{apply_error}"
+                ),
+
+                "data":
+                    previous_config,
+            }
+
         return {
             "status": True,
-            "msg": "Resolution set successfully.",
-            "data": resolution_config,
+
+            "msg":
+                "Resolution set successfully.",
+
+            "data":
+                resolution_config,
+
+            # 当前运行中的检测相机是否已经实时应用。
+            "runtimeApplied":
+                runtime_applied,
+
+            # 请求分辨率和驱动实际分辨率。
+            "cameraState":
+                camera_state,
         }
+
     except ValueError as e:
-        return {"status": False, "msg": str(e)}
+
+        return {
+            "status": False,
+            "msg": str(e),
+        }
+
     except Exception as e:
-        logger.exception("Error setting camera resolutions for %s", cap_name)
-        return {"status": False, "msg": str(e)}
+
+        logger.exception(
+            (
+                "Error setting camera "
+                "resolutions for %s"
+            ),
+            cap_name,
+        )
+
+        return {
+            "status": False,
+            "msg": str(e),
+        }
 @api_config.post("/set_resolutions/list")
 async def set_resolutions_list(request:Request):
     try:

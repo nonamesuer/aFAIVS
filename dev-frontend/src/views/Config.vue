@@ -490,15 +490,48 @@ const displayCapSteram = (index: number) => {
   nextTick(() => videoStream());
   
 };
-const configCameraDialogClosed = () => {
-  ws.value.send(JSON.stringify({ action: "CLOSE" }));
+const closeCameraPreviewSocket = () => {
   if (ws.value) {
+    if (
+      ws.value.readyState ===
+      WebSocket.OPEN
+    ) {
+      ws.value.send(
+        JSON.stringify({
+          action: "CLOSE",
+        })
+      );
+    }
+
     ws.value.close();
     ws.value = null;
   }
+
+  const img = document.getElementById(
+    "video-stream"
+  ) as HTMLImageElement | null;
+
+  if (img) {
+    img.src = "";
+  }
+};
+
+
+const restartCameraPreview = async (
+  cameraIndex: number
+) => {
+  closeCameraPreviewSocket();
+
+  currentMainCamera.value =
+    cameraIndex;
+
+  await nextTick();
+
+  videoStream();
+};
+const configCameraDialogClosed = () => {
+  closeCameraPreviewSocket();
   currentMainCamera.value = null;
-  const img = document.getElementById("video-stream");
-  img.src = "";
 };
 const videoStream = () => {
   ws.value = new WebSocket(`ws://localhost:${appStore.servicePort}/ws/video_streaming?camera_id=${currentMainCamera.value}`);
@@ -549,18 +582,101 @@ const handleSubmitResolution=(data: { resolutions: string; area: number; clarity
         height,
         area,
         clarity,
-    }).then((res) => {
-        if (!res.data.status) return ElMessage({ message: res.data.msg, type: "error" });
-        const savedConfig = res.data.data || { width, height, area, clarity };
-        defaultResolution.value = { ...savedConfig };
-        cameraResolution.value[temSetResolutionCapName.value] = { ...savedConfig };
-        resolutionsDes.value = ` [${savedConfig.width}x${savedConfig.height}_(${savedConfig.area})]`;
-        resolutionForm.resolutions = formatResolution(savedConfig.width, savedConfig.height);
-        resolutionForm.area = savedConfig.area;
-        resolutionForm.clarity = savedConfig.clarity;
-        resolutionsDrawerVisible.value = false;
-        ElMessage.success(t("message.messagetext.successsave"));
-    }).catch((err) => {
+    }).then(async (res) => {
+  if (!res.data.status) {
+    return ElMessage({
+      message: res.data.msg,
+      type: "error",
+    });
+  }
+
+  const savedConfig =
+    res.data.data || {
+      width,
+      height,
+      area,
+      clarity,
+    };
+
+  defaultResolution.value = {
+    ...savedConfig,
+  };
+
+  cameraResolution.value[
+    temSetResolutionCapName.value
+  ] = {
+    ...savedConfig,
+  };
+
+  resolutionsDes.value =
+    ` [${savedConfig.width}` +
+    `x${savedConfig.height}` +
+    `_(${savedConfig.area})]`;
+
+  resolutionForm.resolutions =
+    formatResolution(
+      savedConfig.width,
+      savedConfig.height
+    );
+
+  resolutionForm.area =
+    savedConfig.area;
+
+  resolutionForm.clarity =
+    savedConfig.clarity;
+
+  resolutionsDrawerVisible.value =
+    false;
+
+  // ========================================
+  // 如果当前预览的就是刚修改的相机，
+  // 关闭并重连预览，让后端重新读取配置。
+  // ========================================
+
+  const previewIndex =
+    currentMainCamera.value;
+
+  if (
+    configCameraVisible.value &&
+    previewIndex !== null &&
+    cameraList.value[previewIndex] ===
+      temSetResolutionCapName.value
+  ) {
+    await restartCameraPreview(
+      previewIndex
+    );
+  }
+
+  // ========================================
+  // 检查驱动是否真正采用请求分辨率。
+  // ========================================
+
+  const cameraState =
+    res.data.cameraState;
+
+  if (
+    cameraState &&
+    cameraState.resolution_matched ===
+      false
+  ) {
+    ElMessage.warning(
+      `请求分辨率 ` +
+      `${cameraState.width}x` +
+      `${cameraState.height}，` +
+      `相机实际输出 ` +
+      `${cameraState.actual_width}x` +
+      `${cameraState.actual_height}`
+    );
+
+    return;
+  }
+
+  ElMessage.success(
+    t(
+      "message.messagetext.successsave"
+    )
+  );
+}).catch((err) => {
         MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedsave"), err.message || t("message.messagetext.error_service"));
     }).finally(() => { appStore.setLoading(false); });
 }
