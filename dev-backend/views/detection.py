@@ -17,6 +17,7 @@ api_detection = APIRouter(prefix="/detection")
 _runtime_lock = threading.Lock()
 _runtime: DetectionRuntime | None = None
 _external_start_lock = asyncio.Lock()
+_external_start_status_lock = threading.Lock()
 _external_start_status = {
     "request_id": None,
     "state": "idle",
@@ -26,6 +27,7 @@ _external_start_status = {
     "camera_name": None,
     "updated_at": None,
 }
+EXTERNAL_START_TERMINAL_STATES = {"success", "failed"}
 ACTIVE_STATUS_VALUES = {1, 2}
 
 
@@ -43,7 +45,32 @@ def get_or_create_runtime(camera_index, camera_name, model_path=None, model_name
         return _runtime
 
 
-def runtime_status() -> dict:
+def _read_external_start_status(*, consume_terminal: bool = False) -> dict:
+    """
+    读取最近一次外部启动状态。
+
+    /status 轮询读取到 success/failed 后立即恢复为 idle，确保终态事件
+    只被前端消费一次；starting 状态保留，直到本次启动得出最终结果。
+    """
+    with _external_start_status_lock:
+        snapshot = dict(_external_start_status)
+        if (
+            consume_terminal
+            and snapshot.get("state") in EXTERNAL_START_TERMINAL_STATES
+        ):
+            _external_start_status.update({
+                "request_id": None,
+                "state": "idle",
+                "message": "",
+                "sn": None,
+                "sop_name": None,
+                "camera_name": None,
+                "updated_at": None,
+            })
+        return snapshot
+
+
+def runtime_status(*, consume_external_start: bool = False) -> dict:
     status = {
         "initialized": _runtime is not None,
         "running": bool(_runtime and _runtime.running and not _runtime.paused),
@@ -93,7 +120,9 @@ def runtime_status() -> dict:
             "external_mode": False,
             "external_reference": None,
         })
-    status["external_start"] = dict(_external_start_status)
+    status["external_start"] = _read_external_start_status(
+        consume_terminal=consume_external_start,
+    )
     return status
 
 
@@ -106,15 +135,16 @@ def _set_external_start_status(
     sop_name: str | None,
     camera_name: str | None,
 ) -> None:
-    _external_start_status.update({
-        "request_id": request_id,
-        "state": state,
-        "message": message,
-        "sn": sn,
-        "sop_name": sop_name,
-        "camera_name": camera_name,
-        "updated_at": time.time(),
-    })
+    with _external_start_status_lock:
+        _external_start_status.update({
+            "request_id": request_id,
+            "state": state,
+            "message": message,
+            "sn": sn,
+            "sop_name": sop_name,
+            "camera_name": camera_name,
+            "updated_at": time.time(),
+        })
 
 
 async def _send_detection_results(websocket: WebSocket) -> None:
@@ -279,7 +309,9 @@ def server_stream():
 
 @api_detection.get("/status")
 def status_detection():
-    return runtime_status()
+    # 外部启动 success/failed 是一次性通知。当前轮询响应返回终态后，
+    # 后端立即恢复为 idle，刷新页面不会再次弹出已经处理过的失败。
+    return runtime_status(consume_external_start=True)
 
 
 @api_detection.get("/trigger/http")
