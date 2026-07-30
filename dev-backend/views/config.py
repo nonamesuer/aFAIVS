@@ -21,6 +21,65 @@ logger = logging.getLogger(__name__)
 api_config = APIRouter()
 
 
+def _configuration_integer(value, field_name: str) -> int:
+    """Convert a JSON value to an integer without silently truncating decimals."""
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer.")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field_name} must be an integer.") from None
+    if not np.isfinite(number) or not number.is_integer():
+        raise ValueError(f"{field_name} must be an integer.")
+    return int(number)
+
+
+def _validate_resolution_dimensions(width_value, height_value) -> tuple[int, int]:
+    width = _configuration_integer(width_value, "width")
+    height = _configuration_integer(height_value, "height")
+    if width < 320 or height < 240:
+        raise ValueError("Resolution must be at least 320x240.")
+    if width % 2 or height % 2:
+        raise ValueError("Resolution width and height must be even numbers.")
+    aspect_ratio = width / height
+    if aspect_ratio < 0.5 or aspect_ratio > 2.5:
+        raise ValueError("Resolution aspect ratio must be between 0.5 and 2.5.")
+    return width, height
+
+
+def _normalize_camera_resolution(body: dict, resolutions: list) -> tuple[str, dict]:
+    cap_name = str(body.get("cap_name") or "").strip()
+    if not cap_name:
+        raise ValueError("Camera name is required.")
+
+    width, height = _validate_resolution_dimensions(
+        body.get("width"),
+        body.get("height"),
+    )
+    if [width, height] not in resolutions:
+        raise ValueError("The selected resolution is not in the resolution list.")
+
+    area = _configuration_integer(body.get("area", 0), "area")
+    clarity = _configuration_integer(body.get("clarity", 50), "clarity")
+    if area < 0 or (0 < area < 240):
+        raise ValueError("Display area must be 0 or at least 240.")
+    if area > max(width, height):
+        raise ValueError(
+            f"Display area cannot exceed {max(width, height)} for this resolution."
+        )
+    if area % 2:
+        raise ValueError("Display area must be an even number.")
+    if clarity < 1 or clarity > 100:
+        raise ValueError("Display clarity must be between 1 and 100.")
+
+    return cap_name, {
+        "width": width,
+        "height": height,
+        "area": area,
+        "clarity": clarity,
+    }
+
+
 def _hand_preview_points() -> dict[str, list[tuple[float, float]]]:
     left_points = [
         (155, 300),
@@ -367,30 +426,40 @@ async def set_config_paths(request: Request):
     
 @api_config.post("/set_cap_resolutions")
 async def set_cap_resolutions(request:Request):
+    cap_name = ""
     try:
         body = await request.json()
-        cap_name = body.get("cap_name", "")
-        if not cap_name:return {"status": False, "msg": "Camera name is required."}
-        width = body.get("width", 0)
-        height = body.get("height", 0)
-        area = body.get("area", 0)
-        clarity = body.get("clarity", 50)
-        if not width or not height:return {"status": False, "msg": "Invalid resolution"}
+        if not isinstance(body, dict):
+            return {"status": False, "msg": "Invalid request body."}
         config_datas = get_main_config()
-        if "cameraResolution" not in config_datas:config_datas["cameraResolution"] = {} 
-        config_datas["cameraResolution"][cap_name] = {"width": width, "height": height,"area":area,"clarity":clarity}
+        resolutions = config_datas.get("resolutions", DEFAULT_RESOLUTIONS)
+        cap_name, resolution_config = _normalize_camera_resolution(
+            body,
+            resolutions,
+        )
+        camera_resolutions = config_datas.setdefault("cameraResolution", {})
+        camera_resolutions[cap_name] = resolution_config
         JsonFile(CONFIG_PATH).write_json_file(config_datas)
-        return {"status": True, "msg": "Resolution set successfully."}
+        return {
+            "status": True,
+            "msg": "Resolution set successfully.",
+            "data": resolution_config,
+        }
+    except ValueError as e:
+        return {"status": False, "msg": str(e)}
     except Exception as e:
-        logger.error(f"Error setting camera resolutions for {cap_name}: {e}")
+        logger.exception("Error setting camera resolutions for %s", cap_name)
         return {"status": False, "msg": str(e)}
 @api_config.post("/set_resolutions/list")
 async def set_resolutions_list(request:Request):
     try:
         body = await request.json()
-        width = body.get("width", 0)
-        height = body.get("height", 0)
-        if not width or not height:return {"status": False, "msg": "Invalid resolution"}
+        if not isinstance(body, dict):
+            return {"status": False, "msg": "Invalid request body."}
+        width, height = _validate_resolution_dimensions(
+            body.get("width"),
+            body.get("height"),
+        )
         config_datas = get_main_config()
         resolutions = config_datas.get("resolutions", [])
         newResolution = [width, height]
@@ -407,26 +476,50 @@ async def set_resolutions_list(request:Request):
         config_datas["resolutions"] = resolutions
         JsonFile(CONFIG_PATH).write_json_file(config_datas)
         return {"status": True, "msg": "Resolutions set successfully.","data":resolutions}
+    except ValueError as e:
+        return {"status": False, "msg": str(e)}
     except Exception as e:
-        logger.error(f"Error setting resolutions: {e}")
+        logger.exception("Error setting resolutions")
         return {"status": False, "msg": str(e)}
 @api_config.delete("/delete_resolution/list")
 async def delete_resolution_list(request:Request):
     try:
         body = await request.json()
-        width = body.get("width", 0)
-        height = body.get("height", 0)
+        if not isinstance(body, dict):
+            return {"status": False, "msg": "Invalid request body."}
+        width, height = _validate_resolution_dimensions(
+            body.get("width"),
+            body.get("height"),
+        )
         config_datas = get_main_config()
         resolutions = config_datas.get("resolutions", [])
         targetResolution = [width, height]
         if targetResolution not in resolutions:
             return {"status": False, "msg": "Resolution not found."}
+        camera_resolutions = config_datas.get("cameraResolution", {})
+        used_by = [
+            camera_name
+            for camera_name, camera_config in camera_resolutions.items()
+            if isinstance(camera_config, dict)
+            and camera_config.get("width") == width
+            and camera_config.get("height") == height
+        ]
+        if used_by:
+            return {
+                "status": False,
+                "msg": (
+                    "Resolution is currently used by camera(s): "
+                    + ", ".join(used_by)
+                ),
+            }
         resolutions.remove(targetResolution)
         config_datas["resolutions"] = resolutions
         JsonFile(CONFIG_PATH).write_json_file(config_datas)
         return {"status": True, "msg": "Resolution deleted successfully.","data":resolutions}
+    except ValueError as e:
+        return {"status": False, "msg": str(e)}
     except Exception as e:
-        logger.error(f"Error deleting resolution: {e}")
+        logger.exception("Error deleting resolution")
         return {"status": False, "msg": str(e)}
 @api_config.post("/set_sop_config")
 async def set_sop_config(request:Request):

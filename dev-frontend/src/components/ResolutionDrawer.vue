@@ -7,7 +7,7 @@
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-form label-position="top" size="large" ref="resolutionFormRef" :model="localResolutionForm" :rules="resolutionRules">
-      <el-form-item :label="$t('camera.resolution')">
+      <el-form-item prop="resolutions" :label="$t('camera.resolution')">
         <el-select v-model="localResolutionForm.resolutions" placeholder="Select" style="width: 100%">
           <el-option
             v-for="(item, index) in resolutionsList"
@@ -65,7 +65,7 @@
         <img src="@/assets/img/area.jpg" alt="" width="50%" height="50%" />
       </div>
       <el-divider />
-      <el-form-item :label="$t('camera.displayclarity') + '(' + $t('camera.displayclaritydes') + ')'">
+      <el-form-item prop="clarity" :label="$t('camera.displayclarity') + '(' + $t('camera.displayclaritydes') + ')'">
         <el-slider v-model="localResolutionForm.clarity" :max="100" :min="1" show-input />
       </el-form-item>
     </el-form>
@@ -137,7 +137,11 @@ const resolutionFormRef = ref<FormInstance>();
 
 const areaMax = computed(() => {
   if (!localResolutionForm.resolutions) return 0;
-  return Math.max(...localResolutionForm.resolutions.split("*").map(Number));
+  const values = localResolutionForm.resolutions
+    .split(/[*x×]/i)
+    .map(Number)
+    .filter(Number.isFinite);
+  return values.length === 2 ? Math.max(...values) : 0;
 });
 
 // 验证规则
@@ -168,9 +172,9 @@ const validateHeight = (rule: any, value: any, callback: any) => {
   }
 };
 const validateArea = (rule: any, value: any, callback: any) => {
-  if (value === "") {
+  if (value === "" || value === null || value === undefined) {
     callback(new Error(t("interacting.pls") + t("interacting.enter") + t("camera.area")));
-  } else if (localResolutionForm.area < 0 || (0 < value && value < 240)) {
+  } else if (!Number.isInteger(value) || value < 0 || (0 < value && value < 240)) {
     callback(new Error(t("camera.msg.validarea")));
   } else if (value > areaMax.value) {
     callback(new Error(t("camera.msg.validarea2") + areaMax.value));
@@ -180,10 +184,18 @@ const validateArea = (rule: any, value: any, callback: any) => {
     callback();
   }
 };
+const validateClarity = (rule: any, value: any, callback: any) => {
+  if (!Number.isInteger(value) || value < 1 || value > 100) {
+    callback(new Error(t("message.messagetext.field_lack_tip")));
+  } else {
+    callback();
+  }
+};
 
 const resolutionRules = reactive<FormRules>({
   resolutions: [{ required: true, message: t("interacting.pls") + t("interacting.select") + t("camera.resolution"), trigger: "blur" }],
   area: [{ required: true, validator: validateArea, trigger: "blur" }],
+  clarity: [{ required: true, validator: validateClarity, trigger: "change" }],
 });
 const addResolutionRules = reactive<FormRules>({
   width: [{ required: true, validator: validateWidth, trigger: "blur" }],
@@ -236,8 +248,8 @@ const handleSubmit = async () => {
   }
   emit("submitResolution", {
     resolutions: localResolutionForm.resolutions,
-    area: localResolutionForm.area,
-    clarity: localResolutionForm.clarity,
+    area: Number(localResolutionForm.area),
+    clarity: Number(localResolutionForm.clarity),
   });
 };
 </script>

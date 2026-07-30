@@ -61,10 +61,10 @@
     ],
     "cameraResolution": {
         "TEF1": {
-            "width": 1024,
-            "height": 768,
-            "area": 0,
-            "clarity": 50
+            "width": 1280,
+            "height": 720,
+            "area": 640,
+            "clarity": 5
         },
         "HP 5MP Camera": {
             "width": 1024,

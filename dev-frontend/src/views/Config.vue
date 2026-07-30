@@ -202,7 +202,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref, onMounted,onBeforeMount,watch, nextTick, reactive, computed, onUnmounted } from "vue";
+import { ref, onMounted,watch, nextTick, reactive, computed, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/store";
 import { ElMessage, FormInstance, FormRules } from "element-plus";
@@ -236,6 +236,16 @@ const cameraResolution = ref<Record<string, { width: number; height: number; are
 const defaultResolution = ref({ width: 640, height: 480, area: 640, clarity: 50 });
 const resolutionForm = reactive({ resolutions: "", area: 640, clarity: 50 });
 const resolutionsDrawerVisible = ref(false);
+const formatResolution = (width: number, height: number) => `${width}*${height}`;
+const parseResolution = (value: string) => {
+  const match = String(value || "").trim().match(/^(\d+)\s*[*x×]\s*(\d+)$/i);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0
+    ? { width, height }
+    : null;
+};
 //路径
 const pathConfig = ref({ modelPath: "",sopPath:"", resultPath: "", saveDetectionDatasets: false });
 const pathDialogVisible = ref(false);
@@ -330,16 +340,12 @@ const modelCameraForm = ref({
   model: "",
   confidence: 50,
 });
-onBeforeMount(()=>{
-  getDevice();
-})
-onMounted(() => {
+onMounted(async () => {
     videoStreamHeight();
-    
-    getConfig(); 
+    // 配置中的 enableCamera 依赖相机列表，必须先完成设备读取。
+    await getDevice();
+    await getConfig();
     getModels();
-    
-    
 });
 watch(()=>modelsList.value,()=>{
   checkSopConfigModelsExist();
@@ -349,7 +355,7 @@ watch(()=>modelsList.value,()=>{
 /**-----------初始化---------- */
 const getConfig = () => {
   appStore.setLoading(true);
-  api.getConfig().then((res) => {
+  return api.getConfig().then((res) => {
     const resData = res.data;
     if (!resData.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_config"), resData.msg, "OK");
     const datas = resData.datas;
@@ -425,7 +431,7 @@ const getConfig = () => {
 };
 const getModels = () => {
   appStore.setLoading(true);
-  api.getModels().then((res) => {
+  return api.getModels().then((res) => {
     const resData = res.data;
     if (!resData.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedgetmodels"), resData.msg, "OK");
     modelsList.value = resData.datas;
@@ -435,7 +441,7 @@ const getModels = () => {
 };
 const getDevice = () => {
   appStore.setLoading(true);
-  api.getDevice().then((res) => {
+  return api.getDevice().then((res) => {
     cameraList.value = res.data.camera;
   })
     .catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_device_title"), error.message, "OK"))
@@ -518,25 +524,40 @@ const videoStream = () => {
 //分辨率
 const temSetResolutionCapName = ref("");
 const resolutionsDrawer = (cameraName: string) => {
-    temSetResolutionCapName.value = cameraName;
+  temSetResolutionCapName.value = cameraName;
   const capArea = cameraResolution.value[cameraName];
   resolutionsDes.value = capArea ? ` [${capArea.width}x${capArea.height}_(${capArea.area})]` : "";
-  resolutionForm.resolutions = capArea ? `${capArea.width}x${capArea.height}` : "";
+  // ResolutionDrawer 的 option value 统一使用 “宽*高”。
+  resolutionForm.resolutions = capArea ? formatResolution(capArea.width, capArea.height) : "";
   resolutionForm.area = capArea ? capArea.area : 0;
   resolutionForm.clarity = capArea ? capArea.clarity : 50;
   resolutionsDrawerVisible.value = true;
 };
 const handleSubmitResolution=(data: { resolutions: string; area: number; clarity: number })=>{
-    const [width, height] = data.resolutions.split("*").map(Number);
+    const parsedResolution = parseResolution(data.resolutions);
+    if (!parsedResolution) {
+        ElMessage({ message: t("message.messagetext.field_lack_tip"), type: "error" });
+        return;
+    }
+    const { width, height } = parsedResolution;
+    const area = Number(data.area);
+    const clarity = Number(data.clarity);
     appStore.setLoading(true);
-    api.setResolution({cap_name: temSetResolutionCapName.value,width, height,area: data.area,clarity: data.clarity,}).then((res) => {
+    api.setResolution({
+        cap_name: temSetResolutionCapName.value,
+        width,
+        height,
+        area,
+        clarity,
+    }).then((res) => {
         if (!res.data.status) return ElMessage({ message: res.data.msg, type: "error" });
-        defaultResolution.value = { width, height, area: data.area, clarity: data.clarity };
-        cameraResolution.value[temSetResolutionCapName.value] = { width, height, area: data.area, clarity: data.clarity };
-        resolutionsDes.value = ` [${width}x${height}_(${data.area})]`;
-        resolutionForm.resolutions = `${width}*${height}`;
-        resolutionForm.area = data.area;
-        resolutionForm.clarity = data.clarity;
+        const savedConfig = res.data.data || { width, height, area, clarity };
+        defaultResolution.value = { ...savedConfig };
+        cameraResolution.value[temSetResolutionCapName.value] = { ...savedConfig };
+        resolutionsDes.value = ` [${savedConfig.width}x${savedConfig.height}_(${savedConfig.area})]`;
+        resolutionForm.resolutions = formatResolution(savedConfig.width, savedConfig.height);
+        resolutionForm.area = savedConfig.area;
+        resolutionForm.clarity = savedConfig.clarity;
         resolutionsDrawerVisible.value = false;
         ElMessage.success(t("message.messagetext.successsave"));
     }).catch((err) => {
