@@ -23,11 +23,19 @@ from module._box_style import (
     normalize_area_fill_alpha,
     should_fill_area,
 )
+from module._camera_settings import (
+    encode_jpeg,
+)
+from module._manual_regions import (
+    build_manual_region_detections,
+    normalize_manual_regions_config,
+    validate_sop_manual_region_references,
+)
 from PIL import ImageColor
 logger = logging.getLogger(__name__)
 
-JPEG_QUALITY = 85
-SERVER_STREAM_FPS = 12.0
+# JPEG_QUALITY = 85
+SERVER_STREAM_FPS = 30.0
 ACTIVE_STATUS_VALUES = {1, 2}
 MAX_FEEDBACK_STATUS_EVENTS = 30
 BOX_STYLE_CONFIG = {}
@@ -201,34 +209,82 @@ class DetectionRuntime:
             "type": pc.localDescription.type,
         }
 
-    def iter_server_camera_stream(self) -> Generator[bytes, None, None]:#专供Firefox使用的兜底流，避免浏览器卡死
-        frame_interval = 1.0 / SERVER_STREAM_FPS
+    def iter_server_camera_stream(
+        self,
+    ) -> Generator[bytes, None, None]:
+        """
+        Firefox 使用的 MJPEG 兜底流。
+        """
+
+        frame_interval = (
+            1.0 / SERVER_STREAM_FPS
+        )
+
         next_tick = time.monotonic()
+
         while self.running:
+
             if (
-                self.camera.cap_status.get() not in ACTIVE_STATUS_VALUES
-                or self.detector.detector_status.get() not in ACTIVE_STATUS_VALUES
+                self.camera.cap_status.get()
+                not in ACTIVE_STATUS_VALUES
+
+                or self.detector.detector_status
+                .get()
+                not in ACTIVE_STATUS_VALUES
             ):
                 break
-            frame = self.camera.get_latest_frame()
-            if frame is None:
+
+            raw_frame = (
+                self.camera
+                .get_latest_frame()
+            )
+
+            if raw_frame is None:
                 time.sleep(0.01)
                 continue
-            
-            processed_frame = process_frame(frame, self.detector.snapshot())
-            success, buffer = cv2.imencode(".jpg",processed_frame,[int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY],)
-            if not success:continue
+
+            # 先按照原始坐标画框。
+            processed_frame = process_frame(
+                raw_frame,
+                self.detector.snapshot(),
+            )
+
+            # 再对显示帧进行中心裁剪。
+            display_frame = (
+                self.camera
+                .prepare_display_frame(
+                    processed_frame,
+                )
+            )
+
+            try:
+                frame_bytes = encode_jpeg(
+                    display_frame,
+                    self.camera.display_quality,
+                )
+
+            except Exception:
+                logger.exception(
+                    "MJPEG frame encoding failed"
+                )
+                continue
 
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n"
+                + frame_bytes
+                + b"\r\n"
             )
 
             next_tick += frame_interval
-            sleep_time = max(0.0, next_tick - time.monotonic())
+
+            sleep_time = max(
+                0.0,
+                next_tick - time.monotonic(),
+            )
+
             if sleep_time > 0:
                 time.sleep(sleep_time)
-
     async def close_peer_connections(self) -> None:
         for pc in list(self.peer_connections):
             await pc.close()
@@ -255,6 +311,7 @@ class DetectorWorker:
             "gesture": "idle",
             "bbox": [],
             "detections": [],
+            "manualRegions": [],
             "hands": {},
             "hand_action_points": [],
             "score": 0.0,
@@ -273,7 +330,11 @@ class DetectorWorker:
         self.model_name = model_name
         self.project_name = project_name
         self.sop_name = sop_name or project_name
+        self.manual_regions_config = normalize_manual_regions_config(
+            get_main_config().get("manualRegions")
+        )
         self.sop_machine = self._create_sop_machine()
+        self._validate_manual_regions_for_active_camera()
         #结果保存器
         self.result_store = SOPResultStore(
             project_name=self.project_name,
@@ -296,6 +357,23 @@ class DetectorWorker:
         self.label_class = JsonFile(os.path.join(self.model_path, "cache.json")).read_json_file().get("labeling", {})
         self.detector = ONNXDetection(onnx_model=os.path.join(self.model_path, self.model_name), classes=self.label_class)
         self.detector.load_model()
+
+    def _validate_manual_regions_for_active_camera(self) -> None:
+        validation_error = validate_sop_manual_region_references(
+            self.sop_machine.sop_config,
+            self.manual_regions_config,
+            active_camera_name=self.camera.camera_name,
+        )
+        if validation_error:
+            raise ValueError(validation_error)
+
+    def _current_manual_region_detections(self) -> list[dict]:
+        return build_manual_region_detections(
+            self.manual_regions_config,
+            self.camera.camera_name,
+            int(self.camera.actual_width or 0),
+            int(self.camera.actual_height or 0),
+        )
     def _refresh_hand_tracker(self) -> None:
         """按当前SOP是否需要手部识别，惰性创建/销毁 HandTracker，避免不需要时白白耗CPU。"""
         needs_hands = self.sop_machine.requires_hand_tracking
@@ -336,6 +414,8 @@ class DetectorWorker:
         self.paused = False
         self.waiting_for_trigger = wait_for_trigger
         self.sop_machine = self._create_sop_machine()
+        self._validate_manual_regions_for_active_camera()
+        manual_regions = self._current_manual_region_detections()
         #结果触发器
         self.result_store.set_sop_config(self.sop_machine.sop_config)
         if wait_for_trigger:
@@ -343,6 +423,7 @@ class DetectorWorker:
             self.feedback_dispatcher.reset(sop_result)
             with self.result_lock:
                 self.result["sop"] = sop_result
+                self.result["manualRegions"] = manual_regions
                 self.result["updated_at"] = time.time()
         else:
             self.result_store.start_run(trigger_source="manual",trigger_payload={})
@@ -351,6 +432,8 @@ class DetectorWorker:
             sop_result = self.sop_machine.snapshot(reason="SOP started")
             self.feedback_dispatcher.reset(sop_result)
             self.result_store.consume_sop_snapshot(sop_result)
+        with self.result_lock:
+            self.result["manualRegions"] = manual_regions
         self._last_sop_state = self.sop_machine.snapshot().get("state")
         self.running = True
         self.detector_status.set(1)
@@ -389,7 +472,10 @@ class DetectorWorker:
                 if self.hand_worker is not None and current_step is not None and current_step.hand_gate_enabled:
                     hands = self.hand_worker.snapshot()
                 if detection is not None:
-                    self._update_result(detection[3], hands=hands)
+                    self._update_result(
+                        detection[3],
+                        hands=hands,
+                    )
 
             next_tick += self.infer_period
             sleep_time = max(0.0, next_tick - time.monotonic())
@@ -398,9 +484,17 @@ class DetectorWorker:
 
     def _update_result(self, detection: dict, hands=None) -> None:
         label_box_datas = detection.get("datas", [])
+        manual_regions = self._current_manual_region_detections()
+        observation_boxes = [
+            *label_box_datas,
+            *manual_regions,
+        ]
         completed_now = False
         with self.state_lock:
-            sop_result = self.sop_machine.update(label_box_datas,hands=hands)
+            sop_result = self.sop_machine.update(
+                observation_boxes,
+                hands=hands,
+            )
             run_id = self.result_store.current_run_id
             self.result_store.consume_sop_snapshot(sop_result)
             self.feedback_dispatcher.process_snapshot(sop_result, run_id)
@@ -409,6 +503,7 @@ class DetectorWorker:
                 self.result["step"] = 1 if self.result.get("step", 1) == 1 else 2
                 self.result["gesture"] = "gesture"
                 self.result["detections"] = label_box_datas
+                self.result["manualRegions"] = manual_regions
                 self.result["hands"] = hands or {}
                 self.result["hand_action_points"] = (self.sop_machine.current_hand_action_points(hands) if hands else [])
                 self.result["sop"] = sop_result
@@ -464,6 +559,9 @@ class DetectorWorker:
                     self.result["gesture"] = "idle"
                     self.result["bbox"] = []
                     self.result["detections"] = []
+                    self.result["manualRegions"] = (
+                        self._current_manual_region_detections()
+                    )
                     self.result["hands"] = {}
                     self.result["hand_action_points"] = []
                     self.result["sop"] = sop_result
@@ -507,6 +605,8 @@ class DetectorWorker:
                         "gesture": "idle",
                         "bbox": [],
                         "detections": [],
+                        "manualRegions":
+                            self._current_manual_region_detections(),
                         "hands": {},
                         "hand_action_points": [],
                         "score": 0.0,
@@ -584,6 +684,8 @@ class DetectorWorker:
                         "gesture": "idle",
                         "bbox": [],
                         "detections": [],
+                        "manualRegions":
+                            self._current_manual_region_detections(),
                         "hands": {},
                         "hand_action_points": [],
                         "score": 0.0,
@@ -617,6 +719,7 @@ class DetectorWorker:
                 "gesture": "idle",
                 "bbox": [],
                 "detections": [],
+                "manualRegions": [],
                 "hands": {},
                 "hand_action_points": [],
                 "score": 0.0,
@@ -636,22 +739,60 @@ class CameraTrack(VideoStreamTrack):
         self.runtime = runtime
 
     async def recv(self):
-        pts, time_base = await self.next_timestamp()
-        frame = self.runtime.camera.get_latest_frame()
-        while frame is None:
-            await asyncio.sleep(0.005)
-            frame = self.runtime.camera.get_latest_frame()
 
-        processed = process_frame(frame, self.runtime.detector.snapshot())
-        video_frame = VideoFrame.from_ndarray(processed, format="bgr24")
+        pts, time_base = (
+            await self.next_timestamp()
+        )
+
+        raw_frame = (
+            self.runtime.camera
+            .get_latest_frame()
+        )
+
+        while raw_frame is None:
+
+            await asyncio.sleep(0.005)
+
+            raw_frame = (
+                self.runtime.camera
+                .get_latest_frame()
+            )
+
+        # 检测框坐标基于完整原始帧，
+        # 因此必须先画框。
+        processed_frame = process_frame(
+            raw_frame,
+            self.runtime.detector.snapshot(),
+        )
+
+        # WebRTC 接收 ndarray，
+        # 在这里应用显示区域和显示清晰度。
+        display_frame = (
+            self.runtime.camera
+            .prepare_display_frame(
+                processed_frame,
+            )
+        )
+
+        video_frame = (
+            VideoFrame.from_ndarray(
+                display_frame,
+                format="bgr24",
+            )
+        )
+
         video_frame.pts = pts
         video_frame.time_base = time_base
+
         return video_frame
 
 
 def process_frame(image: np.ndarray, result: dict | None = None) -> np.ndarray:
     """叠加检测结果并返回处理后画面。"""
-    detections = result.get("detections") if result else []
+    detections = [
+        *(result.get("detections") or []),
+        *(result.get("manualRegions") or []),
+    ] if result else []
     from_area_labels, target_area_labels = collect_sop_area_labels(
         result.get("sop") if result else None
     )
@@ -666,8 +807,31 @@ def process_frame(image: np.ndarray, result: dict | None = None) -> np.ndarray:
         else:
             continue
         obj_label = item.get("label", "default")
-        label = f"{obj_label} {float(item.get('score', 0.0)):.2f}"
-        color = BOX_COLOR.get(obj_label, BOX_COLOR.get("default", DEFAULT_BOX_COLOR["default"]))
+        is_manual_region = item.get("detectionType") == "manual_region"
+        label = (
+            str(item.get("displayLabel") or item.get("regionName") or obj_label)
+            if is_manual_region
+            else f"{obj_label} {float(item.get('score', 0.0)):.2f}"
+        )
+        if is_manual_region:
+            try:
+                color = list(
+                    reversed(
+                        ImageColor.getrgb(
+                            str(item.get("color") or "#409EFF")
+                        )
+                    )
+                )
+            except (TypeError, ValueError):
+                color = BOX_COLOR.get(
+                    "default",
+                    DEFAULT_BOX_COLOR["default"],
+                )
+        else:
+            color = BOX_COLOR.get(
+                obj_label,
+                BOX_COLOR.get("default", DEFAULT_BOX_COLOR["default"]),
+            )
         annotations.append(
             {
                 "bounds": (x1, y1, x2, y2),

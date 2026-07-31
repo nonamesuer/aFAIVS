@@ -4,6 +4,7 @@ import time
 import ctypes
 from copy import deepcopy
 from pygrabber.dshow_graph import FilterGraph
+from module._manual_regions import DEFAULT_MANUAL_REGIONS_CONFIG
 graph = FilterGraph()
 WEBSOCKET_CLIENTS = set()
 CAP_STATUS = 0 #0：未启动，1:正常，2:重连中，3:重连失败
@@ -61,6 +62,7 @@ DEFAULT_MAIN_CONFIG = {
         "areaFillAlpha": 0.5
     },
     "handStyle": deepcopy(DEFAULT_HAND_STYLE_CONFIG),
+    "manualRegions": deepcopy(DEFAULT_MANUAL_REGIONS_CONFIG),
     "modbus": {
         "host": "127.0.0.1",
         "port": 502,

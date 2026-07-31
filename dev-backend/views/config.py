@@ -10,6 +10,13 @@ from module._step_feedback import validate_sop_step_feedback_config
 from module._box_style import normalize_area_fill_alpha
 from module._hand_detection import HandTracker
 from module._hand_style import normalize_hand_style_config
+from module._manual_regions import (
+    find_manual_region_references,
+    normalize_manual_region_profile,
+    normalize_manual_regions_config,
+    refresh_sop_manual_region_reference_names,
+    validate_sop_manual_region_references,
+)
 from module._sop_config import (
     normalize_sop_name,
     upsert_sop_definition,
@@ -101,6 +108,199 @@ def get_config():
     if "resolutions" not in config_datas:
         config_datas["resolutions"] = DEFAULT_RESOLUTIONS
     return JSONResponse(content={"status": True, "datas": config_datas,"sops":sop_config_datas})
+
+
+@api_config.post("/manual_regions/save")
+async def save_manual_regions(request: Request):
+    """
+    Create or update all fixed regions for one camera.
+
+    Existing region ids are stable references used by SOP steps. Omitting a
+    referenced id is rejected so a normal edit cannot silently break an SOP.
+    """
+
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("Invalid manual region request.")
+
+        camera_name = str(body.get("cameraName") or "").strip()
+        if not camera_name:
+            raise ValueError("Camera name is required.")
+
+        profile = normalize_manual_region_profile(
+            {
+                "referenceWidth": body.get("referenceWidth"),
+                "referenceHeight": body.get("referenceHeight"),
+                "regions": body.get("regions"),
+            },
+            strict=True,
+        )
+
+        config_datas = get_main_config()
+        manual_regions = normalize_manual_regions_config(
+            config_datas.get("manualRegions")
+        )
+        cameras = manual_regions.setdefault("cameras", {})
+        previous_profile = cameras.get(camera_name, {"regions": []})
+        previous_ids = {
+            str(region.get("id") or "")
+            for region in previous_profile.get("regions", [])
+            if isinstance(region, dict)
+        }
+        next_ids = {
+            str(region.get("id") or "")
+            for region in profile["regions"]
+        }
+
+        sop_config = SopConfig()
+        sop_map = sop_config.get()
+        for removed_id in sorted(previous_ids - next_ids):
+            references = find_manual_region_references(
+                sop_map,
+                camera_name=camera_name,
+                region_id=removed_id,
+            )
+            if references:
+                return JSONResponse(
+                    content={
+                        "status": False,
+                        "msg": (
+                            "Manual region is still referenced by SOP steps: "
+                            + ", ".join(references)
+                        ),
+                        "references": references,
+                    }
+                )
+
+        cameras[camera_name] = profile
+        manual_regions = normalize_manual_regions_config(
+            manual_regions,
+            strict=True,
+        )
+        manual_region_error = validate_sop_manual_region_references(
+            sop_map,
+            manual_regions,
+        )
+        if manual_region_error:
+            return JSONResponse(
+                content={
+                    "status": False,
+                    "msg": manual_region_error,
+                }
+            )
+        config_datas["manualRegions"] = manual_regions
+        JsonFile(CONFIG_PATH).write_json_file(config_datas)
+
+        refreshed_sops, changed = (
+            refresh_sop_manual_region_reference_names(
+                sop_map,
+                manual_regions,
+            )
+        )
+        if changed:
+            sop_config.set(refreshed_sops)
+
+        return JSONResponse(
+            content={
+                "status": True,
+                "msg": "Manual regions saved successfully.",
+                "datas": manual_regions,
+                "sops": refreshed_sops,
+                "applyMode": "next_detection_start",
+            }
+        )
+
+    except ValueError as exc:
+        return JSONResponse(content={"status": False, "msg": str(exc)})
+    except Exception:
+        logger.exception("Failed to save manual regions")
+        return JSONResponse(
+            content={
+                "status": False,
+                "msg": "Failed to save manual regions.",
+            }
+        )
+
+
+@api_config.delete("/manual_regions/delete")
+async def delete_manual_region(request: Request):
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("Invalid manual region request.")
+
+        camera_name = str(body.get("cameraName") or "").strip()
+        region_id = str(body.get("regionId") or "").strip()
+        if not camera_name or not region_id:
+            raise ValueError("cameraName and regionId are required.")
+
+        sop_config = SopConfig()
+        sop_map = sop_config.get()
+        references = find_manual_region_references(
+            sop_map,
+            camera_name=camera_name,
+            region_id=region_id,
+        )
+        if references:
+            return JSONResponse(
+                content={
+                    "status": False,
+                    "msg": (
+                        "Manual region is still referenced by SOP steps: "
+                        + ", ".join(references)
+                    ),
+                    "references": references,
+                }
+            )
+
+        config_datas = get_main_config()
+        manual_regions = normalize_manual_regions_config(
+            config_datas.get("manualRegions")
+        )
+        profile = manual_regions["cameras"].get(camera_name)
+        if profile is None:
+            return JSONResponse(
+                content={
+                    "status": False,
+                    "msg": f"Manual region camera '{camera_name}' was not found.",
+                }
+            )
+
+        before_count = len(profile["regions"])
+        profile["regions"] = [
+            region
+            for region in profile["regions"]
+            if region.get("id") != region_id
+        ]
+        if len(profile["regions"]) == before_count:
+            return JSONResponse(
+                content={
+                    "status": False,
+                    "msg": f"Manual region '{region_id}' was not found.",
+                }
+            )
+
+        config_datas["manualRegions"] = manual_regions
+        JsonFile(CONFIG_PATH).write_json_file(config_datas)
+        return JSONResponse(
+            content={
+                "status": True,
+                "msg": "Manual region deleted successfully.",
+                "datas": manual_regions,
+            }
+        )
+
+    except ValueError as exc:
+        return JSONResponse(content={"status": False, "msg": str(exc)})
+    except Exception:
+        logger.exception("Failed to delete manual region")
+        return JSONResponse(
+            content={
+                "status": False,
+                "msg": "Failed to delete manual region.",
+            }
+        )
 @api_config.post("/set_box_style_config")
 async def set_box_style_config(request: Request):
     try:
@@ -424,32 +624,97 @@ async def set_config_paths(request: Request):
         logger.exception(f"Error setting config paths")
         return JSONResponse(content={"status":False,"msg":"Failed to set paths"})
     
-@api_config.post("/set_cap_resolutions")
-async def set_cap_resolutions(request:Request):
+@api_config.post(
+    "/set_cap_resolutions"
+)
+async def set_cap_resolutions(
+    request: Request,
+):
+
     cap_name = ""
+
     try:
         body = await request.json()
+
         if not isinstance(body, dict):
-            return {"status": False, "msg": "Invalid request body."}
-        config_datas = get_main_config()
-        resolutions = config_datas.get("resolutions", DEFAULT_RESOLUTIONS)
-        cap_name, resolution_config = _normalize_camera_resolution(
+            return {
+                "status": False,
+                "msg":
+                    "Invalid request body.",
+            }
+
+        config_datas = (
+            get_main_config()
+        )
+
+        resolutions = config_datas.get(
+            "resolutions",
+            DEFAULT_RESOLUTIONS,
+        )
+
+        (
+            cap_name,
+            resolution_config,
+        ) = _normalize_camera_resolution(
             body,
             resolutions,
         )
-        camera_resolutions = config_datas.setdefault("cameraResolution", {})
-        camera_resolutions[cap_name] = resolution_config
-        JsonFile(CONFIG_PATH).write_json_file(config_datas)
+
+        camera_resolutions = (
+            config_datas.setdefault(
+                "cameraResolution",
+                {},
+            )
+        )
+
+        camera_resolutions[
+            cap_name
+        ] = resolution_config
+
+        JsonFile(
+            CONFIG_PATH
+        ).write_json_file(
+            config_datas
+        )
+
         return {
             "status": True,
-            "msg": "Resolution set successfully.",
-            "data": resolution_config,
+
+            "msg":
+                (
+                    "Camera settings saved. "
+                    "They will take effect the "
+                    "next time the camera starts."
+                ),
+
+            "data":
+                resolution_config,
+
+            "applyMode":
+                "next_start",
         }
+
     except ValueError as e:
-        return {"status": False, "msg": str(e)}
+
+        return {
+            "status": False,
+            "msg": str(e),
+        }
+
     except Exception as e:
-        logger.exception("Error setting camera resolutions for %s", cap_name)
-        return {"status": False, "msg": str(e)}
+
+        logger.exception(
+            (
+                "Error setting camera "
+                "resolutions for %s"
+            ),
+            cap_name,
+        )
+
+        return {
+            "status": False,
+            "msg": str(e),
+        }
 @api_config.post("/set_resolutions/list")
 async def set_resolutions_list(request:Request):
     try:
@@ -538,9 +803,16 @@ async def set_sop_config(request:Request):
                 "status": False,
                 "msg": f"Model folder '{model_name}' was not found.",
             }
+        main_config = get_main_config()
+        manual_region_error = validate_sop_manual_region_references(
+            definition,
+            main_config.get("manualRegions"),
+        )
+        if manual_region_error:
+            return {"status": False, "msg": manual_region_error}
         validation_error = validate_sop_step_feedback_config(
             definition,
-            get_main_config(),
+            main_config,
         )
         if validation_error:
             return {"status": False, "msg": validation_error}

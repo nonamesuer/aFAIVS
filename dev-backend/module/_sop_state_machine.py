@@ -12,6 +12,10 @@ from module.sop_rules import (
     normalized_hand_points,
     validate_vision_step,
 )
+from module._manual_regions import (
+    region_reference_key,
+    region_reference_name,
+)
 
 
 DEFAULT_STEP_TIMEOUT_SECONDS = 30.0
@@ -205,11 +209,19 @@ class SOPStepRuntime:
 
     @property
     def from_region(self) -> str:
-        return str(self.context.get("fromRegion", "")).strip()
+        return region_reference_key(self.context.get("fromRegion"))
+
+    @property
+    def from_region_name(self) -> str:
+        return region_reference_name(self.context.get("fromRegion"))
 
     @property
     def to_region(self) -> str:
-        return str(self.context.get("toRegion", "")).strip()
+        return region_reference_key(self.context.get("toRegion"))
+
+    @property
+    def to_region_name(self) -> str:
+        return region_reference_name(self.context.get("toRegion"))
 
     @property
     def object_detection_config(self) -> dict[str, bool]:
@@ -380,11 +392,26 @@ class SOPStateMachine:
 
         #取料监控
         self.source_region_names = self._collect_source_region_names()
+        self.region_display_names = {
+            step.from_region: step.from_region_name
+            for step in self.steps
+            if step.from_region
+        }
+        self.region_display_names.update(
+            {
+                step.to_region: step.to_region_name
+                for step in self.steps
+                if step.to_region
+            }
+        )
         self.material_labels = {
             step.expected_object
             for step in self.steps
             if step.expected_object
         }
+
+    def _display_region_name(self, region_key: str) -> str:
+        return self.region_display_names.get(region_key, region_key)
 
     @classmethod
     def from_sop_map(
@@ -671,11 +698,17 @@ class SOPStateMachine:
             required.add(step.expected_object)
         for rule in step.done_when:
             if isinstance(rule, dict):
-                region = str(rule.get("region") or rule.get("toRegion") or "").strip()
+                region = region_reference_key(
+                    rule.get("region") or rule.get("toRegion")
+                )
                 if region:
                     required.add(region)
         detected = {box.label.strip().lower() for box in boxes}
-        missing = [label for label in required if label and label.lower() not in detected]
+        missing = [
+            self._display_region_name(label)
+            for label in required
+            if label and label.lower() not in detected
+        ]
         return not missing, missing
 
     def _start_step(self, step: SOPStepRuntime) -> None:
@@ -854,8 +887,8 @@ class SOPStateMachine:
         self, step: SOPStepRuntime, obs: StepObservation
     ) -> tuple[bool, str]:
         label = step.expected_object
-        source = step.from_region
-        target = step.to_region
+        source = step.from_region_name
+        target = step.to_region_name
         target_delta = obs.target_count > step.target_baseline_count
 
         if step.phase == SOPCyclePhase.WAITING:
@@ -928,8 +961,8 @@ class SOPStateMachine:
         self, step: SOPStepRuntime, obs: StepObservation
     ) -> tuple[bool, str]:
         label = step.expected_object
-        source = step.from_region
-        target = step.to_region
+        source = step.from_region_name
+        target = step.to_region_name
         target_delta = obs.target_count > step.target_baseline_count
 
         if step.phase == SOPCyclePhase.WAITING:
@@ -1020,7 +1053,7 @@ class SOPStateMachine:
         self, step: SOPStepRuntime, obs: StepObservation
     ) -> tuple[bool, str]:
         label = step.expected_object
-        target = step.to_region
+        target = step.to_region_name
         target_delta = obs.target_count > step.target_baseline_count
 
         if step.phase == SOPCyclePhase.WAITING:
@@ -1060,7 +1093,7 @@ class SOPStateMachine:
         self, step: SOPStepRuntime, obs: StepObservation
     ) -> tuple[bool, str]:
         label = step.expected_object
-        target = step.to_region
+        target = step.to_region_name
         target_delta = obs.target_count > step.target_baseline_count
 
         if step.phase == SOPCyclePhase.WAITING:
@@ -1264,7 +1297,7 @@ class SOPStateMachine:
 
         if isinstance(extra_regions, list):
             for region in extra_regions:
-                region = str(region).strip()
+                region = region_reference_key(region)
 
                 if region and region not in result:
                     result.append(region)
@@ -1334,10 +1367,10 @@ class SOPStateMachine:
 
                 reason = (
                     "NG: Wrong pickup source: "
-                    f"expected {step.from_region}, "
+                    f"expected {step.from_region_name}, "
                     f"but operator picked "
                     f"{actual_object} "
-                    f"from {region_name}"
+                    f"from {self._display_region_name(region_name)}"
                 )
 
                 step.pickup_origin_region = (
@@ -1374,7 +1407,7 @@ class SOPStateMachine:
                             f"{step.expected_object}, "
                             f"but operator picked "
                             f"{actual_object} "
-                            f"from {region_name}"
+                            f"from {self._display_region_name(region_name)}"
                         )
 
                         step.pickup_origin_region = (
@@ -1563,7 +1596,8 @@ class SOPStateMachine:
         valid_rules = [rule for rule in rules if isinstance(rule, dict)]
         for rule in valid_rules:
             label = str(rule.get("label") or rule.get("expectedObject") or "").strip()
-            region = str(rule.get("region") or rule.get("toRegion") or "").strip()
+            region_reference = rule.get("region") or rule.get("toRegion")
+            region = region_reference_key(region_reference)
             count = max(1, int(rule.get("count", 1) or 1))
             if not label:
                 continue
@@ -1600,7 +1634,10 @@ class SOPStateMachine:
             current_count = count_boxes_inside_regions(find_boxes(boxes, label), regions)
             baseline_count = self._completed_object_count_in_region(label, step.to_region)
             if current_count > baseline_count:
-                return f"NG: Expected {step.expected_object}, but {label} entered {step.to_region}"
+                return (
+                    f"NG: Expected {step.expected_object}, but {label} "
+                    f"entered {step.to_region_name}"
+                )
             # if count_boxes_inside_regions(find_boxes(boxes, label), regions) > 0:
             #     return f"NG: Expected {step.expected_object}, but {label} entered {step.to_region}"
         return ""
@@ -1617,13 +1654,15 @@ class SOPStateMachine:
     def _match_rule(self, rule: dict[str, Any], boxes: list[DetectionBox]) -> tuple[bool, str]:
         rule_type = str(rule.get("type", "object_detected")).strip()
         label = str(rule.get("label") or rule.get("object") or rule.get("expectedObject") or "").strip()
-        region = str(rule.get("region") or rule.get("toRegion") or "").strip()
+        region_reference = rule.get("region") or rule.get("toRegion")
+        region = region_reference_key(region_reference)
+        region_name = region_reference_name(region_reference)
         count = max(1, int(rule.get("count", 1) or 1))
         if rule_type in {"object_in_region", "wrong_object_in_region"}:
             if not label or not region:
                 return False, "Invalid object_in_region rule"
             actual = count_boxes_inside_regions(find_boxes(boxes, label), find_boxes(boxes, region))
-            return actual >= count, f"{label} in {region}: {actual}/{count}"
+            return actual >= count, f"{label} in {region_name}: {actual}/{count}"
         if rule_type == "object_missing":
             actual = len(find_boxes(boxes, label)) if label else 0
             return bool(label) and actual < count, f"{label} missing: {actual}/{count}"

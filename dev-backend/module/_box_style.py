@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from module._manual_regions import region_reference_key
 
 def normalize_area_fill_alpha(value: Any, fallback: float) -> float:
     """Return a finite area-fill alpha clamped to the OpenCV range of 0..1."""
@@ -33,8 +34,12 @@ def collect_sop_area_labels(sop: Any) -> tuple[set[str], set[str]]:
         if not isinstance(context, dict):
             continue
 
-        from_region = str(context.get("fromRegion") or "").strip().casefold()
-        target_region = str(context.get("toRegion") or "").strip().casefold()
+        from_region = region_reference_key(
+            context.get("fromRegion")
+        ).casefold()
+        target_region = region_reference_key(
+            context.get("toRegion")
+        ).casefold()
         if from_region:
             from_area_labels.add(from_region)
         if target_region:

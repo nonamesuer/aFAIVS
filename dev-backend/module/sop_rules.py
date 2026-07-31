@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from module._manual_regions import (
+    region_reference_key,
+    region_reference_name,
+)
 
 OBJECT_PHASES = ("source", "transit", "target")
 HAND_SIDES = ("l", "r")
@@ -72,8 +76,8 @@ def validate_vision_step(step: dict[str, Any]) -> StepValidationResult:
     step_id = step.get("id", "?")
     context = step.get("context") if isinstance(step.get("context"), dict) else {}
     expected = str(context.get("expectedObject", "")).strip()
-    source = str(context.get("fromRegion", "")).strip()
-    target_region = str(context.get("toRegion", "")).strip()
+    source = region_reference_key(context.get("fromRegion"))
+    target_region = region_reference_key(context.get("toRegion"))
     phases = normalize_object_detection(context)
     hand_enabled = has_hand_tracking(context)
     any_object_phase = any(phases.values())
@@ -160,19 +164,21 @@ def build_execution_plan(step: dict[str, Any]) -> list[str]:
     """Return a concise phase plan used by API responses and UI previews."""
     context = step.get("context") if isinstance(step.get("context"), dict) else {}
     expected = str(context.get("expectedObject", "")).strip()
-    source = str(context.get("fromRegion", "")).strip()
-    target = str(context.get("toRegion", "")).strip()
+    source = region_reference_key(context.get("fromRegion"))
+    target = region_reference_key(context.get("toRegion"))
+    source_name = region_reference_name(context.get("fromRegion"))
+    target_name = region_reference_name(context.get("toRegion"))
     phases = normalize_object_detection(context)
     hand = has_hand_tracking(context)
 
     plan: list[str] = []
     if source:
         if phases["source"] and expected:
-            plan.append(f"detect {expected} in {source}")
+            plan.append(f"detect {expected} in {source_name}")
         if hand:
-            plan.append(f"hand enters {source}" + (f" and engages {expected}" if phases["source"] and expected else ""))
+            plan.append(f"hand enters {source_name}" + (f" and engages {expected}" if phases["source"] and expected else ""))
         if not hand:
-            plan.append(f"confirm one {expected} leaves {source} by source-count decrease")
+            plan.append(f"confirm one {expected} leaves {source_name} by source-count decrease")
     else:
         if phases["source"] and expected:
             plan.append(f"detect {expected} in the visible area")
@@ -185,12 +191,12 @@ def build_execution_plan(step: dict[str, Any]) -> list[str]:
         plan.append("track the hand during transit")
 
     if phases["target"] and expected:
-        plan.append(f"confirm {expected} count in {target} increases by one")
+        plan.append(f"confirm {expected} count in {target_name} increases by one")
         if hand:
             plan.append("confirm the hand releases the object or leaves the target")
     elif hand:
-        plan.append(f"confirm the hand enters {target}")
+        plan.append(f"confirm the hand enters {target_name}")
     else:
-        plan.append(f"confirm the tracked {expected} enters {target}")
+        plan.append(f"confirm the tracked {expected} enters {target_name}")
 
     return plan

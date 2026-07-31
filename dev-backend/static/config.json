@@ -138,5 +138,27 @@
             "connectionWidth": 2,
             "connectionColor": "#00FF00"
         }
+    },
+    "manualRegions": {
+        "version": 1,
+        "cameras": {
+            "TEF1": {
+                "referenceWidth": 1280,
+                "referenceHeight": 720,
+                "regions": [
+                    {
+                        "id": "region_9294af60a995463b912c7f3c533a8252",
+                        "name": "from",
+                        "color": "#409EFF",
+                        "shape": "rectangle",
+                        "x1": 0.716634,
+                        "y1": 0.258465,
+                        "x2": 0.848547,
+                        "y2": 0.574367,
+                        "enabled": true
+                    }
+                ]
+            }
+        }
     }
 }

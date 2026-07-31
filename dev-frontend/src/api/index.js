@@ -60,5 +60,7 @@ export default {
     displayBoxStyleConfig: requestWithPath("/display_box_style_config", "POST"),//展示标记框样式配置
     setHandStyleConfig: requestWithPath("/set_hand_style_config", "POST"),//设置手部关键点样式
     displayHandStyleConfig: requestWithPath("/display_hand_style_config", "POST"),//临时预览手部关键点样式
+    saveManualRegions: requestWithPath("/manual_regions/save", "POST"),
+    deleteManualRegion: requestWithPath("/manual_regions/delete", "DELETE"),
     testModbusConnection: requestWithPath("/modbus/test_connection", "POST"),
 }

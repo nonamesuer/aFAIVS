@@ -15,7 +15,64 @@ export interface SopValidationResult {
   plan: string[]
 }
 
+export interface ManualRegionReference {
+  type: 'manual'
+  id: string
+  name: string
+  cameraName: string
+}
+
 const HAND_SIDES = ['l', 'r'] as const
+
+export const isManualRegionReference = (
+  value: unknown,
+): value is ManualRegionReference =>
+  Boolean(
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && String((value as any).type || '').toLowerCase() === 'manual'
+  )
+
+export const regionReferenceKey = (value: unknown): string => {
+  if (isManualRegionReference(value)) {
+    const id = String(value.id || '').trim()
+    return id ? `__manual_region__:${id}` : ''
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return String((value as any).label || (value as any).value || '').trim()
+  }
+  return String(value || '').trim()
+}
+
+export const regionReferenceName = (value: unknown): string => {
+  if (isManualRegionReference(value)) {
+    return String(value.name || value.id || '').trim()
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return String(
+      (value as any).name
+      || (value as any).label
+      || (value as any).value
+      || ''
+    ).trim()
+  }
+  return String(value || '').trim()
+}
+
+export const normalizeRegionReferenceForSave = (
+  value: unknown,
+): string | ManualRegionReference => {
+  if (!isManualRegionReference(value)) {
+    return regionReferenceKey(value)
+  }
+  return {
+    type: 'manual',
+    id: String(value.id || '').trim(),
+    name: String(value.name || value.id || '').trim(),
+    cameraName: String(value.cameraName || '').trim(),
+  }
+}
 
 const tr = (key: string, fallback: string, params?: Record<string, unknown>): string => {
   const translated = i18n.global.t(key, params || {})
@@ -54,8 +111,10 @@ export const hasConfiguredHands = (context: Record<string, any> = {}): boolean =
 export const buildExecutionPlan = (step: any): string[] => {
   const context = step?.context || {}
   const expected = String(context.expectedObject || '').trim()
-  const source = String(context.fromRegion || '').trim()
-  const target = String(context.toRegion || '').trim()
+  const source = regionReferenceKey(context.fromRegion)
+  const target = regionReferenceKey(context.toRegion)
+  const sourceName = regionReferenceName(context.fromRegion)
+  const targetName = regionReferenceName(context.toRegion)
   const phases = normalizeObjectDetection(context)
   const hand = hasConfiguredHands(context)
   const plan: string[] = []
@@ -63,14 +122,14 @@ export const buildExecutionPlan = (step: any): string[] => {
   if (source) {
     if (phases.source && expected) {
       plan.push(
-        tr('sopRuleEngine.plan.detectInSource', '在 {source} 检测到 {expected}', { source, expected })
+        tr('sopRuleEngine.plan.detectInSource', '在 {source} 检测到 {expected}', { source: sourceName, expected })
       )
     }
     if (hand) {
       plan.push(
         phases.source && expected
-          ? tr('sopRuleEngine.plan.handEnterAndApproach', '手部进入 {source} 并接近 {expected}', { source, expected })
-          : tr('sopRuleEngine.plan.handEnterSource', '手部进入 {source}', { source })
+          ? tr('sopRuleEngine.plan.handEnterAndApproach', '手部进入 {source} 并接近 {expected}', { source: sourceName, expected })
+          : tr('sopRuleEngine.plan.handEnterSource', '手部进入 {source}', { source: sourceName })
       )
     }
     if (!hand && expected) {
@@ -78,7 +137,7 @@ export const buildExecutionPlan = (step: any): string[] => {
         tr(
           'sopRuleEngine.plan.sourceCountDecreaseEvidence',
           '以 {source} 中 {expected} 数量减少 1 作为拿取证据',
-          { source, expected }
+          { source: sourceName, expected }
         )
       )
     }
@@ -101,13 +160,13 @@ export const buildExecutionPlan = (step: any): string[] => {
 
   if (phases.target && expected) {
     plan.push(
-      tr('sopRuleEngine.plan.targetCountIncrease', '{target} 中 {expected} 数量相对本轮基线增加 1', { target, expected })
+      tr('sopRuleEngine.plan.targetCountIncrease', '{target} 中 {expected} 数量相对本轮基线增加 1', { target: targetName, expected })
     )
     if (hand) plan.push(tr('sopRuleEngine.plan.completeAfterHandLeave', '手部离开物料或目标区域后完成'))
   } else if (hand) {
-    plan.push(tr('sopRuleEngine.plan.completeWhenHandOrTrackedObjectEnterTarget', '手部或被跟踪物进入 {target} 后完成', { target }))
+    plan.push(tr('sopRuleEngine.plan.completeWhenHandOrTrackedObjectEnterTarget', '手部或被跟踪物进入 {target} 后完成', { target: targetName }))
   } else if (expected) {
-    plan.push(tr('sopRuleEngine.plan.completeWhenTrackedObjectEnterTarget', '被跟踪的 {expected} 进入 {target} 后完成', { expected, target }))
+    plan.push(tr('sopRuleEngine.plan.completeWhenTrackedObjectEnterTarget', '被跟踪的 {expected} 进入 {target} 后完成', { expected, target: targetName }))
   }
 
   return plan
@@ -117,8 +176,8 @@ export const validateVisionStep = (step: any): SopValidationResult => {
   const id = step?.id ?? '?'
   const context = step?.context || {}
   const expected = String(context.expectedObject || '').trim()
-  const source = String(context.fromRegion || '').trim()
-  const target = String(context.toRegion || '').trim()
+  const source = regionReferenceKey(context.fromRegion)
+  const target = regionReferenceKey(context.toRegion)
   const phases = normalizeObjectDetection(context)
   const hand = hasConfiguredHands(context)
   const anyObjectPhase = phases.source || phases.transit || phases.target
@@ -186,6 +245,12 @@ export const normalizeVisionStepForSave = (step: any): any => {
   cloned.timeout = Math.max(0, Number(cloned.timeout || 0))
   cloned.context = cloned.context || {}
   cloned.context.objectDetection = normalizeObjectDetection(cloned.context)
+  cloned.context.fromRegion = normalizeRegionReferenceForSave(
+    cloned.context.fromRegion
+  )
+  cloned.context.toRegion = normalizeRegionReferenceForSave(
+    cloned.context.toRegion
+  )
   cloned.context.missTolerance = Math.max(0, Number(cloned.context.missTolerance ?? 5))
   cloned.context.handMargin = Math.max(0, Number(cloned.context.handMargin ?? 30))
   delete cloned.context.expectedObjectRequire

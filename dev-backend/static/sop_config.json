@@ -43,7 +43,7 @@
             }
         ],
         "create_time": "2026-07-09 11:44:07",
-        "enabled": true,
+        "enabled": false,
         "modify_time": "2026-07-29 11:21:07"
     },
     "CY_test1": {
@@ -59,11 +59,16 @@
                 "timeout": 30,
                 "context": {
                     "expectedObject": "P1",
-                    "fromRegion": "",
+                    "fromRegion": {
+                        "type": "manual",
+                        "id": "region_9294af60a995463b912c7f3c533a8252",
+                        "name": "from",
+                        "cameraName": "TEF1"
+                    },
                     "toRegion": "CY",
                     "objectDetection": {
                         "source": true,
-                        "transit": false,
+                        "transit": true,
                         "target": true
                     },
                     "missTolerance": 5,
@@ -90,7 +95,7 @@
             }
         ],
         "create_time": "2026-07-24 16:16:26",
-        "enabled": false,
-        "modify_time": "2026-07-30 13:10:06"
+        "enabled": true,
+        "modify_time": "2026-07-31 09:28:19"
     }
 }

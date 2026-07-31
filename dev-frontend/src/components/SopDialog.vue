@@ -120,7 +120,7 @@
                           :key="label"
                           :label="label"
                           :value="label"
-                          :disabled="currentStep.context.fromRegion === label || currentStep.context.toRegion === label"
+                          :disabled="isOnnxRegionSelected(label, currentStep.context.fromRegion) || isOnnxRegionSelected(label, currentStep.context.toRegion)"
                         />
                       </el-select>
                     </el-form-item>
@@ -140,27 +140,75 @@
                 <el-row :gutter="10">
                   <el-col :span="6">
                     <el-form-item :label="$t('config.form.startarea')" prop="context.fromRegion">
-                      <el-select v-model="currentStep.context.fromRegion" clearable>
-                        <el-option
-                          v-for="(_color, label) in currentMainLabels"
-                          :key="label"
-                          :label="label"
-                          :value="label"
-                          :disabled="currentStep.context.expectedObject === label || currentStep.context.toRegion === label"
-                        />
+                      <el-select
+                        :model-value="regionSelectionValue(currentStep.context.fromRegion)"
+                        clearable
+                        @update:model-value="value => updateRegionReference('fromRegion', value)"
+                      >
+                        <el-option-group :label="$t('config.manual_region.onnx_regions')">
+                          <el-option
+                            v-for="(_color, label) in currentMainLabels"
+                            :key="`onnx-${label}`"
+                            :label="label"
+                            :value="onnxRegionOptionValue(label)"
+                            :disabled="currentStep.context.expectedObject === label || regionSelectionValue(currentStep.context.toRegion) === onnxRegionOptionValue(label)"
+                          />
+                        </el-option-group>
+                        <el-option-group
+                          v-for="group in manualRegionGroups"
+                          :key="group.cameraName"
+                          :label="`${$t('config.manual_region.manual_regions')} - ${group.cameraName}`"
+                        >
+                          <el-option
+                            v-for="region in group.regions"
+                            :key="region.id"
+                            :label="region.name"
+                            :value="manualRegionOptionValue(group.cameraName, region.id)"
+                            :disabled="regionSelectionValue(currentStep.context.toRegion) === manualRegionOptionValue(group.cameraName, region.id)"
+                          >
+                            <span class="manual-region-option">
+                              <i :style="{ backgroundColor: region.color }" />
+                              {{ region.name }}
+                            </span>
+                          </el-option>
+                        </el-option-group>
                       </el-select>
                     </el-form-item>
                   </el-col>
                   <el-col :span="6">
                     <el-form-item :label="$t('config.form.targetarea')" prop="context.toRegion" required>
-                      <el-select v-model="currentStep.context.toRegion" clearable>
-                        <el-option
-                          v-for="(_color, label) in currentMainLabels"
-                          :key="label"
-                          :label="label"
-                          :value="label"
-                          :disabled="currentStep.context.expectedObject === label || currentStep.context.fromRegion === label"
-                        />
+                      <el-select
+                        :model-value="regionSelectionValue(currentStep.context.toRegion)"
+                        clearable
+                        @update:model-value="value => updateRegionReference('toRegion', value)"
+                      >
+                        <el-option-group :label="$t('config.manual_region.onnx_regions')">
+                          <el-option
+                            v-for="(_color, label) in currentMainLabels"
+                            :key="`onnx-${label}`"
+                            :label="label"
+                            :value="onnxRegionOptionValue(label)"
+                            :disabled="currentStep.context.expectedObject === label || regionSelectionValue(currentStep.context.fromRegion) === onnxRegionOptionValue(label)"
+                          />
+                        </el-option-group>
+                        <el-option-group
+                          v-for="group in manualRegionGroups"
+                          :key="group.cameraName"
+                          :label="`${$t('config.manual_region.manual_regions')} - ${group.cameraName}`"
+                        >
+                          <el-option
+                            v-for="region in group.regions"
+                            :key="region.id"
+                            :label="region.name"
+                            :value="manualRegionOptionValue(group.cameraName, region.id)"
+                            :disabled="regionSelectionValue(currentStep.context.fromRegion) === manualRegionOptionValue(group.cameraName, region.id)"
+                          >
+                            <span class="manual-region-option">
+                              <i :style="{ backgroundColor: region.color }" />
+                              {{ region.name }}
+                            </span>
+                          </el-option>
+                        </el-option-group>
                       </el-select>
                     </el-form-item>
                   </el-col>
@@ -499,7 +547,13 @@ import robotImage from '@/assets/img/robot.png';
 import { ArrowDownBold, ArrowUpBold, Close,Delete,InfoFilled,WarningFilled } from '@element-plus/icons-vue';
 import { VueDraggable } from 'vue-draggable-plus';
 import Hands from './Hands.vue';
-import { normalizeObjectDetection, normalizeVisionStepForSave,validateVisionStep} from '@/assets/js/sopRuleEngine';
+import {
+  isManualRegionReference,
+  normalizeObjectDetection,
+  normalizeVisionStepForSave,
+  regionReferenceKey,
+  validateVisionStep,
+} from '@/assets/js/sopRuleEngine';
 
 const { t } = useI18n()
 
@@ -509,6 +563,19 @@ const props = defineProps<{
   modelsList: Record<string, boolean>
   existingSopNames: string[]
   currentMainLabels: Record<string, string>
+  manualRegions: {
+    version: number
+    cameras: Record<string, {
+      referenceWidth: number
+      referenceHeight: number
+      regions: Array<{
+        id: string
+        name: string
+        color: string
+        enabled: boolean
+      }>
+    }>
+  }
   steps: any[]
   resultFeedbackConfig: {
     enabled: boolean
@@ -651,6 +718,80 @@ const lastStep = computed(() => stepsLocal.value[stepsLocal.value.length - 1] ||
 const currentValidation = computed(() =>
   currentStep.value?.type === 'p_object' ? validateVisionStep(currentStep.value) : { valid: true, code: '', message: '', plan: [] },
 )
+
+const onnxRegionOptionValue = (label: string) =>
+  `onnx:${encodeURIComponent(String(label || ''))}`
+
+const manualRegionOptionValue = (cameraName: string, regionId: string) =>
+  `manual:${encodeURIComponent(cameraName)}:${encodeURIComponent(regionId)}`
+
+const manualRegionGroups = computed(() =>
+  Object.entries(props.manualRegions?.cameras || {})
+    .map(([cameraName, profile]) => ({
+      cameraName,
+      regions: (profile?.regions || []).filter(region => region.enabled !== false),
+    }))
+    .filter(group => group.regions.length > 0)
+)
+
+const regionSelectionValue = (reference: unknown) => {
+  if (isManualRegionReference(reference)) {
+    const manualReference = reference as {
+      cameraName?: string
+      id?: string
+      regionId?: string
+    }
+    return manualRegionOptionValue(
+      String(manualReference.cameraName || ''),
+      String(manualReference.id || manualReference.regionId || ''),
+    )
+  }
+  const label = regionReferenceKey(reference)
+  return label ? onnxRegionOptionValue(label) : ''
+}
+
+const findManualRegion = (cameraName: string, regionId: string) => {
+  const profile = props.manualRegions?.cameras?.[cameraName]
+  const region = profile?.regions?.find(item => item.id === regionId)
+  return region ? { cameraName, region } : null
+}
+
+const updateRegionReference = (
+  field: 'fromRegion' | 'toRegion',
+  optionValue: string,
+) => {
+  if (!currentStep.value) return
+  currentStep.value.context ||= {}
+  if (!optionValue) {
+    currentStep.value.context[field] = ''
+    return
+  }
+  if (optionValue.startsWith('onnx:')) {
+    currentStep.value.context[field] = decodeURIComponent(
+      optionValue.slice('onnx:'.length),
+    )
+    return
+  }
+  if (!optionValue.startsWith('manual:')) return
+
+  const payload = optionValue.slice('manual:'.length)
+  const separatorIndex = payload.indexOf(':')
+  if (separatorIndex < 0) return
+  const cameraName = decodeURIComponent(payload.slice(0, separatorIndex))
+  const regionId = decodeURIComponent(payload.slice(separatorIndex + 1))
+  const found = findManualRegion(cameraName, regionId)
+  if (!found) return
+  currentStep.value.context[field] = {
+    type: 'manual',
+    id: found.region.id,
+    name: found.region.name,
+    cameraName: found.cameraName,
+  }
+}
+
+const isOnnxRegionSelected = (label: string, reference: unknown) =>
+  !isManualRegionReference(reference)
+  && regionReferenceKey(reference) === label
 
 const getStepTypeLabel = (type: string) => {
   const found = stepTypes.find(item => item.value === type)
@@ -1100,6 +1241,8 @@ const hideExecutionPreview = () => {
 <style scoped lang="scss">
 .ghost { opacity: 0.5; background: var(--bs-info-color); }
 .confidence-value { margin-left: 5px; }
+.manual-region-option { display: inline-flex; align-items: center; gap: 8px; }
+.manual-region-option i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
 .sop-layout { height: 100%; min-height: 0; overflow: hidden; background: #fff; color: #000; }
 .config-container { height: 100%; padding: 5px; box-sizing: border-box; }
 .steps-sidebar, .right-sidebar { display: flex; flex-direction: column; }

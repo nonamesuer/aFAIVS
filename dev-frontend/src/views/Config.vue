@@ -95,6 +95,11 @@
                     <span class="common-config-title">{{ $t('config.detection_integration_config') }}</span>
                     <span class="common-config-description">{{ $t('config.detection_integration_config_description') }}</span>
                 </div>
+                <div class="common-config-entry" @click="manualRegionDialogVisible = true">
+                    <el-icon class="common-config-icon"><Aim /></el-icon>
+                    <span class="common-config-title">{{ $t('config.manual_region.title') }}</span>
+                    <span class="common-config-description">{{ $t('config.manual_region.entry_description') }}</span>
+                </div>
             </div>
             <!-- 工序指导配置 -->
             <el-divider content-position="left">
@@ -172,6 +177,7 @@
             :existingSopNames="Object.keys(sopConfigDatas)"
             :modelsList="modelsList"
             :currentMainLabels="currentMainLabels"
+            :manualRegions="manualRegionsConfig"
             :steps="editSteps"
             :resultFeedbackConfig="detectionIntegrationConfig.resultFeedback"
             @close="handleCloseSignalSet"
@@ -199,6 +205,12 @@
           v-model:visible="integrationDialogVisible"
           v-model:integration-config="detectionIntegrationConfig"
         />
+        <ManualRegionDialog
+          v-model:visible="manualRegionDialogVisible"
+          v-model:manual-regions="manualRegionsConfig"
+          :camera-list="cameraList"
+          @saved="getConfig"
+        />
   </div>
 </template>
 <script setup lang="ts">
@@ -206,7 +218,7 @@ import { ref, onMounted,watch, nextTick, reactive, computed, onUnmounted } from 
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/store";
 import { ElMessage, FormInstance, FormRules } from "element-plus";
-import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer } from "@element-plus/icons-vue";
+import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer,Aim } from "@element-plus/icons-vue";
 import { MesAlertWTitle, MesConfirmWTitle } from "@/assets/js/secondpk";
 import api from "@/api/index";
 import SopDialog from "@/components/SopDialog.vue";
@@ -216,6 +228,7 @@ import HandStyleDrawer from "@/components/HandStyleDrawer.vue";
 import PathDialog from "@/components/PathDIalog.vue";
 import ModbusDialog from "@/components/ModbusDialog.vue";
 import DetectionIntegrationDialog from "@/components/DetectionIntegrationDialog.vue";
+import ManualRegionDialog from "@/components/ManualRegionDialog.vue";
 const appStore = useAppStore();
 const { t } = useI18n();
 const device1Ref = ref(null);
@@ -229,6 +242,8 @@ const currentMainLabels = ref<Record<string, string>>({});
 const currentMainCamera = ref(null);
 const configCameraVisible = ref(false);
 const ws = ref(null);
+let previewFrameRendering = false;
+let previewFrameUrl: string | null = null;
 //分辨率
 const resolutionsDes = ref("");
 const resolutionsList = ref<number[][]>([]);
@@ -249,6 +264,30 @@ const parseResolution = (value: string) => {
 //路径
 const pathConfig = ref({ modelPath: "",sopPath:"", resultPath: "", saveDetectionDatasets: false });
 const pathDialogVisible = ref(false);
+interface ManualRegion {
+  id: string;
+  name: string;
+  color: string;
+  shape: "rectangle";
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  enabled: boolean;
+}
+interface ManualRegionsConfig {
+  version: number;
+  cameras: Record<string, {
+    referenceWidth: number;
+    referenceHeight: number;
+    regions: ManualRegion[];
+  }>;
+}
+const manualRegionDialogVisible = ref(false);
+const manualRegionsConfig = ref<ManualRegionsConfig>({
+  version: 1,
+  cameras: {},
+});
 // SOP配置
 const sopDialogVisible = ref(false);
 const sopConfigDatas = ref({});
@@ -377,6 +416,12 @@ const getConfig = () => {
         },
       };
     };
+    if (datas.manualRegions) {
+      manualRegionsConfig.value = {
+        version: 1,
+        cameras: datas.manualRegions.cameras || {},
+      };
+    }
     if (datas.modbus) {modbusConfig.value = {...modbusConfig.value,...datas.modbus, }};
     if (datas.detectionIntegration) {
       const triggerConfig = datas.detectionIntegration.triggers || {};
@@ -490,15 +535,41 @@ const displayCapSteram = (index: number) => {
   nextTick(() => videoStream());
   
 };
-const configCameraDialogClosed = () => {
-  ws.value.send(JSON.stringify({ action: "CLOSE" }));
+const closeCameraPreviewSocket = () => {
   if (ws.value) {
+    if (
+      ws.value.readyState ===
+      WebSocket.OPEN
+    ) {
+      ws.value.send(
+        JSON.stringify({
+          action: "CLOSE",
+        })
+      );
+    }
+
     ws.value.close();
     ws.value = null;
   }
+
+  const img = document.getElementById(
+    "video-stream"
+  ) as HTMLImageElement | null;
+
+  if (img) {
+    img.src = "";
+  }
+  if (previewFrameUrl) {
+    URL.revokeObjectURL(previewFrameUrl);
+    previewFrameUrl = null;
+  }
+  previewFrameRendering = false;
+};
+
+
+const configCameraDialogClosed = () => {
+  closeCameraPreviewSocket();
   currentMainCamera.value = null;
-  const img = document.getElementById("video-stream");
-  img.src = "";
 };
 const videoStream = () => {
   ws.value = new WebSocket(`ws://localhost:${appStore.servicePort}/ws/video_streaming?camera_id=${currentMainCamera.value}`);
@@ -506,18 +577,27 @@ const videoStream = () => {
   ws.value.binaryType = "arraybuffer";
   const img = document.getElementById("video-stream");
   ws.value.onmessage = async (event) => {
+    if (previewFrameRendering || !img) return;
     const buffer = new Uint8Array(event.data);
+    if (buffer.byteLength < 4) return;
     const magic = new DataView(buffer.buffer).getUint32(0);
     const payload = buffer.slice(4); // 去掉4字节头
     if (magic === MAGIC_CAMERA) {
+      previewFrameRendering = true;
       const blob = new Blob([payload], { type: "image/jpeg" });
-      let url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
+      previewFrameUrl = url;
       const imgToUpdate = img;
       imgToUpdate.src = url;
-      // 图片加载完成后撤销 URL
-      imgToUpdate.onload = () => { URL.revokeObjectURL(url); };
-      // 处理加载失败的情况
-      imgToUpdate.onerror = () => { URL.revokeObjectURL(url); };
+      const finishFrame = () => {
+        URL.revokeObjectURL(url);
+        if (previewFrameUrl === url) {
+          previewFrameUrl = null;
+        }
+        previewFrameRendering = false;
+      };
+      imgToUpdate.onload = finishFrame;
+      imgToUpdate.onerror = finishFrame;
     }
   };
 };
@@ -550,17 +630,57 @@ const handleSubmitResolution=(data: { resolutions: string; area: number; clarity
         area,
         clarity,
     }).then((res) => {
-        if (!res.data.status) return ElMessage({ message: res.data.msg, type: "error" });
-        const savedConfig = res.data.data || { width, height, area, clarity };
-        defaultResolution.value = { ...savedConfig };
-        cameraResolution.value[temSetResolutionCapName.value] = { ...savedConfig };
-        resolutionsDes.value = ` [${savedConfig.width}x${savedConfig.height}_(${savedConfig.area})]`;
-        resolutionForm.resolutions = formatResolution(savedConfig.width, savedConfig.height);
-        resolutionForm.area = savedConfig.area;
-        resolutionForm.clarity = savedConfig.clarity;
-        resolutionsDrawerVisible.value = false;
-        ElMessage.success(t("message.messagetext.successsave"));
-    }).catch((err) => {
+  if (!res.data.status) {
+    return ElMessage({
+      message: res.data.msg,
+      type: "error",
+    });
+  }
+
+  const savedConfig =
+    res.data.data || {
+      width,
+      height,
+      area,
+      clarity,
+    };
+
+  defaultResolution.value = {
+    ...savedConfig,
+  };
+
+  cameraResolution.value[
+    temSetResolutionCapName.value
+  ] = {
+    ...savedConfig,
+  };
+
+  resolutionsDes.value =
+    ` [${savedConfig.width}` +
+    `x${savedConfig.height}` +
+    `_(${savedConfig.area})]`;
+
+  resolutionForm.resolutions =
+    formatResolution(
+      savedConfig.width,
+      savedConfig.height
+    );
+
+  resolutionForm.area =
+    savedConfig.area;
+
+  resolutionForm.clarity =
+    savedConfig.clarity;
+
+  resolutionsDrawerVisible.value =
+    false;
+
+  ElMessage.success(
+    t(
+      "message.messagetext.successsave"
+    )
+  );
+}).catch((err) => {
         MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedsave"), err.message || t("message.messagetext.error_service"));
     }).finally(() => { appStore.setLoading(false); });
 }
