@@ -424,32 +424,97 @@ async def set_config_paths(request: Request):
         logger.exception(f"Error setting config paths")
         return JSONResponse(content={"status":False,"msg":"Failed to set paths"})
     
-@api_config.post("/set_cap_resolutions")
-async def set_cap_resolutions(request:Request):
+@api_config.post(
+    "/set_cap_resolutions"
+)
+async def set_cap_resolutions(
+    request: Request,
+):
+
     cap_name = ""
+
     try:
         body = await request.json()
+
         if not isinstance(body, dict):
-            return {"status": False, "msg": "Invalid request body."}
-        config_datas = get_main_config()
-        resolutions = config_datas.get("resolutions", DEFAULT_RESOLUTIONS)
-        cap_name, resolution_config = _normalize_camera_resolution(
+            return {
+                "status": False,
+                "msg":
+                    "Invalid request body.",
+            }
+
+        config_datas = (
+            get_main_config()
+        )
+
+        resolutions = config_datas.get(
+            "resolutions",
+            DEFAULT_RESOLUTIONS,
+        )
+
+        (
+            cap_name,
+            resolution_config,
+        ) = _normalize_camera_resolution(
             body,
             resolutions,
         )
-        camera_resolutions = config_datas.setdefault("cameraResolution", {})
-        camera_resolutions[cap_name] = resolution_config
-        JsonFile(CONFIG_PATH).write_json_file(config_datas)
+
+        camera_resolutions = (
+            config_datas.setdefault(
+                "cameraResolution",
+                {},
+            )
+        )
+
+        camera_resolutions[
+            cap_name
+        ] = resolution_config
+
+        JsonFile(
+            CONFIG_PATH
+        ).write_json_file(
+            config_datas
+        )
+
         return {
             "status": True,
-            "msg": "Resolution set successfully.",
-            "data": resolution_config,
+
+            "msg":
+                (
+                    "Camera settings saved. "
+                    "They will take effect the "
+                    "next time the camera starts."
+                ),
+
+            "data":
+                resolution_config,
+
+            "applyMode":
+                "next_start",
         }
+
     except ValueError as e:
-        return {"status": False, "msg": str(e)}
+
+        return {
+            "status": False,
+            "msg": str(e),
+        }
+
     except Exception as e:
-        logger.exception("Error setting camera resolutions for %s", cap_name)
-        return {"status": False, "msg": str(e)}
+
+        logger.exception(
+            (
+                "Error setting camera "
+                "resolutions for %s"
+            ),
+            cap_name,
+        )
+
+        return {
+            "status": False,
+            "msg": str(e),
+        }
 @api_config.post("/set_resolutions/list")
 async def set_resolutions_list(request:Request):
     try:

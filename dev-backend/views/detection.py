@@ -103,6 +103,7 @@ def runtime_status(*, consume_external_start: bool = False) -> dict:
             "model_name": _runtime.model_name,
             "external_mode": _runtime.external_mode,
             "external_reference": _runtime.external_reference,
+            "camera_settings":_runtime.camera.settings_snapshot(),
         })
     else:
         status.update({
@@ -119,6 +120,7 @@ def runtime_status(*, consume_external_start: bool = False) -> dict:
             "model_name": None,
             "external_mode": False,
             "external_reference": None,
+            "camera_settings": None,
         })
     status["external_start"] = _read_external_start_status(
         consume_terminal=consume_external_start,

@@ -23,11 +23,14 @@ from module._box_style import (
     normalize_area_fill_alpha,
     should_fill_area,
 )
+from module._camera_settings import (
+    encode_jpeg,
+)
 from PIL import ImageColor
 logger = logging.getLogger(__name__)
 
-JPEG_QUALITY = 85
-SERVER_STREAM_FPS = 12.0
+# JPEG_QUALITY = 85
+SERVER_STREAM_FPS = 30.0
 ACTIVE_STATUS_VALUES = {1, 2}
 MAX_FEEDBACK_STATUS_EVENTS = 30
 BOX_STYLE_CONFIG = {}
@@ -201,34 +204,82 @@ class DetectionRuntime:
             "type": pc.localDescription.type,
         }
 
-    def iter_server_camera_stream(self) -> Generator[bytes, None, None]:#专供Firefox使用的兜底流，避免浏览器卡死
-        frame_interval = 1.0 / SERVER_STREAM_FPS
+    def iter_server_camera_stream(
+        self,
+    ) -> Generator[bytes, None, None]:
+        """
+        Firefox 使用的 MJPEG 兜底流。
+        """
+
+        frame_interval = (
+            1.0 / SERVER_STREAM_FPS
+        )
+
         next_tick = time.monotonic()
+
         while self.running:
+
             if (
-                self.camera.cap_status.get() not in ACTIVE_STATUS_VALUES
-                or self.detector.detector_status.get() not in ACTIVE_STATUS_VALUES
+                self.camera.cap_status.get()
+                not in ACTIVE_STATUS_VALUES
+
+                or self.detector.detector_status
+                .get()
+                not in ACTIVE_STATUS_VALUES
             ):
                 break
-            frame = self.camera.get_latest_frame()
-            if frame is None:
+
+            raw_frame = (
+                self.camera
+                .get_latest_frame()
+            )
+
+            if raw_frame is None:
                 time.sleep(0.01)
                 continue
-            
-            processed_frame = process_frame(frame, self.detector.snapshot())
-            success, buffer = cv2.imencode(".jpg",processed_frame,[int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY],)
-            if not success:continue
+
+            # 先按照原始坐标画框。
+            processed_frame = process_frame(
+                raw_frame,
+                self.detector.snapshot(),
+            )
+
+            # 再对显示帧进行中心裁剪。
+            display_frame = (
+                self.camera
+                .prepare_display_frame(
+                    processed_frame,
+                )
+            )
+
+            try:
+                frame_bytes = encode_jpeg(
+                    display_frame,
+                    self.camera.display_quality,
+                )
+
+            except Exception:
+                logger.exception(
+                    "MJPEG frame encoding failed"
+                )
+                continue
 
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n"
+                + frame_bytes
+                + b"\r\n"
             )
 
             next_tick += frame_interval
-            sleep_time = max(0.0, next_tick - time.monotonic())
+
+            sleep_time = max(
+                0.0,
+                next_tick - time.monotonic(),
+            )
+
             if sleep_time > 0:
                 time.sleep(sleep_time)
-
     async def close_peer_connections(self) -> None:
         for pc in list(self.peer_connections):
             await pc.close()
@@ -636,16 +687,51 @@ class CameraTrack(VideoStreamTrack):
         self.runtime = runtime
 
     async def recv(self):
-        pts, time_base = await self.next_timestamp()
-        frame = self.runtime.camera.get_latest_frame()
-        while frame is None:
-            await asyncio.sleep(0.005)
-            frame = self.runtime.camera.get_latest_frame()
 
-        processed = process_frame(frame, self.runtime.detector.snapshot())
-        video_frame = VideoFrame.from_ndarray(processed, format="bgr24")
+        pts, time_base = (
+            await self.next_timestamp()
+        )
+
+        raw_frame = (
+            self.runtime.camera
+            .get_latest_frame()
+        )
+
+        while raw_frame is None:
+
+            await asyncio.sleep(0.005)
+
+            raw_frame = (
+                self.runtime.camera
+                .get_latest_frame()
+            )
+
+        # 检测框坐标基于完整原始帧，
+        # 因此必须先画框。
+        processed_frame = process_frame(
+            raw_frame,
+            self.runtime.detector.snapshot(),
+        )
+
+        # WebRTC 接收 ndarray，
+        # 在这里应用显示区域和显示清晰度。
+        display_frame = (
+            self.runtime.camera
+            .prepare_display_frame(
+                processed_frame,
+            )
+        )
+
+        video_frame = (
+            VideoFrame.from_ndarray(
+                display_frame,
+                format="bgr24",
+            )
+        )
+
         video_frame.pts = pts
         video_frame.time_base = time_base
+
         return video_frame
 
 

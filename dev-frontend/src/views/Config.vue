@@ -229,6 +229,8 @@ const currentMainLabels = ref<Record<string, string>>({});
 const currentMainCamera = ref(null);
 const configCameraVisible = ref(false);
 const ws = ref(null);
+let previewFrameRendering = false;
+let previewFrameUrl: string | null = null;
 //分辨率
 const resolutionsDes = ref("");
 const resolutionsList = ref<number[][]>([]);
@@ -490,15 +492,41 @@ const displayCapSteram = (index: number) => {
   nextTick(() => videoStream());
   
 };
-const configCameraDialogClosed = () => {
-  ws.value.send(JSON.stringify({ action: "CLOSE" }));
+const closeCameraPreviewSocket = () => {
   if (ws.value) {
+    if (
+      ws.value.readyState ===
+      WebSocket.OPEN
+    ) {
+      ws.value.send(
+        JSON.stringify({
+          action: "CLOSE",
+        })
+      );
+    }
+
     ws.value.close();
     ws.value = null;
   }
+
+  const img = document.getElementById(
+    "video-stream"
+  ) as HTMLImageElement | null;
+
+  if (img) {
+    img.src = "";
+  }
+  if (previewFrameUrl) {
+    URL.revokeObjectURL(previewFrameUrl);
+    previewFrameUrl = null;
+  }
+  previewFrameRendering = false;
+};
+
+
+const configCameraDialogClosed = () => {
+  closeCameraPreviewSocket();
   currentMainCamera.value = null;
-  const img = document.getElementById("video-stream");
-  img.src = "";
 };
 const videoStream = () => {
   ws.value = new WebSocket(`ws://localhost:${appStore.servicePort}/ws/video_streaming?camera_id=${currentMainCamera.value}`);
@@ -506,18 +534,27 @@ const videoStream = () => {
   ws.value.binaryType = "arraybuffer";
   const img = document.getElementById("video-stream");
   ws.value.onmessage = async (event) => {
+    if (previewFrameRendering || !img) return;
     const buffer = new Uint8Array(event.data);
+    if (buffer.byteLength < 4) return;
     const magic = new DataView(buffer.buffer).getUint32(0);
     const payload = buffer.slice(4); // 去掉4字节头
     if (magic === MAGIC_CAMERA) {
+      previewFrameRendering = true;
       const blob = new Blob([payload], { type: "image/jpeg" });
-      let url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
+      previewFrameUrl = url;
       const imgToUpdate = img;
       imgToUpdate.src = url;
-      // 图片加载完成后撤销 URL
-      imgToUpdate.onload = () => { URL.revokeObjectURL(url); };
-      // 处理加载失败的情况
-      imgToUpdate.onerror = () => { URL.revokeObjectURL(url); };
+      const finishFrame = () => {
+        URL.revokeObjectURL(url);
+        if (previewFrameUrl === url) {
+          previewFrameUrl = null;
+        }
+        previewFrameRendering = false;
+      };
+      imgToUpdate.onload = finishFrame;
+      imgToUpdate.onerror = finishFrame;
     }
   };
 };
@@ -550,17 +587,57 @@ const handleSubmitResolution=(data: { resolutions: string; area: number; clarity
         area,
         clarity,
     }).then((res) => {
-        if (!res.data.status) return ElMessage({ message: res.data.msg, type: "error" });
-        const savedConfig = res.data.data || { width, height, area, clarity };
-        defaultResolution.value = { ...savedConfig };
-        cameraResolution.value[temSetResolutionCapName.value] = { ...savedConfig };
-        resolutionsDes.value = ` [${savedConfig.width}x${savedConfig.height}_(${savedConfig.area})]`;
-        resolutionForm.resolutions = formatResolution(savedConfig.width, savedConfig.height);
-        resolutionForm.area = savedConfig.area;
-        resolutionForm.clarity = savedConfig.clarity;
-        resolutionsDrawerVisible.value = false;
-        ElMessage.success(t("message.messagetext.successsave"));
-    }).catch((err) => {
+  if (!res.data.status) {
+    return ElMessage({
+      message: res.data.msg,
+      type: "error",
+    });
+  }
+
+  const savedConfig =
+    res.data.data || {
+      width,
+      height,
+      area,
+      clarity,
+    };
+
+  defaultResolution.value = {
+    ...savedConfig,
+  };
+
+  cameraResolution.value[
+    temSetResolutionCapName.value
+  ] = {
+    ...savedConfig,
+  };
+
+  resolutionsDes.value =
+    ` [${savedConfig.width}` +
+    `x${savedConfig.height}` +
+    `_(${savedConfig.area})]`;
+
+  resolutionForm.resolutions =
+    formatResolution(
+      savedConfig.width,
+      savedConfig.height
+    );
+
+  resolutionForm.area =
+    savedConfig.area;
+
+  resolutionForm.clarity =
+    savedConfig.clarity;
+
+  resolutionsDrawerVisible.value =
+    false;
+
+  ElMessage.success(
+    t(
+      "message.messagetext.successsave"
+    )
+  );
+}).catch((err) => {
         MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedsave"), err.message || t("message.messagetext.error_service"));
     }).finally(() => { appStore.setLoading(false); });
 }

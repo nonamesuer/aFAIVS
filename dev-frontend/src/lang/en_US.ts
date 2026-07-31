@@ -356,7 +356,7 @@ export default{
         width:"Width",
         height:"Height",
         displayclarity:"Display clarity",
-        displayclaritydes:"This parameter does not affect the quality of image capture and detection, only modifies the display of the image",
+        displayclaritydes:"Does not affect capture or detection quality. Used by MJPEG and configuration preview; WebRTC quality is controlled automatically by its video encoder",
         msg:{
             areatip:"Display the default resolution size when the display area is set to 0",
             validresolution:"The resolution must be a multiple of 2",
