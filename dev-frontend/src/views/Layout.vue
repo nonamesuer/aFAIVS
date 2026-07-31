@@ -116,7 +116,12 @@ const toggleFullscreen = () => {
     // (fullscreenElement.value || document.body)
     document.body.requestFullscreen().then(() => {})
     .catch((err) => {
-        ElMessage({message: "Failed to enter full screen: " + err.message,type: "error",});
+        ElMessage({
+          message: t("message.messagetext.fullscreenFailed", {
+            error: err.message,
+          }),
+          type: "error",
+        });
       });
   } else {
     document.exitFullscreen().then(() => {});
@@ -184,7 +189,12 @@ const changeMenuBottom = async (item) => {
   if (item === "1") {
     contactVisible.value = true;
   } else if (item === "2") {
-    window.open(t('url.guideline'),"_blank");
+    const guidelineUrl = t('url.guideline').trim();
+    if (!guidelineUrl) {
+      ElMessage.warning(t('message.messagetext.guidelineUnavailable'));
+      return;
+    }
+    window.open(guidelineUrl,"_blank");
   }else if (item === "3") {
     window.open("#/logs", "_blank");
   }else if (item === "4") {

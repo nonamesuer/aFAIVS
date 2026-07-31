@@ -396,7 +396,7 @@ const getConfig = () => {
   appStore.setLoading(true);
   return api.getConfig().then((res) => {
     const resData = res.data;
-    if (!resData.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_config"), resData.msg, "OK");
+    if (!resData.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_config"), resData.msg, t("button.ok"));
     const datas = resData.datas;
     sopConfigDatas.value = resData.sops || {};
     if ("paths" in datas) {
@@ -471,17 +471,17 @@ const getConfig = () => {
     // if("skipFramesNum" in datas){ skipFramesNum.value = datas.skipFramesNum; }
     
   })
-    .catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_config"), error.message, "OK"))
+    .catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_config"), error.message, t("button.ok")))
     .finally(() => { appStore.setLoading(false); });
 };
 const getModels = () => {
   appStore.setLoading(true);
   return api.getModels().then((res) => {
     const resData = res.data;
-    if (!resData.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedgetmodels"), resData.msg, "OK");
+    if (!resData.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedgetmodels"), resData.msg, t("button.ok"));
     modelsList.value = resData.datas;
   })
-    .catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedgetmodels"), error.message, "OK"))
+    .catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedgetmodels"), error.message, t("button.ok")))
     .finally(() => { appStore.setLoading(false); });
 };
 const getDevice = () => {
@@ -489,41 +489,41 @@ const getDevice = () => {
   return api.getDevice().then((res) => {
     cameraList.value = res.data.camera;
   })
-    .catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_device_title"), error.message, "OK"))
+    .catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_device_title"), error.message, t("button.ok")))
     .finally(() => { appStore.setLoading(false); });
 };
 const openModelFolder = () => {
   api.openModelFolder().then((res) => {
-    if (!res.data.status) MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedopenmodelsfolder"), res.data.msg, "OK");
-  }).catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedopenmodelsfolder"), error.message, "OK"));
+    if (!res.data.status) MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedopenmodelsfolder"), res.data.msg, t("button.ok"));
+  }).catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedopenmodelsfolder"), error.message, t("button.ok")));
 };
 const handleChangeMainModel = (modelName: string, edit = false) => {
   appStore.setLoading(true);
   api.getModelLabels({ model: modelName }).then((res) => {
-    if (!res.data.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedgetlabels"), res.data.msg, "OK");
+    if (!res.data.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedgetlabels"), res.data.msg, t("button.ok"));
     currentMainLabels.value = res.data.datas;
     if (signalSetVisible.value && !edit) {
       console.log("这里需要添加逻辑")
     }
-  }).catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedgetlabels"), error.message, "OK"))
+  }).catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedgetlabels"), error.message, t("button.ok")))
     .finally(() => { appStore.setLoading(false); });
 };
 const handleChangeColor = () => {
   appStore.setLoading(true);
   api.setModelLabels({ model: currentMainModel.value, labels: currentMainLabels.value }).then((res) => {
-    if (!res.data.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedmodify"), res.data.msg, "OK");
+    if (!res.data.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedmodify"), res.data.msg, t("button.ok"));
     labelColorVisible.value = false;
     ElMessage.success(t("message.success"));
-  }).catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedmodify"), error.message, "OK"))
+  }).catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedmodify"), error.message, t("button.ok")))
     .finally(() => { appStore.setLoading(false); });
 };
 const handleChangeMainCamera = (index: number) => {
   const capName = cameraList.value[index];
   appStore.setLoading(true); 
   api.modifyConfig({ enableCamera: capName }).then((res) => {
-    if (!res.data.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedenabled"), res.data.msg, "OK");
+    if (!res.data.status) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedenabled"), res.data.msg, t("button.ok"));
     ElMessage.success(t("message.messagetext.successenbaled"));
-  }).catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedenabled"), error.message, "OK"))
+  }).catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedenabled"), error.message, t("button.ok")))
     .finally(() => { appStore.setLoading(false); });
 };
 const displayCapSteram = (index: number) => {
@@ -756,7 +756,7 @@ const handelDeleteSop = async (sopName: string) => {
   try {
     const res = await api.deleteSopConfig({ sopName });
     if (!res.data.status) {
-      return MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), res.data.msg, "OK");
+      return MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), res.data.msg, t("button.ok"));
     }
     delete sopConfigDatas.value[sopName];
     ElMessage.success(t("message.messagetext.successdelete"));
@@ -779,7 +779,7 @@ const handelDeleteSop = async (sopName: string) => {
   try {
     const resp = await api.deleteModel({ model: modelName });
     if (!resp.data.status) {
-      return MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), resp.data.msg, "OK");
+      return MesAlertWTitle("error", t("message.error"), t("message.messagetext.faileddelete"), resp.data.msg, t("button.ok"));
     }
     delete modelsList.value[modelName];
     ElMessage.success(t("message.messagetext.successdelete"));
@@ -815,7 +815,7 @@ const checkSopConfigModelsExist = () => {
 };
 const handleChangeEnable = (value: boolean, sopName: string) => {
   const conf = sopConfigDatas.value[sopName];
-  if (!conf) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedmodify"), t("message.messagetext.refreshpage"), "OK");
+  if (!conf) return MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedmodify"), t("message.messagetext.refreshpage"), t("button.ok"));
   if(value){
     const enabledSopNames = Object.keys(sopConfigDatas.value).filter(name => sopConfigDatas.value[name].enabled && name !== sopName);
     if(enabledSopNames.length > 0){
@@ -826,7 +826,7 @@ const handleChangeEnable = (value: boolean, sopName: string) => {
   }
   appStore.setLoading(true);
   api.updateSopConfig({ sopName, fields:["enabled"], values: [value] }).then((res) => {
-    if (!res.data.status) return MesAlertWTitle("error", t("message.error"), (value)?t("message.messagetext.failedenabled"):t("message.messagetext.faileddisabled"), res.data.msg, "OK");
+    if (!res.data.status) return MesAlertWTitle("error", t("message.error"), (value)?t("message.messagetext.failedenabled"):t("message.messagetext.faileddisabled"), res.data.msg, t("button.ok"));
     conf.enabled = value;
     ElMessage.success((value)?t("message.messagetext.successenbaled"):t("message.messagetext.successdisabled"));
   }).catch((err) => {

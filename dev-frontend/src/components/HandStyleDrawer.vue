@@ -259,7 +259,7 @@ const handleSave = async () => {
       handStyle: payload,
     });
     if (!response.status) {
-      MesAlertWTitle("error", t("message.error"), "", response.msg, "OK");
+      MesAlertWTitle("error", t("message.error"), "", response.msg, t("button.ok"));
       return;
     }
     emit("update:handStyleConfig", payload);
@@ -271,7 +271,7 @@ const handleSave = async () => {
       t("message.error"),
       "",
       error.message || t("message.messagetext.failedsave"),
-      "OK",
+      t("button.ok"),
     );
   } finally {
     appStore.setLoading(false);

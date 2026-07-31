@@ -763,7 +763,7 @@ function getSopReasonText(reason = '') {
         /^NG: Expected (.+), but (.+) entered (.+)$/,
     )
     if (wrongObjectMatch) {
-        return t('message.messagetext.sopReason.wrongObject', {
+        return t('message.messagetext.wrongObject', {
             expected: wrongObjectMatch[1],
             actual: wrongObjectMatch[2],
             target: wrongObjectMatch[3],
@@ -800,7 +800,7 @@ function getSopReasonText(reason = '') {
     }
 
     if (reason === 'All steps completed') {
-        return t('displaytext.completedall')
+        return t('message.messagetext.completedall')
     }
 
     return reason
@@ -1110,7 +1110,7 @@ async function getSopConfiguration({
                     t('message.error'),
                     t('message.messagetext.failed_get_config'),
                     response.msg,
-                    'OK',
+                    t('button.ok'),
                 )
             }
             return
@@ -1194,7 +1194,7 @@ function closePeerConnection() {
             t('message.warning'),
             t('message.messagetext.webrtcCloseFailed'),
             error.message || String(error),
-            'OK',
+            t('button.ok'),
         )
     } finally {
         peerConnection = null
@@ -1228,7 +1228,7 @@ function closeResultSocket() {
             t('message.warning'),
             t('message.messagetext.resultSocketCloseFailed'),
             error.message || String(error),
-            'OK',
+            t('button.ok'),
         )
     } finally {
         resultSocket = null
@@ -1478,7 +1478,9 @@ async function startWebRtcStream() {
 
         if (!response.ok) {
             throw new Error(
-                `WebRTC 信令失败: HTTP ${response.status}`,
+                t('message.messagetext.webrtcSignalingFailed', {
+                    status: response.status,
+                }),
             )
         }
 
@@ -1497,7 +1499,7 @@ async function startWebRtcStream() {
                 t('message.error'),
                 t('message.messagetext.webrtcStreamError1'),
                 error.message || String(error),
-                'OK',
+                t('button.ok'),
             )
             handleWebRtcError()
         }
@@ -1560,7 +1562,7 @@ function showApiError(title, error) {
         t('message.error'),
         title,
         message,
-        'OK',
+        t('button.ok'),
     )
 }
 
@@ -1577,7 +1579,7 @@ async function runDetectionAction({
         if (!response.status) {
             const message = response.msg || fallbackMessage
             setStreamState(false, message)
-            MesAlertWTitle('error',t('message.error'),title,message,'OK',)
+            MesAlertWTitle('error',t('message.error'),title,message,t('button.ok'),)
             return false
         }
 
@@ -1631,8 +1633,10 @@ function handleExternalStartFeedback(status = {}) {
             'error',
             t('message.error'),
             t('message.messagetext.externalStartFailed'),
-            external.message || t('message.messagetext.externalStartFailed'),
-            'OK',
+            external.messageText
+                || external.message
+                || t('message.messagetext.externalStartFailed'),
+            t('button.ok'),
         )
         return
     }
@@ -1756,7 +1760,7 @@ async function handleStartDetection() {
             t('message.warning'),
             t('message.messagetext.failedstart'),
             t('message.messagetext.pleaseConfigureCamera'),
-            'OK',
+            t('button.ok'),
         )
         return
     }

@@ -70,7 +70,9 @@
                 >
                   <el-icon v-if="!validateVisionStep(step).valid" class="assistant-error-dot" color="red" size="20px"><BellFilled /></el-icon>
                   <span class="step-num">{{ index + 1 }}</span>
-                  <span class="step-name">{{ step.name || 'Unnamed step' }}</span>
+                  <span class="step-name">
+                    {{ step.name || $t('config.sop_step_config.unnamed_step') }}
+                  </span>
                   <el-tag effect="dark" :type="getStepTypeLabel(step.type)[1]">
                     {{ getStepTypeLabel(step.type)[0] }}
                   </el-tag>

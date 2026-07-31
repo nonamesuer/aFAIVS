@@ -215,6 +215,7 @@ export default{
         feedback_endpoint_required:"请填写已启用接口的名称和地址",
         invalid_feedback_url:"反馈接口必须是有效的 HTTP 或 HTTPS 地址",
         sop_step_config:{
+            unnamed_step:"未命名步骤",
             process_chain_config:"工序链配置",
             property_config:"属性配置",
             time:"时间",
@@ -339,6 +340,8 @@ export default{
             resultSocketConnectError:"连接结果 WebSocket 失败: ",
             webrtcStreamError1:"WebRTC 视频流异常，请检查相机连接或重启软件或更换其他浏览器",
             cannotstop:"无法停止检测运行时",
+            fullscreenFailed:"进入全屏失败: {error}",
+            guidelineUnavailable:"使用指南 URL 尚未配置",
         },
 
     },

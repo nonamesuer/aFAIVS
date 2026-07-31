@@ -33,7 +33,7 @@
         </el-form>
         <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; margin-top: 10px">
             <div style="font-weight: 700; color: green; margin: 10px 0;">↓↓↓{{ $t('config.click_show_example') }}↓↓↓</div>
-            <img id="boxStyleExample" @click="displayBoxStyleExample" src="@/assets/img/FAIVS.jpg" alt="Box Style Example" width="50%" height="50%" />
+            <img id="boxStyleExample" @click="displayBoxStyleExample" src="@/assets/img/FAIVS.jpg" :alt="$t('button.title.box_style_setting')" width="50%" height="50%" />
         </div>
         <template #footer>
             <div class="drawer-footer">
@@ -117,19 +117,19 @@ const handleSave = ()=>{
         const payload = createBoxStyleForm(boxStyleForm.value);
         api.setBoxStyleConfig({"boxStyle": payload}).then(({data: response})=>{
             if(!response.status) {
-                MesAlertWTitle("error", t("message.error"), '', response.msg, "OK");
+                MesAlertWTitle("error", t("message.error"), '', response.msg, t("button.ok"));
                 return;
             }
             emit("update:boxStyleConfig", payload);
             emit("update:visible", false);  
             ElMessage.success(t("message.messagetext.successsave"));
         }).catch((error: any)=>{
-            MesAlertWTitle("error", t("message.error"), '', error.message || t("message.messagetext.failedsave"), "OK");
+            MesAlertWTitle("error", t("message.error"), '', error.message || t("message.messagetext.failedsave"), t("button.ok"));
         }).finally(()=>{
             appStore.setLoading(false);
         });
     }catch(error: any){
-        MesAlertWTitle("error", t("message.error"), '', error.message || t("message.messagetext.failedsave"), "OK");
+        MesAlertWTitle("error", t("message.error"), '', error.message || t("message.messagetext.failedsave"), t("button.ok"));
         appStore.setLoading(false);
     }
 };
@@ -140,11 +140,11 @@ const displayBoxStyleExample = ()=>{
     appStore.setLoading(true);
     api.displayBoxStyleConfig({"boxStyle": boxStyleForm.value}).then((res)=>{
         const resData = res.data;
-        if(!resData.status)if (!resData.status) return MesAlertWTitle("error", t("message.error"), '', resData.msg, "OK");
+        if(!resData.status)if (!resData.status) return MesAlertWTitle("error", t("message.error"), '', resData.msg, t("button.ok"));
         const imgElement = document.getElementById("boxStyleExample") as HTMLImageElement;
         imgElement.src = resData.frame;
     }).catch((err)=>{
-        MesAlertWTitle("error", t("message.error"), '', err.message || t("message.messagetext.failedgetboxstyleexample"), "OK");
+        MesAlertWTitle("error", t("message.error"), '', err.message || t("message.messagetext.failedgetboxstyleexample"), t("button.ok"));
     }).finally(()=>{
         appStore.setLoading(false)  ;
     });

@@ -215,6 +215,7 @@ export default{
         feedback_endpoint_required:"Enter the name and URL of every enabled API",
         invalid_feedback_url:"The feedback API must be a valid HTTP or HTTPS URL",
         sop_step_config:{
+            unnamed_step:"Unnamed Step",
             process_chain_config:"Process Chain Configuration",
             property_config:"Property Configuration",
             time:"Time",
@@ -339,6 +340,8 @@ export default{
             resultSocketConnectError:"Failed to connect to result WebSocket: ",
             webrtcStreamError1:"WebRTC video stream error, please check camera connection or restart the software or change to a different browser",
             cannotstop:"Cannot stop detection runtime",
+            fullscreenFailed:"Failed to enter full screen: {error}",
+            guidelineUnavailable:"The usage guide URL has not been configured",
         },
     },
     description:{

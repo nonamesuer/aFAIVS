@@ -303,8 +303,9 @@ const downloadLogs = async () => {
   try {
     const response = await fetch(api.downloadLog);
     if (!response.ok) {
-      ElMessage.error("Download log failed: " + response.statusText);
-      throw new Error("Download log failed");
+      throw new Error(
+        t("log.downloadfailed", { error: response.statusText })
+      );
     }
 
     // 创建下载链接
@@ -320,9 +321,11 @@ const downloadLogs = async () => {
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
 
-    ElMessage.success("Download log started");
+    ElMessage.success(t("log.downloadstarted"));
   } catch (error) {
-    ElMessage.error("Download log failed: " + error.message);
+    ElMessage.error(
+      t("log.downloadfailed", { error: error.message })
+    );
   } finally {
     downloading.value = false;
   }
