@@ -63,8 +63,8 @@
         "TEF1": {
             "width": 800,
             "height": 600,
-            "area": 400,
-            "clarity": 12
+            "area": 600,
+            "clarity": 64
         },
         "HP 5MP Camera": {
             "width": 1024,
