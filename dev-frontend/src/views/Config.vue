@@ -100,6 +100,11 @@
                     <span class="common-config-title">{{ $t('config.manual_region.title') }}</span>
                     <span class="common-config-description">{{ $t('config.manual_region.entry_description') }}</span>
                 </div>
+                <div class="common-config-entry" @click="resultMediaDialogVisible = true">
+                    <el-icon class="common-config-icon"><CameraFilled /></el-icon>
+                    <span class="common-config-title">{{ $t('config.result_media.title') }}</span>
+                    <span class="common-config-description">{{ $t('config.result_media.entry_description') }}</span>
+                </div>
             </div>
             <!-- 工序指导配置 -->
             <el-divider content-position="left">
@@ -211,6 +216,10 @@
           :camera-list="cameraList"
           @saved="getConfig"
         />
+        <ResultMediaDialog
+          v-model:visible="resultMediaDialogVisible"
+          v-model:result-media-config="resultMediaConfig"
+        />
   </div>
 </template>
 <script setup lang="ts">
@@ -218,7 +227,7 @@ import { ref, onMounted,watch, nextTick, reactive, computed, onUnmounted } from 
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/store";
 import { ElMessage, FormInstance, FormRules } from "element-plus";
-import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer,Aim } from "@element-plus/icons-vue";
+import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer,Aim,CameraFilled } from "@element-plus/icons-vue";
 import { MesAlertWTitle, MesConfirmWTitle } from "@/assets/js/secondpk";
 import api from "@/api/index";
 import SopDialog from "@/components/SopDialog.vue";
@@ -229,6 +238,7 @@ import PathDialog from "@/components/PathDIalog.vue";
 import ModbusDialog from "@/components/ModbusDialog.vue";
 import DetectionIntegrationDialog from "@/components/DetectionIntegrationDialog.vue";
 import ManualRegionDialog from "@/components/ManualRegionDialog.vue";
+import ResultMediaDialog from "@/components/ResultMediaDialog.vue";
 const appStore = useAppStore();
 const { t } = useI18n();
 const device1Ref = ref(null);
@@ -371,6 +381,20 @@ const detectionIntegrationConfig = ref<DetectionIntegrationConfig>({
     endpoints: [],
   },
 });
+// 检测结果图片
+const resultMediaDialogVisible = ref(false);
+const resultMediaConfig = ref({
+  enabled: true,
+  saveOperationError: true,
+  saveNgRawImage: true,
+  saveNgAnnotatedImage: true,
+  saveStepSuccess: true,
+  saveRunCompleted: true,
+  imageFormat: "jpg" as const,
+  jpegQuality: 90,
+  minFreeDiskPercent: 10,
+  queueSize: 32,
+});
 // 参数配置相关
 const signalSetVisible = ref(false);
 const modelCameraForm = ref({
@@ -453,6 +477,13 @@ const getConfig = () => {
             ? datas.detectionIntegration.resultFeedback.endpoints.slice(0, 5)
             : [],
         },
+      };
+    };
+    if (datas.resultMedia) {
+      resultMediaConfig.value = {
+        ...resultMediaConfig.value,
+        ...datas.resultMedia,
+        imageFormat: "jpg",
       };
     };
     if("cameraResolution" in datas){ cameraResolution.value = datas.cameraResolution; };

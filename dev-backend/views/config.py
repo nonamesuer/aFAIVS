@@ -10,6 +10,10 @@ from module._step_feedback import validate_sop_step_feedback_config
 from module._box_style import normalize_area_fill_alpha
 from module._hand_detection import HandTracker
 from module._hand_style import normalize_hand_style_config
+from module._result_media import (
+    normalize_result_media_config,
+    validate_result_media_config,
+)
 from module._manual_regions import (
     find_manual_region_references,
     normalize_manual_region_profile,
@@ -1004,6 +1008,14 @@ async def modify_config(request:Request):
         validation_error = validate_detection_integration_config(body)
         if validation_error:
             return {"status": False, "msg": validation_error}
+        validation_error = validate_result_media_config(body)
+        if validation_error:
+            return {"status": False, "msg": validation_error}
+        if "resultMedia" in body:
+            body["resultMedia"] = normalize_result_media_config(
+                body["resultMedia"],
+                strict=True,
+            )
         updater = ConfigUpdater(get_main_config())
         updated_config = updater.update(body)
         JsonFile(CONFIG_PATH).write_json_file(updated_config)

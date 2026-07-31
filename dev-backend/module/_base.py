@@ -42,6 +42,18 @@ DEFAULT_HAND_STYLE_CONFIG = {
         "connectionColor": "#00FF00",
     },
 }
+DEFAULT_RESULT_MEDIA_CONFIG = {
+    "enabled": True,
+    "saveOperationError": True,
+    "saveNgRawImage": True,
+    "saveNgAnnotatedImage": True,
+    "saveStepSuccess": True,
+    "saveRunCompleted": True,
+    "imageFormat": "jpg",
+    "jpegQuality": 90,
+    "minFreeDiskPercent": 10,
+    "queueSize": 32,
+}
 DEFAULT_BOX_COLOR = {"default":(0, 123, 192)}
 DEFAULT_MAIN_CONFIG = {
     "paths": {
@@ -62,6 +74,7 @@ DEFAULT_MAIN_CONFIG = {
         "areaFillAlpha": 0.5
     },
     "handStyle": deepcopy(DEFAULT_HAND_STYLE_CONFIG),
+    "resultMedia": deepcopy(DEFAULT_RESULT_MEDIA_CONFIG),
     "manualRegions": deepcopy(DEFAULT_MANUAL_REGIONS_CONFIG),
     "modbus": {
         "host": "127.0.0.1",

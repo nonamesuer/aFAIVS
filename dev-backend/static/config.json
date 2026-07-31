@@ -2,7 +2,7 @@
     "paths": {
         "modelPath": "",
         "sopPath": "",
-        "resultPath": "C:\\Users\\LAI8PK\\Desktop\\aa",
+        "resultPath": "",
         "saveDetectionDatasets": false
     },
     "resolutions": [
@@ -160,5 +160,17 @@
                 ]
             }
         }
+    },
+    "resultMedia": {
+        "enabled": true,
+        "saveOperationError": true,
+        "saveNgRawImage": true,
+        "saveNgAnnotatedImage": true,
+        "saveStepSuccess": true,
+        "saveRunCompleted": true,
+        "imageFormat": "jpg",
+        "jpegQuality": 90,
+        "minFreeDiskPercent": 10,
+        "queueSize": 32
     }
 }

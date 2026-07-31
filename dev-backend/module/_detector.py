@@ -16,6 +16,7 @@ from module._sop_state_machine import SOPStateMachine
 from module._hand_detection import HandTracker, HandDetectorWorker
 from module._trigger import TriggerController
 from module._sop_result_store import SOPResultStore
+from module._result_media import ResultMediaRecorder
 from module._sop_config import resolve_sop_definition
 from module._step_feedback import StepFeedbackDispatcher
 from module._box_style import (
@@ -342,6 +343,11 @@ class DetectorWorker:
             camera_name=self.camera.camera_name,
             sop_config=self.sop_machine.sop_config,
         )
+        self.media_recorder = ResultMediaRecorder(
+            result_store=self.result_store,
+            config=get_main_config().get("resultMedia"),
+            status_callback=self._handle_feedback_status,
+        )
         self.feedback_dispatcher = StepFeedbackDispatcher(
             project_name=self.project_name,
             sop_name=self.sop_name,
@@ -473,6 +479,7 @@ class DetectorWorker:
                     hands = self.hand_worker.snapshot()
                 if detection is not None:
                     self._update_result(
+                        frame,
                         detection[3],
                         hands=hands,
                     )
@@ -482,7 +489,12 @@ class DetectorWorker:
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
-    def _update_result(self, detection: dict, hands=None) -> None:
+    def _update_result(
+        self,
+        frame: np.ndarray,
+        detection: dict,
+        hands=None,
+    ) -> None:
         label_box_datas = detection.get("datas", [])
         manual_regions = self._current_manual_region_detections()
         observation_boxes = [
@@ -490,13 +502,14 @@ class DetectorWorker:
             *manual_regions,
         ]
         completed_now = False
+        media_events: list[dict] = []
         with self.state_lock:
             sop_result = self.sop_machine.update(
                 observation_boxes,
                 hands=hands,
             )
             run_id = self.result_store.current_run_id
-            self.result_store.consume_sop_snapshot(sop_result)
+            media_events = self.result_store.consume_sop_snapshot(sop_result)
             self.feedback_dispatcher.process_snapshot(sop_result, run_id)
             sop_state = sop_result.get("state")
             with self.result_lock:
@@ -515,6 +528,17 @@ class DetectorWorker:
                         self.result["ng_count"] = self.result.get("ng_count", 0) + 1
                     self._last_sop_state = sop_state
                 self.result["updated_at"] = time.time()
+
+        if media_events:
+            media_snapshot = self.snapshot()
+            self.media_recorder.capture_events(
+                event_refs=media_events,
+                raw_frame=frame,
+                annotated_frame_factory=lambda: process_frame(
+                    frame.copy(),
+                    media_snapshot,
+                ),
+            )
 
         if completed_now and self.on_sop_completed is not None:
             try:
@@ -706,6 +730,7 @@ class DetectorWorker:
         if self.thread and self.thread.is_alive():
             self.thread.join(timeout=2.0)
         self.thread = None
+        self.media_recorder.shutdown()
         if self.hand_worker is not None:
             try:
                 self.hand_worker.stop()

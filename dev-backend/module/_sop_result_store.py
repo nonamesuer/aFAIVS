@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import os
 import socket
 import sqlite3
@@ -12,6 +13,8 @@ import uuid
 from typing import Any
 
 from module._base import get_display_name, get_main_config
+
+logger = logging.getLogger(__name__)
 
 
 def now_ms() -> int:
@@ -65,10 +68,19 @@ class SOPResultStore:
 
         os.makedirs(result_path, exist_ok=True)
 
-        self.db_path = os.path.join(
-            result_path,
-            "sop_history.db",
+        self.result_path = os.path.abspath(result_path)
+        self.history_path = os.path.join(self.result_path, "history")
+        self.media_path = os.path.join(self.result_path, "media")
+        os.makedirs(self.history_path, exist_ok=True)
+        os.makedirs(self.media_path, exist_ok=True)
+
+        self.catalog_path = os.path.join(
+            self.result_path,
+            "sop_catalog.db",
         )
+        self.storage_file = ""
+        self.db_path = ""
+        self._select_database(now_ms())
 
         self.lock = threading.RLock()
 
@@ -96,15 +108,24 @@ class SOPResultStore:
         self._block_started_ms: int | None = None
         self._block_step_run_id: str | None = None
 
+        self._event_collector: list[dict] | None = None
+        self._media_database_paths: dict[str, str] = {}
+
+        self._init_catalog_database()
         self._init_database()
+        self._backfill_legacy_catalog()
 
     # =========================================================
     # Database
     # =========================================================
 
     def _connect(self) -> sqlite3.Connection:
+        return self._connect_path(self.db_path)
+
+    @staticmethod
+    def _connect_path(path: str) -> sqlite3.Connection:
         conn = sqlite3.connect(
-            self.db_path,
+            path,
             timeout=5,
         )
 
@@ -123,6 +144,160 @@ class SOPResultStore:
         )
 
         return conn
+
+    def _select_database(self, timestamp_ms: int) -> None:
+        period = time.strftime(
+            "%Y-%m",
+            time.localtime(timestamp_ms / 1000),
+        )
+        self.storage_file = os.path.join(
+            "history",
+            f"sop_history_{period}.db",
+        ).replace(os.sep, "/")
+        self.db_path = os.path.join(
+            self.result_path,
+            *self.storage_file.split("/"),
+        )
+
+    def _init_catalog_database(self) -> None:
+        with self._connect_path(self.catalog_path) as conn:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS sop_run_catalog (
+                    run_id TEXT PRIMARY KEY,
+                    storage_file TEXT NOT NULL,
+
+                    project_name TEXT,
+                    sop_name TEXT,
+                    model_name TEXT,
+                    camera_name TEXT,
+                    external_reference TEXT,
+
+                    started_at_ms INTEGER NOT NULL,
+                    ended_at_ms INTEGER,
+                    execution_status TEXT NOT NULL,
+                    quality_status TEXT NOT NULL,
+
+                    media_count INTEGER NOT NULL DEFAULT 0,
+                    ng_media_count INTEGER NOT NULL DEFAULT 0,
+                    has_media INTEGER NOT NULL DEFAULT 0,
+                    cover_media_id TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS catalog_metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at_ms INTEGER NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS
+                    idx_catalog_started_at
+                ON sop_run_catalog(started_at_ms);
+
+                CREATE INDEX IF NOT EXISTS
+                    idx_catalog_external_reference
+                ON sop_run_catalog(external_reference);
+
+                CREATE INDEX IF NOT EXISTS
+                    idx_catalog_sop_name
+                ON sop_run_catalog(sop_name);
+                """
+            )
+
+    def _backfill_legacy_catalog(self) -> None:
+        """
+        Register rows from the pre-monthly sop_history.db once.
+
+        The original database is never changed or moved. Its run rows become
+        discoverable through the catalog so historical queries stay continuous.
+        """
+        legacy_path = os.path.join(self.result_path, "sop_history.db")
+        metadata_key = "legacy_sop_history_catalog_v1"
+        if not os.path.isfile(legacy_path):
+            return
+
+        try:
+            with self._connect_path(self.catalog_path) as catalog:
+                imported = catalog.execute(
+                    """
+                    SELECT value
+                    FROM catalog_metadata
+                    WHERE key = ?
+                    """,
+                    (metadata_key,),
+                ).fetchone()
+                if imported:
+                    return
+
+                with self._connect_path(legacy_path) as legacy:
+                    has_runs = legacy.execute(
+                        """
+                        SELECT 1
+                        FROM sqlite_master
+                        WHERE type = 'table'
+                          AND name = 'sop_runs'
+                        """
+                    ).fetchone()
+                    if has_runs:
+                        rows = legacy.execute(
+                            """
+                            SELECT
+                                run_id,
+                                project_name,
+                                sop_name,
+                                model_name,
+                                camera_name,
+                                external_reference,
+                                started_at_ms,
+                                ended_at_ms,
+                                execution_status,
+                                quality_status
+                            FROM sop_runs
+                            """
+                        )
+                        catalog.executemany(
+                            """
+                            INSERT OR IGNORE INTO sop_run_catalog (
+                                run_id,
+                                storage_file,
+                                project_name,
+                                sop_name,
+                                model_name,
+                                camera_name,
+                                external_reference,
+                                started_at_ms,
+                                ended_at_ms,
+                                execution_status,
+                                quality_status
+                            )
+                            VALUES (
+                                ?,
+                                'sop_history.db',
+                                ?, ?, ?, ?, ?,
+                                ?, ?, ?, ?
+                            )
+                            """,
+                            rows,
+                        )
+
+                catalog.execute(
+                    """
+                    INSERT OR REPLACE INTO catalog_metadata (
+                        key,
+                        value,
+                        updated_at_ms
+                    )
+                    VALUES (?, 'completed', ?)
+                    """,
+                    (
+                        metadata_key,
+                        now_ms(),
+                    ),
+                )
+        except (OSError, sqlite3.Error):
+            logger.exception(
+                "Failed to register legacy SOP history in the catalog"
+            )
 
     def _init_database(self) -> None:
         with self._connect() as conn:
@@ -259,6 +434,44 @@ class SOPResultStore:
                         REFERENCES sop_runs(run_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS sop_media (
+                    media_id TEXT PRIMARY KEY,
+
+                    run_id TEXT NOT NULL,
+                    step_run_id TEXT,
+                    cycle_run_id TEXT,
+                    event_id INTEGER,
+
+                    captured_at_ms INTEGER NOT NULL,
+                    media_type TEXT NOT NULL,
+                    purpose TEXT NOT NULL,
+                    variant TEXT NOT NULL,
+
+                    relative_path TEXT NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    width INTEGER,
+                    height INTEGER,
+                    duration_ms INTEGER,
+                    fps REAL,
+
+                    size_bytes INTEGER,
+                    sha256 TEXT,
+                    storage_status TEXT NOT NULL DEFAULT 'pending',
+                    error_message TEXT,
+                    created_at_ms INTEGER NOT NULL,
+                    available_at_ms INTEGER,
+                    deleted_at_ms INTEGER,
+
+                    FOREIGN KEY(run_id)
+                        REFERENCES sop_runs(run_id),
+                    FOREIGN KEY(step_run_id)
+                        REFERENCES sop_step_runs(step_run_id),
+                    FOREIGN KEY(cycle_run_id)
+                        REFERENCES sop_cycle_runs(cycle_run_id),
+                    FOREIGN KEY(event_id)
+                        REFERENCES sop_events(event_id)
+                );
+
                 CREATE INDEX IF NOT EXISTS
                     idx_sop_runs_started_at
                 ON sop_runs(started_at_ms);
@@ -278,6 +491,18 @@ class SOPResultStore:
                 CREATE INDEX IF NOT EXISTS
                     idx_events_type
                 ON sop_events(event_type);
+
+                CREATE INDEX IF NOT EXISTS
+                    idx_media_run_id
+                ON sop_media(run_id);
+
+                CREATE INDEX IF NOT EXISTS
+                    idx_media_event_id
+                ON sop_media(event_id);
+
+                CREATE INDEX IF NOT EXISTS
+                    idx_media_status
+                ON sop_media(storage_status);
                 """
             )
 
@@ -332,6 +557,8 @@ class SOPResultStore:
 
             run_id = new_id("RUN")
             started = now_ms()
+            self._select_database(started)
+            self._init_database()
 
             self.current_run_id = run_id
 
@@ -354,6 +581,12 @@ class SOPResultStore:
                 self._extract_external_reference(
                     trigger_source,
                     trigger_payload,
+                )
+            )
+            sop_name = str(
+                self.sop_config.get(
+                    "sopName",
+                    self.project_name,
                 )
             )
 
@@ -401,12 +634,7 @@ class SOPResultStore:
                         self.attempt_no,
 
                         self.project_name,
-                        str(
-                            self.sop_config.get(
-                                "sopName",
-                                self.project_name,
-                            )
-                        ),
+                        sop_name,
                         str(
                             self.sop_config.get(
                                 "version",
@@ -429,6 +657,41 @@ class SOPResultStore:
                         ),
                         external_reference,
 
+                        started,
+                    ),
+                )
+
+            with self._connect_path(self.catalog_path) as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO sop_run_catalog (
+                        run_id,
+                        storage_file,
+                        project_name,
+                        sop_name,
+                        model_name,
+                        camera_name,
+                        external_reference,
+                        started_at_ms,
+                        execution_status,
+                        quality_status
+                    )
+                    VALUES (
+                        ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?,
+                        'running',
+                        'ok'
+                    )
+                    """,
+                    (
+                        run_id,
+                        self.storage_file,
+                        self.project_name,
+                        sop_name,
+                        self.model_name,
+                        self.camera_name,
+                        external_reference,
                         started,
                     ),
                 )
@@ -607,6 +870,24 @@ class SOPResultStore:
                 },
             )
 
+            with self._connect_path(self.catalog_path) as conn:
+                conn.execute(
+                    """
+                    UPDATE sop_run_catalog
+                    SET
+                        ended_at_ms = ?,
+                        execution_status = ?,
+                        quality_status = ?
+                    WHERE run_id = ?
+                    """,
+                    (
+                        ended,
+                        execution_status,
+                        quality_status,
+                        self.current_run_id,
+                    ),
+                )
+
             self.current_run_id = None
             self._last_sop_snapshot = None
 
@@ -617,15 +898,16 @@ class SOPResultStore:
     def consume_sop_snapshot(
         self,
         sop: dict | None,
-    ) -> None:
+    ) -> list[dict]:
 
         if (
             not self.current_run_id
             or not isinstance(sop, dict)
         ):
-            return
+            return []
 
         with self.lock:
+            self._event_collector = []
 
             timestamp = int(
                 float(
@@ -732,6 +1014,10 @@ class SOPResultStore:
                         )
                     ),
                 )
+
+            event_refs = list(self._event_collector)
+            self._event_collector = None
+            return event_refs
 
     def _consume_step(
         self,
@@ -2191,6 +2477,199 @@ class SOPResultStore:
         self._pause_step_run_id = None
 
     # =========================================================
+    # Media evidence
+    # =========================================================
+
+    def reserve_media(
+        self,
+        event_ref: dict,
+        purpose: str,
+        variant: str,
+        width: int,
+        height: int,
+        mime_type: str,
+        extension: str,
+    ) -> dict | None:
+        run_id = str(event_ref.get("run_id") or "")
+        database_path = str(event_ref.get("database_path") or self.db_path)
+        if not run_id or not database_path:
+            return None
+
+        captured_at_ms = int(event_ref.get("timestamp_ms") or now_ms())
+        period_path = time.strftime(
+            "%Y/%m",
+            time.localtime(captured_at_ms / 1000),
+        )
+        media_id = new_id("MEDIA")
+        safe_extension = extension.lower().lstrip(".")
+        filename = (
+            f"{media_id}_{purpose}_{variant}.{safe_extension}"
+        )
+        relative_path = os.path.join(
+            "media",
+            *period_path.split("/"),
+            run_id,
+            "images",
+            filename,
+        )
+        relative_path_db = relative_path.replace(os.sep, "/")
+        absolute_path = os.path.abspath(
+            os.path.join(self.result_path, relative_path)
+        )
+        if os.path.commonpath([self.result_path, absolute_path]) != self.result_path:
+            raise ValueError("Invalid result media path")
+
+        with self.lock:
+            with self._connect_path(database_path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO sop_media (
+                        media_id,
+                        run_id,
+                        step_run_id,
+                        cycle_run_id,
+                        event_id,
+                        captured_at_ms,
+                        media_type,
+                        purpose,
+                        variant,
+                        relative_path,
+                        mime_type,
+                        width,
+                        height,
+                        storage_status,
+                        created_at_ms
+                    )
+                    VALUES (
+                        ?, ?, ?, ?, ?,
+                        ?,
+                        'image',
+                        ?, ?,
+                        ?, ?,
+                        ?, ?,
+                        'pending',
+                        ?
+                    )
+                    """,
+                    (
+                        media_id,
+                        run_id,
+                        event_ref.get("step_run_id"),
+                        event_ref.get("cycle_run_id"),
+                        event_ref.get("event_id"),
+                        captured_at_ms,
+                        purpose,
+                        variant,
+                        relative_path_db,
+                        mime_type,
+                        width,
+                        height,
+                        now_ms(),
+                    ),
+                )
+            self._media_database_paths[media_id] = database_path
+
+        return {
+            "media_id": media_id,
+            "absolute_path": absolute_path,
+            "relative_path": relative_path_db,
+        }
+
+    def complete_media(
+        self,
+        media_id: str,
+        size_bytes: int,
+        sha256: str,
+    ) -> None:
+        database_path = self._media_database_paths.get(media_id)
+        if not database_path:
+            logger_message = (
+                f"Database path for media '{media_id}' is unavailable"
+            )
+            raise RuntimeError(logger_message)
+
+        with self.lock:
+            with self._connect_path(database_path) as conn:
+                row = conn.execute(
+                    """
+                    SELECT run_id, purpose
+                    FROM sop_media
+                    WHERE media_id = ?
+                    """,
+                    (media_id,),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError(f"Media row '{media_id}' was not found")
+
+                cursor = conn.execute(
+                    """
+                    UPDATE sop_media
+                    SET
+                        size_bytes = ?,
+                        sha256 = ?,
+                        storage_status = 'available',
+                        error_message = NULL,
+                        available_at_ms = ?
+                    WHERE media_id = ?
+                      AND storage_status = 'pending'
+                    """,
+                    (
+                        size_bytes,
+                        sha256,
+                        now_ms(),
+                        media_id,
+                    ),
+                )
+
+            if cursor.rowcount:
+                with self._connect_path(self.catalog_path) as conn:
+                    conn.execute(
+                        """
+                        UPDATE sop_run_catalog
+                        SET
+                            media_count = media_count + 1,
+                            ng_media_count = ng_media_count + ?,
+                            has_media = 1,
+                            cover_media_id = CASE
+                                WHEN cover_media_id IS NULL
+                                  OR ? = 'run_completed'
+                                THEN ?
+                                ELSE cover_media_id
+                            END
+                        WHERE run_id = ?
+                        """,
+                        (
+                            1 if row["purpose"] == "operation_error" else 0,
+                            row["purpose"],
+                            media_id,
+                            row["run_id"],
+                        ),
+                    )
+            self._media_database_paths.pop(media_id, None)
+
+    def fail_media(self, media_id: str, message: str) -> None:
+        database_path = self._media_database_paths.get(media_id)
+        if not database_path:
+            return
+        with self.lock:
+            with self._connect_path(database_path) as conn:
+                conn.execute(
+                    """
+                    UPDATE sop_media
+                    SET
+                        storage_status = 'failed',
+                        error_message = ?
+                    WHERE media_id = ?
+                      AND storage_status = 'pending'
+                    """,
+                    (
+                        str(message)[:1000],
+                        media_id,
+                    ),
+                )
+            self._media_database_paths.pop(media_id, None)
+
+    # =========================================================
     # Event helper
     # =========================================================
 
@@ -2204,13 +2683,14 @@ class SOPResultStore:
         details: dict,
         step_run_id: str | None = None,
         cycle_run_id: str | None = None,
-    ) -> None:
+    ) -> dict | None:
 
         if not self.current_run_id:
-            return
+            return None
 
+        run_id = self.current_run_id
         with self._connect() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """
                 INSERT INTO sop_events (
                     run_id,
@@ -2234,7 +2714,7 @@ class SOPResultStore:
                 )
                 """,
                 (
-                    self.current_run_id,
+                    run_id,
                     step_run_id,
                     cycle_run_id,
 
@@ -2248,6 +2728,25 @@ class SOPResultStore:
                     json_dumps(details),
                 ),
             )
+            event_id = int(cursor.lastrowid)
+
+        event_ref = {
+            "event_id": event_id,
+            "run_id": run_id,
+            "step_run_id": step_run_id,
+            "cycle_run_id": cycle_run_id,
+            "timestamp_ms": timestamp_ms,
+            "event_type": event_type,
+            "severity": severity,
+            "code": code,
+            "message": message,
+            "details": copy.deepcopy(details),
+            "database_path": self.db_path,
+            "storage_file": self.storage_file,
+        }
+        if self._event_collector is not None:
+            self._event_collector.append(event_ref)
+        return event_ref
 
     def _current_step_run_id(
         self,
