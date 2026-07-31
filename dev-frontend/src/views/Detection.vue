@@ -5,17 +5,14 @@
                 <el-main class="main-pane">
                     <div class="camera-layout">
                         <div class="camera-item-top" :class="{ 'is-connected': stream.connected }"/>
-
                         <div class="camera-item-header flex-center">
                             <div class="header-left flex-center">
                                 <div class="text-auto-hidden">{{ cameraName }}</div>
                                 <el-divider direction="vertical" />
-
                                 <template v-if="runtime.externalReference">
                                     <div class="text-auto-hidden">SN: {{ runtime.externalReference }}</div>
                                     <el-divider direction="vertical" />
                                 </template>
-
                                 <div class="text-auto-hidden" v-if="sopConfiguration.sopName">
                                     {{ sopConfiguration.sopName }}
                                 </div>
@@ -354,6 +351,7 @@ import { useI18n } from 'vue-i18n'
 import api from '@/api/index'
 import { MesAlertWTitle,MesConfirmWTitle } from '@/assets/js/secondpk'
 import { useAppStore } from '@/stores/store'
+import { ElMessage } from 'element-plus'
 
 const appStore = useAppStore()
 const { t, locale } = useI18n()
@@ -620,7 +618,7 @@ function normalizePositiveNumber(value) {
 function formatTimeoutDuration(seconds) {
     const safeSeconds = Math.max(0, Math.ceil(Number(seconds || 0)))
     if (safeSeconds < 60) {
-        return `${safeSeconds}秒`
+        return `${safeSeconds}s`
     }
 
     const minutes = Math.floor(safeSeconds / 60)
@@ -737,18 +735,18 @@ function getTagType(level) {
         success: 'success',
     }[level] || 'info'
 }
-
+//每个步骤的状态
 function getStepStatusLabel(status) {
     return {
-        success: '已完成',
-        process: '进行中',
-        error: '阻塞',
-        wait: '未开始',
-    }[status] || '未开始'
+        success: t('displaytext.done'),
+        process: t('displaytext.inprogress'),
+        error: t('displaytext.blocked'),
+        wait: t('displaytext.notstarted'),
+    }[status] || t('displaytext.notstarted')
 }
 
 function getStepDescription(step = {}) {
-    const base = `状态: ${getStepStatusLabel(step.status)} | 目标: ${step.target}`
+    const base = `${t('displaytext.status')}: ${getStepStatusLabel(step.status)} | ${t('displaytext.target')}: ${step.target}`
     return step.reason ? `${base} | ${step.reason}` : base
 }
 
@@ -758,21 +756,25 @@ function getNowTime() {
 
 function getSopReasonText(reason = '') {
     if (!reason) {
-        return '等待检测结果'
+        return t('displaytext.waitresult')
     }
 
     const wrongObjectMatch = reason.match(
         /^NG: Expected (.+), but (.+) entered (.+)$/,
     )
     if (wrongObjectMatch) {
-        return `异常: 当前工序应安装 ${wrongObjectMatch[1]}，检测到 ${wrongObjectMatch[2]} 进入 ${wrongObjectMatch[3]}`
+        return t('message.messagetext.sopReason.wrongObject', {
+            expected: wrongObjectMatch[1],
+            actual: wrongObjectMatch[2],
+            target: wrongObjectMatch[3],
+        })
     }
 
     const replacements = [
-        ['NG: ', '异常: '],
-        ['Step timeout: ', '工序超时: '],
-        ['Waiting for region ', '等待区域 '],
-        ['Waiting for ', '等待目标 '],
+        ['NG: ', `${t('displaytext.failed')}: `],
+        ['Step timeout: ', `${t('displaytext.processtimeout')}: `],
+        ['Waiting for region ', `${t('displaytext.waitingforregion')}`],
+        ['Waiting for ', `${t('displaytext.waitingfor')}`],
     ]
 
     for (const [prefix, replacement] of replacements) {
@@ -782,19 +784,23 @@ function getSopReasonText(reason = '') {
     }
 
     if (reason.startsWith('Move ') && reason.includes(' into ')) {
-        const [objectName, regionName] = reason
-            .replace('Move ', '')
-            .split(' into ')
-        return `请将 ${objectName} 放入 ${regionName}`
+        const [objectName, regionName] = reason.replace('Move ', '').split(' into ');
+        return t('message.messagetext.moveInto', {
+            object: objectName,
+            region: regionName,
+        })
     }
 
     if (reason.includes(' entered ')) {
         const [objectName, regionName] = reason.split(' entered ')
-        return `${objectName} 已进入 ${regionName}`
+        return t('message.messagetext.enteredRegion', {
+            object: objectName,
+            region: regionName,
+        })
     }
 
     if (reason === 'All steps completed') {
-        return '全部工序已完成'
+        return t('displaytext.completedall')
     }
 
     return reason
@@ -814,7 +820,7 @@ function normalizeStep(step = {}, index = 0, runtimeStep = false) {
     return {
         ...step,
         id: step.id ?? index + 1,
-        name: step.name || `工序${index + 1}`,
+        name: step.name || `${t('interacting.step')}${index + 1}`,
         target: Number(step.target ?? 1),
         current: runtimeStep ? Number(step.matched_count ?? 0) : 0,
         status: runtimeStep ? mapSopStepStatus(step.state) : 'wait',
@@ -942,7 +948,7 @@ function syncSopAlert(sop = {}) {
     }
 
     const rawReason =
-        sop.reason || step?.last_reason || 'SOP 状态异常'
+        sop.reason || step?.last_reason || t('message.messagetext.unknownreason')
     const code = getSopAlertCode(rawReason)
     const alertKey = `${step?.id || 'sop'}|${code}|${rawReason}`
 
@@ -1183,7 +1189,13 @@ function closePeerConnection() {
         peerConnection.oniceconnectionstatechange = null
         peerConnection.close()
     } catch (error) {
-        console.warn('关闭 WebRTC 连接失败:', error)
+        MesAlertWTitle(
+            'warning',
+            t('message.warning'),
+            t('message.messagetext.webrtcCloseFailed'),
+            error.message || String(error),
+            'OK',
+        )
     } finally {
         peerConnection = null
     }
@@ -1211,7 +1223,13 @@ function closeResultSocket() {
         resultSocket.onerror = null
         resultSocket.close()
     } catch (error) {
-        console.warn('关闭结果 WebSocket 失败:', error)
+        MesAlertWTitle(
+            'warning',
+            t('message.warning'),
+            t('message.messagetext.resultSocketCloseFailed'),
+            error.message || String(error),
+            'OK',
+        )
     } finally {
         resultSocket = null
     }
@@ -1270,17 +1288,15 @@ function connectResultSocket() {
             try {
                 const payload = JSON.parse(data)
                 if (payload.ws_result) {
-                    console.log('接收到检测结果:', payload.ws_result)
                     applyDetectionResult(payload.ws_result)
                     if (payload.runtime_status) {
                         applyRuntimeStatus(payload.runtime_status)
                     }
                 } else if (payload.camera_status) {
-                    console.log('接收到相机状态:', payload.camera_status)
                     handleCameraStatus(payload.camera_status)
                 }
             } catch (error) {
-                console.warn('解析检测结果失败:', error)
+                ElMessage.warning(t('message.messagetext.resultParseError') + (error.message || String(error)))
             }
         }
 
@@ -1304,7 +1320,7 @@ function connectResultSocket() {
 
         resultSocket.onerror = scheduleResultSocketReconnect
     } catch (error) {
-        console.warn('连接结果 WebSocket 失败:', error)
+        ElMessage.warning(t('message.messagetext.resultSocketConnectError') + (error.message || String(error)))
         scheduleResultSocketReconnect()
     }
 }
@@ -1476,7 +1492,13 @@ async function startWebRtcStream() {
         )
     } catch (error) {
         if (isCurrentWebRtcAttempt(token)) {
-            console.warn('启动 WebRTC 视频流失败:', error)
+            MesAlertWTitle(
+                'error',
+                t('message.error'),
+                t('message.messagetext.webrtcStreamError1'),
+                error.message || String(error),
+                'OK',
+            )
             handleWebRtcError()
         }
     } finally {
@@ -1718,7 +1740,7 @@ function applyResetDetectionResult(response, clearHistory = false) {
     if (runtime.paused) {
         setStreamState(
             null,
-            '检测已暂停，工序已复位到第一步',
+            t('message.messagetext.successResetDetection'),
             true,
         )
     }
@@ -1843,8 +1865,8 @@ async function handleStopDetection() {
         await runDetectionAction({
         request: api.stopDetection,
 
-        title: '停止失败',
-        fallbackMessage: '无法停止检测运行时',
+        title: t('message.messagetext.failedstop'),
+        fallbackMessage: t('message.messagetext.cannotstop'),
 
         onSuccess: () => {
             /*

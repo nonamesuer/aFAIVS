@@ -109,7 +109,7 @@ class DetectionRuntime:
         self.camera.start()
         if not self.camera.wait_for_first_frame():
             self.camera.stop()
-            raise RuntimeError(f"摄像头 {self.camera_name} 已打开但未能读取画面")
+            raise RuntimeError(f"Camera {self.camera_name} has been opened but failed to read the frame")
         wait_for_trigger = self.external_mode or self.trigger_controller.requires_trigger
         self.detector.start(wait_for_trigger=wait_for_trigger)
         if not self.external_mode:
@@ -171,17 +171,17 @@ class DetectionRuntime:
         try:
             self.trigger_controller.stop()
         except Exception:
-            logger.exception("停止触发监听失败")
+            logger.exception("Failed to stop trigger listener")
 
         try:
             self.detector.stop()
         except Exception:
-            logger.exception("停止检测线程失败")
+            logger.exception("Failed to stop detection thread")
 
         try:
             self.camera.stop()
         except Exception:
-            logger.exception("停止摄像头线程失败")
+            logger.exception("Failed to stop camera thread")
 
     async def create_webrtc_answer(self, sdp: str, type_: str) -> dict[str, str]:
         pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=_build_ice_servers()))
@@ -710,7 +710,7 @@ class DetectorWorker:
             try:
                 self.hand_worker.stop()
             except Exception:
-                logger.exception("停止手部检测线程失败")
+                logger.exception("Stop hand detection thread failed")
             finally:
                 self.hand_worker = None
         with self.result_lock:

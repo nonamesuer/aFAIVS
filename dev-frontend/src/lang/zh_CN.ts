@@ -71,6 +71,7 @@ export default{
         rownumber:"\u884C\u53F7",
         step:"步骤",
         process:"工序",
+
     },
     config:{
         models:"模型",
@@ -327,6 +328,17 @@ export default{
             modbusConnectionSuccess:"Modbus-TCP 连接成功",
             modbusConnectionFailed:"Modbus-TCP 连接失败",
             externalStartFailed:"外部接口启动检测失败",
+            wrongObject:"异常: 当前工序应安装 {expected}，检测到 {actual} 进入 {target}",
+            moveInto:"请将 {object} 放入 {region}",
+            enteredRegion:"{object} 已进入 {region}",
+            completedall:"全部工序已完成",
+            unknownreason:"SOP 状态异常",
+            webrtcCloseFailed:"关闭 WebRTC 连接失败",
+            resultSocketCloseFailed:"关闭结果 WebSocket 失败",
+            resultParseError:"解析检测结果失败: ",
+            resultSocketConnectError:"连接结果 WebSocket 失败: ",
+            webrtcStreamError1:"WebRTC 视频流异常，请检查相机连接或重启软件或更换其他浏览器",
+            cannotstop:"无法停止检测运行时",
         },
 
     },
@@ -380,6 +392,15 @@ export default{
         feedbacksuccess:"发送成功",
         feedbackfailed:"发送失败",
         feedbackeventmessage:"{channel} {event}{status} {target}{detail}",
+        notstarted:"未开始",
+        inprogress:"进行中",
+        blocked:"阻塞",
+        done:"已完成",
+        status:"状态",
+        waitresult:"等待检测结果",
+        processtimeout:"工序超时",
+        waitingforregion:"等待区域",
+        waitingfor:"等待目标",
 
     },
     camera:{

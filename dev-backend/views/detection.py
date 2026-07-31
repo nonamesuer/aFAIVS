@@ -245,14 +245,14 @@ async def _stop_detection_runtime(
     try:
         await runtime.close_peer_connections()
     except Exception:
-        logger.exception("关闭 WebRTC 连接失败")
+        logger.exception("Failed to close WebRTC connection")
 
     try:
         # runtime.stop() 中包含线程 join，
         # 放到工作线程执行，避免阻塞 FastAPI 事件循环。
         await asyncio.to_thread(runtime.stop)
     except Exception:
-        logger.exception("停止检测运行时失败")
+        logger.exception("Failed to stop detection runtime")
 
 
 @api_detection.websocket("/ws/result")
@@ -293,7 +293,7 @@ async def offer(payload: OfferRequest):
     """WebRTC 信令接口：接收浏览器 offer，返回后端视频流 answer。"""
     runtime = get_runtime()
     if not runtime or not runtime.running:
-        raise HTTPException(status_code=409, detail="检测尚未启动")
+        raise HTTPException(status_code=409, detail="Detection not started")
     return await runtime.create_webrtc_answer(payload.sdp, payload.type)
 
 
@@ -302,7 +302,7 @@ def server_stream():
     """MJPEG 兜底流：Firefox 默认走这里，并限制帧率避免浏览器卡死。"""
     runtime = get_runtime()
     if not runtime or not runtime.running:
-        raise HTTPException(status_code=409, detail="检测尚未启动")
+        raise HTTPException(status_code=409, detail="Detection not started")
     return StreamingResponse(
         runtime.iter_server_camera_stream(),
         media_type="multipart/x-mixed-replace; boundary=frame",
@@ -321,7 +321,7 @@ def trigger_http(request: Request):
     """HTTP GET trigger. Only configured parameter names are required; values are dynamic."""
     runtime = get_runtime()
     if not runtime or not runtime.running:
-        return JSONResponse({"status": False, "msg": "检测尚未启动", "data": runtime_status()})
+        return JSONResponse({"status": False, "msg": "Detection not started", "data": runtime_status()})
     accepted, message = runtime.trigger_controller.trigger_http(request.query_params)
     return JSONResponse({"status": accepted, "msg": message, "data": runtime_status()})
 
@@ -361,11 +361,11 @@ async def external_start_detection(
         })
 
     if not sn:
-        return failed("SN 不能为空")
+        return failed("SN cannot be empty")
     if not sop_name:
-        return failed("SOP_NAME 不能为空")
+        return failed("SOP_NAME cannot be empty")
     if not camera_name:
-        return failed("CAP_NAME 不能为空")
+        return failed("CAP_NAME cannot be empty")
 
     try:
         resolved_sop_name, model_project, _definition = resolve_sop_model(
@@ -377,16 +377,16 @@ async def external_start_detection(
 
     model_path = os.path.join(get_models_path(), model_project)
     if not os.path.isdir(model_path):
-        return failed(f"模型 {model_project} 不存在")
+        return failed(f"Model {model_project} does not exist")
     onnx_files = sorted(
         name for name in os.listdir(model_path) if name.endswith(".onnx")
     )
     if not onnx_files or not os.path.isfile(os.path.join(model_path, "cache.json")):
-        return failed(f"模型 {model_project} 不完整，请检查 ONNX 和 cache.json")
+        return failed(f"Model {model_project} is incomplete, please check ONNX and cache.json")
 
     camera_index = get_camera_index(camera_name)
     if camera_index is None:
-        return failed(f"未找到摄像头 {camera_name}")
+        return failed(f"Camera {camera_name} not found")
 
     async with _external_start_lock:
         current = get_runtime()
@@ -404,13 +404,13 @@ async def external_start_detection(
             if same_runtime:
                 if not current.detector.waiting_for_trigger:
                     return failed(
-                        "当前已有 SOP 正在执行，请等待本次工序完成后再触发"
+                        "A SOP is currently in progress, please wait for it to complete before triggering the next one"
                     )
                 if not current.start_external_cycle(sn):
-                    return failed("外部触发未被运行时接受，请稍后重试")
+                    return failed("External trigger not accepted by runtime, please try again later")
                 _set_external_start_status(
                     "success",
-                    "已复用当前相机并启动下一件 SOP",
+                    "Reused the current camera and started the next SOP",
                     request_id=request_id,
                     sn=sn,
                     sop_name=resolved_sop_name,
@@ -418,19 +418,19 @@ async def external_start_detection(
                 )
                 return JSONResponse({
                     "status": True,
-                    "msg": "已启动下一件 SOP",
+                    "msg": "The next SOP has been initiated using the current camera and SOP",
                     "data": runtime_status(),
                 })
 
             if sop_state not in {"", "completed", "idle"}:
                 return failed(
-                    "当前已有 SOP 正在执行，不能切换 SOP 或摄像头"
+                    "A SOP is currently in progress, cannot switch SOP or camera"
                 )
             await _stop_detection_runtime(current)
 
         _set_external_start_status(
             "starting",
-            "正在启动摄像头和 SOP",
+            "Starting the camera and SOP",
             request_id=request_id,
             sn=sn,
             sop_name=resolved_sop_name,
@@ -451,16 +451,16 @@ async def external_start_detection(
                 _runtime = runtime
             await asyncio.to_thread(runtime.start, True)
             if not runtime.start_external_cycle(sn):
-                raise RuntimeError("摄像头已启动，但 SOP 未能接受外部触发")
+                raise RuntimeError("Camera started, but SOP did not accept external trigger")
         except Exception as exc:
-            logger.exception("外部接口启动检测失败")
+            logger.exception("Failed to start detection via external interface")
             if runtime is not None:
                 await _stop_detection_runtime(runtime)
             return failed(str(exc))
 
         _set_external_start_status(
             "success",
-            "摄像头和 SOP 启动成功",
+            "Camera and SOP started successfully",
             request_id=request_id,
             sn=sn,
             sop_name=resolved_sop_name,
@@ -468,7 +468,7 @@ async def external_start_detection(
         )
         return JSONResponse({
             "status": True,
-            "msg": "外部检测启动成功",
+            "msg": "External detection started successfully",
             "data": runtime_status(),
         })
 
@@ -524,14 +524,14 @@ def pause_detection():
     if not runtime or not runtime.running:
         return JSONResponse({
             "status": False,
-            "msg": "检测尚未启动",
+            "msg": "Detection has not started",
             "data": runtime_status(),
         })
 
     if runtime.paused:
         return JSONResponse({
             "status": True,
-            "msg": "检测已经处于暂停状态",
+            "msg": "Detection is already paused",
             "data": runtime_status(),
         })
 
@@ -540,13 +540,13 @@ def pause_detection():
     if not success:
         return JSONResponse({
             "status": False,
-            "msg": "暂停检测失败",
+            "msg": "Failed to pause detection",
             "data": runtime_status(),
         })
 
     return JSONResponse({
         "status": True,
-        "msg": "检测已暂停",
+        "msg": "Detection paused",
         "data": runtime_status(),
     })
 
@@ -557,14 +557,14 @@ def resume_detection():
     if not runtime or not runtime.running:
         return JSONResponse({
             "status": False,
-            "msg": "检测尚未启动",
+            "msg": "Detection has not started",
             "data": runtime_status(),
         })
 
     if not runtime.paused:
         return JSONResponse({
             "status": True,
-            "msg": "检测已经处于运行状态",
+            "msg": "Detection is already running",
             "data": runtime_status(),
         })
 
@@ -573,13 +573,13 @@ def resume_detection():
     if not success:
         return JSONResponse({
             "status": False,
-            "msg": "继续检测失败",
+            "msg": "Failed to resume detection",
             "data": runtime_status(),
         })
 
     return JSONResponse({
         "status": True,
-        "msg": "检测已继续",
+        "msg": "Detection resumed",
         "data": runtime_status(),
     })
 
@@ -594,7 +594,7 @@ def reset_detection():
     if not runtime or not runtime.running:
         return JSONResponse({
             "status": False,
-            "msg": "检测尚未启动，无法复位",
+            "msg": "Detection has not started, cannot reset",
             "data": runtime_status(),
         })
 
@@ -603,7 +603,7 @@ def reset_detection():
     if result is None:
         return JSONResponse({
             "status": False,
-            "msg": "检测复位失败",
+            "msg": "Failed to reset detection",
             "data": runtime_status(),
         })
 
@@ -612,7 +612,7 @@ def reset_detection():
 
     return JSONResponse({
         "status": True,
-        "msg": "工序已复位到第一步",
+        "msg": "SOP has been reset to the first step",
         "data": data,
     })
 @api_detection.get("/stop_detection")
@@ -626,7 +626,7 @@ async def stop_detection():
 
     return JSONResponse({
         "status": True,
-        "msg": "检测已停止",
+        "msg": "Detection stopped",
         "data": runtime_status(),
     })
 ##

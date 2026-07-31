@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from module.sop_rules import (
+from module._sop_rules import (
     has_hand_tracking,
     normalize_object_detection,
     normalized_hand_points,
@@ -448,9 +448,7 @@ class SOPStateMachine:
         return max(counts) if counts else 0
 
     def start(self) -> None:
-        print("Starting SOP:", self.steps)
         if not self.steps:
-            print("空")
             self.state = SOPRunState.FAILED
             self.last_reason = "SOP steps is empty"
             return

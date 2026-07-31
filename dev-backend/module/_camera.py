@@ -161,7 +161,7 @@ class CameraManager:
             capture.release()
 
             raise RuntimeError(
-                f"无法打开摄像头 index={index}"
+                f"Unable to open camera index={index}"
             )
 
         report = configure_capture(
@@ -380,7 +380,7 @@ class CameraManager:
 
                 except Exception:
                     logger.exception(
-                        "释放摄像头失败"
+                        "Failed to release camera"
                     )
 
         if (
