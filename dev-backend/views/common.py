@@ -44,142 +44,35 @@ def get_login_user():
 
 @api_common.get("/get_device")
 async def get_device():
-
-    devices = (
-        graph.get_input_devices()
-    )
-
-    return {
-        "camera": devices
-    }
-
-
-@api_common.websocket(
-    "/ws/video_streaming"
-)
-async def websocket_endpoint(
-    websocket: WebSocket,
-    camera_id: int,
-    mode: str = "display",
-):
-
+    devices = graph.get_input_devices()
+    return {"camera": devices}
+@api_common.websocket("/ws/video_streaming")
+async def websocket_endpoint(websocket: WebSocket, camera_id: int):
     await websocket.accept()
-    preview_mode = (
-        "manual-region"
-        if mode == "manual-region"
-        else "display"
-    )
-    stream_key = f"{camera_id}:{preview_mode}"
-
-    state = camera_streams.setdefault(
-        stream_key,
-        {
-            "capture": None,
-            "clients": set(),
-            "active": False,
-            "camera_name": None,
-            "settings": None,
-            "capture_report": None,
-            "crop_display":
-                preview_mode != "manual-region",
-            "capture_lock":
-                threading.Lock(),
-        },
-    )
-
-    state["clients"].add(
-        websocket
-    )
-
+    if camera_id not in module._video_stream.camera_streams:
+        camera_streams[camera_id] = {"capture": None,"clients": set(),"active": False}
+    camera_streams[camera_id]["clients"].add(websocket)
     try:
-
-        if not state["active"]:
-
-            devices = (
-                graph.get_input_devices()
-            )
-
-            if (
-                camera_id < 0
-                or camera_id
-                >= len(devices)
-            ):
-                raise RuntimeError(
-                    (
-                        "Camera index "
-                        f"{camera_id} "
-                        "is not available"
-                    )
-                )
-
-            camera_name = (
-                devices[camera_id]
-            )
-
-            settings = (
-                load_camera_settings(
-                    camera_name
-                )
-            )
-
-            capture = cv2.VideoCapture(
-                camera_id,
-                cv2.CAP_DSHOW,
-            )
-
-            if not capture.isOpened():
-
-                capture.release()
-
-                raise RuntimeError(
-                    (
-                        f"Camera "
-                        f"{camera_name} "
-                        "is not available"
-                    )
-                )
-
-            report = configure_capture(
-                capture,
-                settings,
-                target_fps=30.0,
-            )
-
-            state.update(
-                {
-                    "capture":
-                        capture,
-
-                    "active":
-                        True,
-
-                    "camera_name":
-                        camera_name,
-
-                    "settings":
-                        settings,
-
-                    "capture_report":
-                        report,
-                }
-            )
-
-            logger.info(
-                (
-                    "Preview camera %s "
-                    "settings=%s report=%s"
-                ),
-                camera_name,
-                settings.to_dict(),
-                report,
-            )
-
-            asyncio.create_task(
-                stream_camera(
-                    stream_key
-                )
-            )
-
+        if not camera_streams[camera_id]["active"]:
+            camera_streams[camera_id]["active"] = True
+            camera_streams[camera_id]["capture"] = cv2.VideoCapture(camera_id,cv2.CAP_DSHOW)
+            if not camera_streams[camera_id]["capture"].isOpened():
+                logger.error(f"Unable to open camera {camera_id}")
+                camera_streams[camera_id]["active"] = False
+                camera_streams[camera_id]["clients"].remove(websocket)  # 移除当前客户端
+                raise RuntimeError(f"Camera {camera_id} is not available")
+            devices = graph.get_input_devices()
+            camera_name = devices[camera_id] if camera_id < len(devices) else None
+            area,clarity = None,50
+            if camera_name:
+                config_datas = get_main_config()
+                cameraResolution = config_datas.get("cameraResolution", {}).get(camera_name, {})
+                if cameraResolution:
+                    camera_streams[camera_id]["capture"].set(cv2.CAP_PROP_FRAME_WIDTH, cameraResolution['width'])
+                    camera_streams[camera_id]["capture"].set(cv2.CAP_PROP_FRAME_HEIGHT, cameraResolution['height'])
+                    area = cameraResolution.get('area', None)
+                    clarity = cameraResolution.get('clarity', 50)
+            asyncio.create_task(stream_camera(camera_id, area, clarity))
         while True:
             await asyncio.sleep(1)
 
@@ -194,51 +87,12 @@ async def websocket_endpoint(
         )
 
     finally:
-
-        state = camera_streams.get(
-            stream_key
-        )
-
-        if state:
-
-            clients = state.get(
-                "clients",
-                set(),
-            )
-
-            clients.discard(
-                websocket
-            )
-
-            logger.info(
-                (
-                    "Client disconnected "
-                    "from camera %s. "
-                    "Remaining clients: %s"
-                ),
-                camera_id,
-                len(clients),
-            )
-
-            if not clients:
-
-                state["active"] = False
-
-                capture = state.get(
-                    "capture"
-                )
-
-                if capture is not None:
-                    capture_lock = state.get(
-                        "capture_lock"
-                    )
-                    if capture_lock is not None:
-                        with capture_lock:
-                            capture.release()
-                    else:
-                        capture.release()
-
-                camera_streams.pop(
-                    stream_key,
-                    None,
-                )
+        if camera_id in camera_streams:
+            camera_streams[camera_id]["clients"].remove(websocket)
+            logger.info(f"Client disconnected from camera {camera_id}. Remaining clients: {len(camera_streams[camera_id]['clients'])}")
+            # 如果没有客户端连接，则停止摄像头流
+            if not camera_streams[camera_id]["clients"]:
+                camera_streams[camera_id]["active"] = False
+                if camera_streams[camera_id]["capture"]:
+                    camera_streams[camera_id]["capture"].release()
+                del camera_streams[camera_id]  # 删除摄像头记录

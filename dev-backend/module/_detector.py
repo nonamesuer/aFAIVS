@@ -23,14 +23,6 @@ from module._box_style import (
     normalize_area_fill_alpha,
     should_fill_area,
 )
-from module._camera_settings import (
-    encode_jpeg,
-)
-from module._manual_regions import (
-    build_manual_region_detections,
-    normalize_manual_regions_config,
-    validate_sop_manual_region_references,
-)
 from PIL import ImageColor
 logger = logging.getLogger(__name__)
 
