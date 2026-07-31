@@ -471,6 +471,7 @@ class DetectorWorker:
                 continue
             frame = self.camera.get_latest_frame()
             if frame is not None:
+                self.media_recorder.buffer_video_frame(frame)
                 detection = self.detector.predict(frame) if self.detector else None
                 hands = None
                 # 只有当前步骤真的需要手部识别时才跑MediaPipe，减少不必要的开销
@@ -539,6 +540,8 @@ class DetectorWorker:
                     media_snapshot,
                 ),
             )
+        if completed_now:
+            self.media_recorder.request_storage_sync_when_idle()
 
         if completed_now and self.on_sop_completed is not None:
             try:
@@ -688,6 +691,7 @@ class DetectorWorker:
             with self.state_lock:
                 previous_run_id = self.result_store.current_run_id
                 self.result_store.finish_run(execution_status="reset", reason="Manual SOP reset")
+                self.media_recorder.request_storage_sync_when_idle()
                 self.result_store.start_run(trigger_source="reset", trigger_payload={"previous_run_id": previous_run_id},keep_session=True)
                 # start() 本身已经会清除所有步骤状态、
                 # matched_count、时间、失败状态和 current_index。

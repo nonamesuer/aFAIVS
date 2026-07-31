@@ -14,6 +14,7 @@ PARENT_DIR = os.path.dirname(CURRENT_DIR)
 LIB_PATH = os.path.join(PARENT_DIR, "lib")
 MODELS_PATH = os.path.join(PARENT_DIR, "models")
 RESULTS_PATH = os.path.join(PARENT_DIR, "results")
+LOCAL_RESULTS_PATH = os.path.join(PARENT_DIR, "local_results")
 STATIC_PATH = os.path.join(PARENT_DIR, "static")
 CONFIG_PATH = os.path.join(STATIC_PATH, "config.json")
 SOP_CONFIG_NAME = "sop_config.json"
@@ -49,6 +50,11 @@ DEFAULT_RESULT_MEDIA_CONFIG = {
     "saveNgAnnotatedImage": True,
     "saveStepSuccess": True,
     "saveRunCompleted": True,
+    "saveNgVideo": True,
+    "ngVideoBeforeSeconds": 8,
+    "ngVideoAfterSeconds": 5,
+    "ngVideoFps": 10,
+    "ngVideoMaxWidth": 1280,
     "imageFormat": "jpg",
     "jpegQuality": 90,
     "minFreeDiskPercent": 10,

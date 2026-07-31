@@ -171,6 +171,11 @@
         "imageFormat": "jpg",
         "jpegQuality": 90,
         "minFreeDiskPercent": 10,
-        "queueSize": 32
+        "queueSize": 32,
+        "saveNgVideo": true,
+        "ngVideoBeforeSeconds": 8,
+        "ngVideoAfterSeconds": 5,
+        "ngVideoFps": 10,
+        "ngVideoMaxWidth": 1280
     }
 }

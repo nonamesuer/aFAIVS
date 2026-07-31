@@ -55,6 +55,8 @@ export default {
     deleteSopConfig: requestWithPath("/delete_sop_config", "DELETE"),
     updateSopConfig: requestWithPath("/update_sop_config", "POST"),
     modifyConfig: requestWithPath("/modify_config", "POST"),//配置更新公共接口
+    getResultStorageStatus: requestWithPath("/result_storage/status", "GET"),
+    syncLocalResults: requestWithPath("/result_storage/sync", "POST"),
     deleteModel: requestWithPath("/delete_model", "DELETE"),//删除模型文件夹
     setBoxStyleConfig: requestWithPath("/set_box_style_config", "POST"),//设置标记框样式配置
     displayBoxStyleConfig: requestWithPath("/display_box_style_config", "POST"),//展示标记框样式配置

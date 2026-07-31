@@ -44,6 +44,31 @@
               <el-checkbox v-model="form.saveNgAnnotatedImage">
                 {{ $t('config.result_media.annotated_image') }}
               </el-checkbox>
+              <el-checkbox v-model="form.saveNgVideo">
+                {{ $t('config.result_media.ng_video') }}
+              </el-checkbox>
+              <el-row v-if="form.saveNgVideo" :gutter="12" class="video-settings">
+                <el-col :span="12">
+                  <el-form-item :label="$t('config.result_media.video_before')">
+                    <el-input-number v-model="form.ngVideoBeforeSeconds" :min="1" :max="30" :step="1" step-strictly style="width: 100%" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item :label="$t('config.result_media.video_after')">
+                    <el-input-number v-model="form.ngVideoAfterSeconds" :min="1" :max="30" :step="1" step-strictly style="width: 100%" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item :label="$t('config.result_media.video_fps')">
+                    <el-input-number v-model="form.ngVideoFps" :min="1" :max="25" :step="1" step-strictly style="width: 100%" />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item :label="$t('config.result_media.video_max_width')">
+                    <el-input-number v-model="form.ngVideoMaxWidth" :min="320" :max="3840" :step="160" step-strictly style="width: 100%" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
             </div>
           </div>
 
@@ -149,6 +174,11 @@ interface ResultMediaConfig {
   saveNgAnnotatedImage: boolean
   saveStepSuccess: boolean
   saveRunCompleted: boolean
+  saveNgVideo: boolean
+  ngVideoBeforeSeconds: number
+  ngVideoAfterSeconds: number
+  ngVideoFps: number
+  ngVideoMaxWidth: number
   imageFormat: 'jpg'
   jpegQuality: number
   minFreeDiskPercent: number
@@ -162,6 +192,11 @@ const defaults: ResultMediaConfig = {
   saveNgAnnotatedImage: true,
   saveStepSuccess: true,
   saveRunCompleted: true,
+  saveNgVideo: true,
+  ngVideoBeforeSeconds: 8,
+  ngVideoAfterSeconds: 5,
+  ngVideoFps: 10,
+  ngVideoMaxWidth: 1280,
   imageFormat: 'jpg',
   jpegQuality: 90,
   minFreeDiskPercent: 10,
@@ -194,6 +229,10 @@ const normalize = (
     Math.max(1, Number(value?.minFreeDiskPercent ?? 10)),
   ),
   queueSize: Math.min(256, Math.max(4, Number(value?.queueSize ?? 32))),
+  ngVideoBeforeSeconds: Math.min(30, Math.max(1, Number(value?.ngVideoBeforeSeconds ?? 8))),
+  ngVideoAfterSeconds: Math.min(30, Math.max(1, Number(value?.ngVideoAfterSeconds ?? 5))),
+  ngVideoFps: Math.min(25, Math.max(1, Number(value?.ngVideoFps ?? 10))),
+  ngVideoMaxWidth: Math.min(3840, Math.max(320, Number(value?.ngVideoMaxWidth ?? 1280))),
 })
 
 const syncForm = () => Object.assign(form, normalize(props.resultMediaConfig))
@@ -211,7 +250,8 @@ const handleSave = async () => {
     form.enabled &&
     form.saveOperationError &&
     !form.saveNgRawImage &&
-    !form.saveNgAnnotatedImage
+    !form.saveNgAnnotatedImage &&
+    !form.saveNgVideo
   ) {
     ElMessage.warning(t('config.result_media.ng_variant_required'))
     return
@@ -281,10 +321,16 @@ const handleClosed = () => {
 
 .nested-settings {
   display: flex;
+  flex-wrap: wrap;
   gap: 24px;
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.video-settings {
+  width: 100%;
+  margin-top: 4px;
 }
 
 .form-card :deep(.el-form-item:last-child) {

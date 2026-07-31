@@ -106,6 +106,36 @@
                     <span class="common-config-description">{{ $t('config.result_media.entry_description') }}</span>
                 </div>
             </div>
+            <div v-if="resultStorageStatus.pending" class="local-results-notice">
+                <div class="local-results-notice__content">
+                    <el-icon size="24"><WarningFilled /></el-icon>
+                    <div>
+                        <div class="local-results-notice__title">
+                            {{ $t('config.result_storage.local_pending_title') }}
+                        </div>
+                        <div class="local-results-notice__description">
+                            {{
+                              $t('config.result_storage.local_pending_description', {
+                                runs: resultStorageStatus.pendingRunCount,
+                                media: resultStorageStatus.pendingMediaCount,
+                                size: formattedPendingSize,
+                              })
+                            }}
+                        </div>
+                        <div v-if="!resultStorageStatus.configuredPathAvailable" class="local-results-notice__error">
+                            {{ $t('config.result_storage.target_unavailable') }}
+                        </div>
+                    </div>
+                </div>
+                <el-button
+                  type="warning"
+                  :loading="syncingLocalResults"
+                  :disabled="!resultStorageStatus.configuredPathAvailable"
+                  @click="handleSyncLocalResults"
+                >
+                    {{ $t('config.result_storage.sync_button') }}
+                </el-button>
+            </div>
             <!-- 工序指导配置 -->
             <el-divider content-position="left">
                 <template #default>
@@ -192,7 +222,7 @@
         <PathDialog
           v-model:visible="pathDialogVisible"
           v-model:path-config="pathConfig"
-          @saved="getModels"
+          @saved="handlePathSaved"
         />
         <BoxStyleDrawer
           v-model:visible="boxStyleVisible"
@@ -227,7 +257,7 @@ import { ref, onMounted,watch, nextTick, reactive, computed, onUnmounted } from 
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/store";
 import { ElMessage, FormInstance, FormRules } from "element-plus";
-import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer,Aim,CameraFilled } from "@element-plus/icons-vue";
+import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer,Aim,CameraFilled,WarningFilled } from "@element-plus/icons-vue";
 import { MesAlertWTitle, MesConfirmWTitle } from "@/assets/js/secondpk";
 import api from "@/api/index";
 import SopDialog from "@/components/SopDialog.vue";
@@ -390,10 +420,33 @@ const resultMediaConfig = ref({
   saveNgAnnotatedImage: true,
   saveStepSuccess: true,
   saveRunCompleted: true,
+  saveNgVideo: true,
+  ngVideoBeforeSeconds: 8,
+  ngVideoAfterSeconds: 5,
+  ngVideoFps: 10,
+  ngVideoMaxWidth: 1280,
   imageFormat: "jpg" as const,
   jpegQuality: 90,
   minFreeDiskPercent: 10,
   queueSize: 32,
+});
+const resultStorageStatus = reactive({
+  pending: false,
+  pendingRunCount: 0,
+  pendingMediaCount: 0,
+  pendingBytes: 0,
+  configuredPathAvailable: true,
+  configuredPathError: "",
+  syncInProgress: false,
+});
+const syncingLocalResults = ref(false);
+let resultStorageStatusTimer: number | undefined;
+const formattedPendingSize = computed(() => {
+  const bytes = Number(resultStorageStatus.pendingBytes || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 });
 // 参数配置相关
 const signalSetVisible = ref(false);
@@ -408,7 +461,18 @@ onMounted(async () => {
     // 配置中的 enableCamera 依赖相机列表，必须先完成设备读取。
     await getDevice();
     await getConfig();
+    await getResultStorageStatus();
+    resultStorageStatusTimer = window.setInterval(
+      getResultStorageStatus,
+      15000,
+    );
     getModels();
+});
+onUnmounted(() => {
+  if (resultStorageStatusTimer !== undefined) {
+    window.clearInterval(resultStorageStatusTimer);
+  }
+  closeCameraPreviewSocket();
 });
 watch(()=>modelsList.value,()=>{
   checkSopConfigModelsExist();
@@ -504,6 +568,46 @@ const getConfig = () => {
   })
     .catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_config"), error.message, t("button.ok")))
     .finally(() => { appStore.setLoading(false); });
+};
+const getResultStorageStatus = async () => {
+  try {
+    const response = await api.getResultStorageStatus({});
+    if (response.data?.status && response.data?.data) {
+      Object.assign(resultStorageStatus, response.data.data);
+    }
+  } catch (error) {
+    console.error("Failed to read result storage status", error);
+  }
+};
+const handleSyncLocalResults = async () => {
+  syncingLocalResults.value = true;
+  try {
+    const response = await api.syncLocalResults({});
+    const summary = response.data?.data;
+    if (!response.data?.status) {
+      ElMessage.error(response.data?.msg || t("config.result_storage.sync_failed"));
+    } else {
+      ElMessage.success(
+        t("config.result_storage.sync_success", {
+          runs: summary?.syncedRunCount || 0,
+          media: summary?.syncedMediaCount || 0,
+        }),
+      );
+    }
+  } catch (error: any) {
+    ElMessage.error(
+      error?.response?.data?.msg ||
+        error?.message ||
+        t("config.result_storage.sync_failed"),
+    );
+  } finally {
+    syncingLocalResults.value = false;
+    await getResultStorageStatus();
+  }
+};
+const handlePathSaved = async () => {
+  getModels();
+  await getResultStorageStatus();
 };
 const getModels = () => {
   appStore.setLoading(true);
@@ -943,6 +1047,35 @@ const handleChangeEnable = (value: boolean, sopName: string) => {
     font: inherit;
     transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     border-top:var(--bs-primary-color)  solid 6px;
+  }
+  .local-results-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-top: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--el-color-warning-light-5);
+    border-radius: 8px;
+    background: var(--el-color-warning-light-9);
+  }
+  .local-results-notice__content {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    color: var(--el-color-warning-dark-2);
+  }
+  .local-results-notice__title {
+    font-weight: 700;
+  }
+  .local-results-notice__description,
+  .local-results-notice__error {
+    margin-top: 4px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .local-results-notice__error {
+    color: var(--el-color-danger);
   }
   .common-config-entry:hover{
     background:var(--bs-card-bgcolor-hover);

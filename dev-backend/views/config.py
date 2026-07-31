@@ -14,6 +14,10 @@ from module._result_media import (
     normalize_result_media_config,
     validate_result_media_config,
 )
+from module._result_storage import (
+    get_result_storage_status,
+    sync_local_results,
+)
 from module._manual_regions import (
     find_manual_region_references,
     normalize_manual_region_profile,
@@ -1023,6 +1027,45 @@ async def modify_config(request:Request):
     except Exception as e:
         logger.error(f"Error modifying configuration: {e}")
         return {"status": False, "msg": str(e)}
+
+
+@api_config.get("/result_storage/status")
+def result_storage_status():
+    """Return pending local fallback data and configured-path availability."""
+    try:
+        return {
+            "status": True,
+            "data": get_result_storage_status(),
+        }
+    except Exception as exc:
+        logger.exception("Failed to read result storage status")
+        return {"status": False, "msg": str(exc)}
+
+
+@api_config.post("/result_storage/sync")
+def result_storage_sync():
+    """
+    Copy completed local fallback runs to the configured result path.
+
+    FastAPI runs this synchronous endpoint in its worker pool, so network and
+    SQLite I/O do not block the asyncio event loop or the detection thread.
+    """
+    try:
+        summary = sync_local_results()
+        return {
+            "status": summary["failedRunCount"] == 0,
+            "msg": (
+                "Local results synchronized successfully"
+                if summary["failedRunCount"] == 0
+                else "Some local results could not be synchronized"
+            ),
+            "data": summary,
+        }
+    except Exception as exc:
+        logger.exception("Failed to synchronize local results")
+        return {"status": False, "msg": str(exc)}
+
+
 class ModbusConnectionRequest(BaseModel):
     host: str = Field(min_length=1)
     port: int = Field(ge=1, le=65535)

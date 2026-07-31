@@ -12,7 +12,11 @@ import time
 import uuid
 from typing import Any
 
-from module._base import get_display_name, get_main_config
+from module._base import RESULTS_PATH, get_display_name, get_main_config
+from module._result_storage import (
+    request_auto_sync,
+    resolve_result_storage,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,14 +65,15 @@ class SOPResultStore:
         self.sop_config = sop_config or {}
 
         config = get_main_config()
-        result_path = (
+        configured_result_path = (
             config.get("paths", {}).get("resultPath")
-            or os.path.join(os.getcwd(), "results")
+            or RESULTS_PATH
         )
-
-        os.makedirs(result_path, exist_ok=True)
-
-        self.result_path = os.path.abspath(result_path)
+        storage = resolve_result_storage(configured_result_path)
+        self.configured_result_path = storage.configured_path
+        self.result_path = storage.active_path
+        self.using_local_fallback = storage.using_local_fallback
+        self.storage_fallback_reason = storage.fallback_reason
         self.history_path = os.path.join(self.result_path, "history")
         self.media_path = os.path.join(self.result_path, "media")
         os.makedirs(self.history_path, exist_ok=True)
@@ -2489,6 +2494,9 @@ class SOPResultStore:
         height: int,
         mime_type: str,
         extension: str,
+        media_type: str = "image",
+        duration_ms: int | None = None,
+        fps: float | None = None,
     ) -> dict | None:
         run_id = str(event_ref.get("run_id") or "")
         database_path = str(event_ref.get("database_path") or self.db_path)
@@ -2505,11 +2513,12 @@ class SOPResultStore:
         filename = (
             f"{media_id}_{purpose}_{variant}.{safe_extension}"
         )
+        media_folder = "clips" if media_type == "video" else "images"
         relative_path = os.path.join(
             "media",
             *period_path.split("/"),
             run_id,
-            "images",
+            media_folder,
             filename,
         )
         relative_path_db = relative_path.replace(os.sep, "/")
@@ -2537,13 +2546,16 @@ class SOPResultStore:
                         mime_type,
                         width,
                         height,
+                        duration_ms,
+                        fps,
                         storage_status,
                         created_at_ms
                     )
                     VALUES (
                         ?, ?, ?, ?, ?,
                         ?,
-                        'image',
+                        ?,
+                        ?, ?,
                         ?, ?,
                         ?, ?,
                         ?, ?,
@@ -2558,12 +2570,15 @@ class SOPResultStore:
                         event_ref.get("cycle_run_id"),
                         event_ref.get("event_id"),
                         captured_at_ms,
+                        media_type,
                         purpose,
                         variant,
                         relative_path_db,
                         mime_type,
                         width,
                         height,
+                        duration_ms,
+                        fps,
                         now_ms(),
                     ),
                 )
@@ -2646,6 +2661,11 @@ class SOPResultStore:
                         ),
                     )
             self._media_database_paths.pop(media_id, None)
+
+    def request_storage_sync(self) -> None:
+        if not self.using_local_fallback:
+            return
+        request_auto_sync(self.configured_result_path)
 
     def fail_media(self, media_id: str, message: str) -> None:
         database_path = self._media_database_paths.get(media_id)
