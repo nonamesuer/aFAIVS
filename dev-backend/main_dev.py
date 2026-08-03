@@ -9,6 +9,7 @@ from views.detection import register_detection
 from views.config import api_config,api_config_public
 from views.log import api_log
 from views.auth import api_auth
+from views.results import api_results
 import sys
 
 
@@ -55,3 +56,4 @@ register_detection(app)
 app.include_router(api_config,tags=["CONFIG"])
 app.include_router(api_config_public,tags=["PUBLIC CONFIG"])
 app.include_router(api_log,tags=["LOG"])
+app.include_router(api_results,tags=["RESULTS"])

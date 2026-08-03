@@ -50,6 +50,12 @@ export default {
     getLog: requestWithPath("/sys/error_log", "GET"),
     clearLog: requestWithPath("/sys/error_log/clear", "GET"),
     downloadLog: `${base_url}/sys/error_log/download`,
+    //历史结果
+    getResults: requestWithPath("/results", "GET"),
+    getResultOverview: requestWithPath("/results/overview", "GET"),
+    getResultDetail: (runId) => axios.get(`${base_url}/results/${encodeURIComponent(runId)}`),
+    getResultMedia: (runId, mediaId, download = false) => axios.get(`${base_url}/results/${encodeURIComponent(runId)}/media/${encodeURIComponent(mediaId)}`,{params:{download},responseType:"blob"}),
+    exportResults: (params) => axios.get(`${base_url}/results/export`,{params,responseType:"blob",timeout:120000}),
     //配置相关
     openModelFolder: requestWithPath("/open_models_folder", "GET"),
     uploadModelArchive: (formData, overwrite = false) =>

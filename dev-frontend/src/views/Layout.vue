@@ -205,17 +205,7 @@ const changeMenuBottom = async (item) => {
   }else if (item === "3") {
     window.open("#/logs", "_blank");
   }else if (item === "4") {
-    api.openResult()
-      .then((res) => {
-        if (res.data.status) {
-          ElMessage({message: t("message.messagetext.successopen"),type: "success",});
-        } else {
-          MesAlertWTitle("error",t("message.error"),t("message.messagetext.failedopen"),res.data.msg,t("button.ok"));
-        }
-      })
-      .catch((error) => {
-        MesAlertWTitle("error",t("message.error"),t("message.messagetext.failedopen"),error.message,t("button.ok"));
-      });
+    window.open("#/results","_blank");
   }
 };
 const applyAuthStatus = (status: any) => {loginEnabled.value = Boolean(status?.loginEnabled);authenticated.value = Boolean(status?.authenticated);currentUser.value = status?.user || null;loginUser.value = status?.user?.name || "User";if (!canAccessAdminMenus.value && Number(currentMenu.value) !== 0) {currentMenu.value = "0";currentComponent.value = Detection;}};

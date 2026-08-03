@@ -9,10 +9,16 @@ const router = createRouter({
       name: 'layout',
       component: () => import('../views/Layout.vue'),
     },
-     {
+    {
       path: '/logs',
       name: 'log',
       component: () => import('../views/log.vue'),
+      meta: { requiresAdmin: true },
+    },
+    {
+      path: '/results',
+      name: 'results',
+      component: () => import('../views/Results.vue'),
       meta: { requiresAdmin: true },
     },
     {
