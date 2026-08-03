@@ -19,7 +19,7 @@
             <template #title>{{ t(`menu.${item.title}`) }}</template>
           </el-menu-item>
         </el-menu>
-        <el-menu :collapse-transition="false" class="el-menu-vertical-demo menu-bottom el-menu-vertical-bottom" :collapse="isCollapse" background-color="#2e3033" active-text-color="#fff" text-color="#fff" style="border-right: none;overflow-y: auto;" @select="changeMenuBottom">
+        <el-menu v-if="canAccessAdminMenus" :collapse-transition="false" class="el-menu-vertical-demo menu-bottom el-menu-vertical-bottom" :collapse="isCollapse" background-color="#2e3033" active-text-color="#fff" text-color="#fff" style="border-right: none;overflow-y: auto;" @select="changeMenuBottom">
           <el-menu-item index="4" style="--el-menu-item-font-size: 16px">
             <el-icon><Clock /></el-icon>
             <template #title>{{ $t("menu.historyresult") }}</template>
@@ -41,7 +41,7 @@
       <el-container>
         <el-header height="50px">
           <div class="header-left">
-            <b>{{ $t(`menu.${menuItems[currentMenu].title}`) }}</b>
+            <b>{{ $t(`menu.${menuItems[Number(currentMenu)]?.title || 'detect'}`) }}</b>
             <el-button v-show="refreshAvalible" :icon="RefreshRight"  circle style="margin-left: 0"  @click="refreshCurrentComponent" :title="$t('button.title.refreshpage')"/>
           </div>
           <div class="header-right">
@@ -59,12 +59,12 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-dropdown trigger="click" style="cursor: pointer">
+            <el-dropdown trigger="click" style="cursor: pointer" @command="handleUserCommand">
               <span class="el-dropdown-link">
                 <el-icon class="el-icon--right" style="vertical-align: middle; margin-right: 10px" ><Avatar /></el-icon>{{ loginUser }}
               </span>
               <template #dropdown>
-                <el-dropdown-menu> </el-dropdown-menu>
+                <el-dropdown-menu><el-dropdown-item v-if="loginEnabled && authenticated" command="logout" divided>{{ $t('auth.logout') }}</el-dropdown-item></el-dropdown-menu>
               </template>
             </el-dropdown>
           </div>
@@ -99,10 +99,11 @@
         <p><b>邮箱：</b>Aiguo.LI@boschrexroth.com.cn</p>
       </div>
     </el-dialog>
+    <LoginDialog :visible="loginDialogVisible" @logged-in="handleLoggedIn" />
   </div>
 </template>
 <script lang="ts" setup>
-import { ref, markRaw, onBeforeMount, onMounted, reactive, shallowRef } from "vue";
+import { ref, markRaw, onBeforeMount, onMounted, onBeforeUnmount, reactive, shallowRef, computed } from "vue";
 import { FullScreen,Camera,Expand,VideoCamera,RefreshRight,Setting,Connection,DataLine,} from "@element-plus/icons-vue";
 import { useAppStore } from "@/stores/store";
 import { useI18n } from "vue-i18n";
@@ -111,6 +112,8 @@ import Config from "./Config.vue";
 import Detection from "./Detection.vue";
 import api from "@/api/index";
 import { ElMessage } from "element-plus";
+import LoginDialog from "@/components/LoginDialog.vue";
+import { clearAuthToken } from "@/api/request";
 const toggleFullscreen = () => {
   if (!document.fullscreenElement) {
     // (fullscreenElement.value || document.body)
@@ -132,14 +135,16 @@ const isCollapse = ref(false); //sider menu open&hide
 const currentMenu = ref("0"); //pagr title
 const currentLanguage = ref("English"); //current language
 const loginUser = ref("User"); //default User
+const loginEnabled = ref(false);const authenticated = ref(false);const currentUser = ref<any>(null);const canAccessAdminMenus = computed(() => !loginEnabled.value || currentUser.value?.role === "admin");const loginDialogVisible = computed(() => loginEnabled.value && !authenticated.value);
 const refreshAvalible = ref(true); //refresh avalible
 const { locale } = useI18n();
 const { t } = useI18n();
 const runMethod=ref("electron")
-const menuItems = ref([
+const allMenuItems = [
   {icon: markRaw(VideoCamera),title: "detect",component: markRaw(Detection),},
   { icon: markRaw(Setting), title: "config", component: markRaw(Config) },
-]);
+];
+const menuItems = computed(() => canAccessAdminMenus.value ? allMenuItems : allMenuItems.slice(0,1));
 // 当前选中的组件
 const currentComponent = shallowRef(null);
 // 已加载的组件缓存（避免重复加载）
@@ -151,11 +156,11 @@ const refreshCurrentComponent = () => {
     componentRefreshKeys[menuKey]++; // 只增加当前组件的刷新计数
   }
 };
-onBeforeMount(() => {
+onBeforeMount(async () => {
   currentLanguage.value = appStore.locale == "zh" ? "Chinese" : "English";
   locale.value = appStore.locale;
   isCollapse.value = appStore.isCollapse;
-  getLoginUse();
+  await initializeAuth();
   // loadedComponents.add(Collect);
   currentComponent.value = Detection;
   menuItems.value.forEach((item) => {
@@ -168,7 +173,9 @@ onMounted(() => {
 } else {
   runMethod.value = "browser";
 }
+window.addEventListener("faivs-auth-required",initializeAuth);window.addEventListener("faivs-auth-state-changed",initializeAuth);
 });
+onBeforeUnmount(() => {window.removeEventListener("faivs-auth-required",initializeAuth);window.removeEventListener("faivs-auth-state-changed",initializeAuth);});
 const langChange = (lang: string) => {
   appStore.setLocale(locale, lang);
   currentLanguage.value = appStore.locale == "zh" ? "Chinese" : "English";
@@ -211,15 +218,13 @@ const changeMenuBottom = async (item) => {
       });
   }
 };
-const getLoginUse = () => {
-  api
-    .getLoginUser()
-    .then((res) => {
-      loginUser.value = res.data.username;
-    })
-    .catch((error) => {
-      MesAlertWTitle("warning",t("message.warning"),t("message.messagetext.failed_get_user_title"),t("message.messagetext.failed_get_user_body"),t("button.ok"));
-    });
+const applyAuthStatus = (status: any) => {loginEnabled.value = Boolean(status?.loginEnabled);authenticated.value = Boolean(status?.authenticated);currentUser.value = status?.user || null;loginUser.value = status?.user?.name || "User";if (!canAccessAdminMenus.value && Number(currentMenu.value) !== 0) {currentMenu.value = "0";currentComponent.value = Detection;}};
+const initializeAuth = async () => {try {const response = await api.getAuthStatus({});applyAuthStatus(response.data?.data);} catch {clearAuthToken();loginEnabled.value = true;authenticated.value = false;currentUser.value = null;loginUser.value = "User";}};
+const handleLoggedIn = (user: any) => {loginEnabled.value = true;authenticated.value = true;currentUser.value = user;loginUser.value = user?.name || "User";currentMenu.value = "0";currentComponent.value = Detection;};
+const handleUserCommand = async (command: string) => {
+  if (command !== "logout") return;
+  try {const response = await api.logout({});if (!response.data?.status) {MesAlertWTitle("warning",t("auth.logout_failed"),t("auth.logout_blocked_title"),t("auth.logout_blocked_description"),t("button.ok"));return;}clearAuthToken();authenticated.value = false;currentUser.value = null;loginUser.value = "User";currentMenu.value = "0";currentComponent.value = Detection;}
+  catch (error: any) {MesAlertWTitle("error",t("auth.logout_failed"),t("auth.logout_failed"),error?.response?.data?.detail || error?.message,t("button.ok"));}
 };
 const openBrowser=()=>{
   api.openBrowser()

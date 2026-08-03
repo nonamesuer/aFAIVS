@@ -301,7 +301,7 @@ const handleCurrentChange = (val) => {
 const downloadLogs = async () => {
   downloading.value = true;
   try {
-    const response = await fetch(api.downloadLog);
+    const response = await fetch(api.downloadLog,{headers: api.authHeaders()});
     if (!response.ok) {
       throw new Error(
         t("log.downloadfailed", { error: response.statusText })

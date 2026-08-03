@@ -8,6 +8,7 @@ import cv2
 
 from fastapi import (
     APIRouter,
+    Request,
     WebSocket,
 )
 
@@ -25,6 +26,7 @@ from module._video_stream import (
     camera_streams,
     stream_camera,
 )
+from module._auth import auth_status
 
 
 logger = logging.getLogger(__name__)
@@ -33,13 +35,9 @@ api_common = APIRouter()
 
 
 @api_common.get("/get_loginUser")
-def get_login_user():
-
-    username = get_display_name()
-
-    return {
-        "username": username
-    }
+def get_login_user(request: Request):
+    status = auth_status(str(request.headers.get("X-Session-Token") or "").strip());user = status.get("user") or {}
+    return {"username": user.get("name") or "","loginEnabled": status["loginEnabled"],"authenticated": status["authenticated"],"user": status.get("user")}
 
 
 @api_common.get("/get_device")

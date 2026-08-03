@@ -17,6 +17,7 @@ RESULTS_PATH = os.path.join(PARENT_DIR, "results")
 LOCAL_RESULTS_PATH = os.path.join(PARENT_DIR, "local_results")
 STATIC_PATH = os.path.join(PARENT_DIR, "static")
 CONFIG_PATH = os.path.join(STATIC_PATH, "config.json")
+USERS_PATH = os.path.join(STATIC_PATH, "users.json")
 SOP_CONFIG_NAME = "sop_config.json"
 MEDIAPIPE_MODEL_PATH = os.path.join(LIB_PATH, "hand_landmarker.task")
 DEFAULT_RESOLUTIONS=[[320,240],[640,480],[800,600],[1024,768],[1280,720],[1280,960],[1600,1200],[1920,1080],[2048,1536],
@@ -62,6 +63,7 @@ DEFAULT_RESULT_MEDIA_CONFIG = {
 }
 DEFAULT_BOX_COLOR = {"default":(0, 123, 192)}
 DEFAULT_MAIN_CONFIG = {
+    "accountLogin": {"enabled": False},
     "paths": {
         "modelPath": MODELS_PATH,
         "sopPath": STATIC_PATH,

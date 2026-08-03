@@ -12,7 +12,8 @@ import time
 import uuid
 from typing import Any
 
-from module._base import RESULTS_PATH, get_display_name, get_main_config
+from module._base import RESULTS_PATH, get_main_config
+from module._auth import get_current_operator_name
 from module._result_storage import (
     request_auto_sync,
     resolve_result_storage,
@@ -61,6 +62,7 @@ class SOPResultStore:
         self.project_name = project_name or ""
         self.model_name = model_name or ""
         self.camera_name = camera_name or ""
+        self.operator_name = get_current_operator_name()
 
         self.sop_config = sop_config or {}
 
@@ -653,7 +655,7 @@ class SOPResultStore:
 
                         self.model_name,
                         self.camera_name,
-                        get_display_name(),
+                        self.operator_name,
                         socket.gethostname(),
 
                         trigger_source,

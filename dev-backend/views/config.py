@@ -10,7 +10,7 @@ import numpy as np
 import base64
 import cv2
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi import APIRouter, Request,HTTPException,File, UploadFile
+from fastapi import APIRouter, Request,HTTPException,File, UploadFile, Depends
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from module._base import CONFIG_PATH,STATIC_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater,DEFAULT_BOX_STYLE_CONFIG,DEFAULT_HAND_STYLE_CONFIG
@@ -21,6 +21,7 @@ from module._model_archive import (
     ModelArchiveError,
     install_model_archive,
 )
+from module._auth import clear_sessions, has_admin_user, require_admin
 from module._step_feedback import validate_sop_step_feedback_config
 from module._box_style import normalize_area_fill_alpha
 from module._hand_detection import HandTracker
@@ -48,7 +49,8 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 from pymodbus.client import ModbusTcpClient
 logger = logging.getLogger(__name__)
-api_config = APIRouter()
+api_config = APIRouter(dependencies=[Depends(require_admin)])
+api_config_public = APIRouter()
 config_encryptor = ConfigEncryptor()
 MAX_CONFIG_UPLOAD_BYTES = 10 * 1024 * 1024
 
@@ -111,6 +113,9 @@ def _normalize_imported_main_config(config_data: object) -> dict:
     """验证并规范化导入的主配置"""
     if not isinstance(config_data, dict):raise ValueError("Main configuration must contain a JSON object.")
     normalized = ConfigUpdater(deepcopy(DEFAULT_MAIN_CONFIG)).update(deepcopy(config_data))
+    account_login = normalized.get("accountLogin")
+    if not isinstance(account_login,dict) or not isinstance(account_login.get("enabled"),bool):raise ValueError("accountLogin.enabled must be a boolean.")
+    if account_login["enabled"] and not has_admin_user():raise ValueError("At least one administrator is required before importing a configuration with account login enabled.")
     paths = normalized.get("paths")
     if not isinstance(paths, dict):raise ValueError("paths must be an object.")
     for field_name in ("modelPath", "sopPath", "resultPath"):
@@ -282,6 +287,7 @@ async def upload_configuration_file(config_type: str,file: UploadFile = File(...
             config_data = _normalize_imported_sop_config(config_data)
         target_path, _ = _managed_config_path(config_type)
         backup_path = _atomic_write_json(target_path, config_data)
+        if config_type == "main":clear_sessions()
         return JSONResponse({"status": True, "msg": "Configuration file imported successfully.", "data": {"configType": config_type, "sourceFilename": filename, "backupCreated": backup_path is not None, "backupFilename": (Path(backup_path).name if backup_path else None),},})
     except (UnicodeDecodeError,json.JSONDecodeError,ValueError) as exc:
         return JSONResponse({"status": False, "code": "INVALID_CONFIG_FILE", "msg": str(exc),})  
@@ -891,6 +897,7 @@ async def modify_config(request:Request):
         body = await request.json()
         if not isinstance(body, dict):
             return {"status": False, "msg": "Configuration payload must be an object"}
+        if "accountLogin" in body:return {"status": False,"msg": "Please change account login through User Management"}
         validation_error = validate_detection_integration_config(body)
         if validation_error:
             return {"status": False, "msg": validation_error}
@@ -963,7 +970,7 @@ def test_modbus_connection(payload: ModbusConnectionRequest):
         except Exception:
             logger.exception("Failed to close Modbus TCP test client")
 
-@api_config.post("/http/response_test")
+@api_config_public.post("/http/response_test")
 async def http_response_test(request: Request):
     """测试 HTTP 响应，返回请求的 JSON 数据和状态码。"""
     try:

@@ -5,13 +5,14 @@ import logging
 import os
 import time
 import uuid
-from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse,JSONResponse
 from pydantic import BaseModel
 
 from module._detector import DetectionRuntime
 from module._base import get_main_config,get_models_path,SopConfig,WEBSOCKET_CLIENTS,get_camera_index,CapStatus,DetectorStatus
 from module._sop_config import resolve_sop_model
+from module._auth import ensure_operator_available, require_authenticated
 logger = logging.getLogger(__name__)
 api_detection = APIRouter(prefix="/detection")
 _runtime_lock = threading.Lock()
@@ -360,6 +361,9 @@ async def external_start_detection(
             "data": runtime_status(),
         })
 
+    operator_available,_operator_name = ensure_operator_available()
+    if not operator_available:return failed("No operator is logged in")
+
     if not sn:
         return failed("SN cannot be empty")
     if not sop_name:
@@ -479,8 +483,11 @@ def start_detection(
     camera_name: str,
     sop_name: str | None = None,
     project_name: str | None = None,
+    _user: dict = Depends(require_authenticated),
 ):
     """Start a named SOP. project_name remains as a legacy alias."""
+    operator_available,_operator_name = ensure_operator_available()
+    if not operator_available:return JSONResponse({"status": False,"msg": "Please log in before starting detection"})
     try:
         resolved_sop_name, model_project, _definition = resolve_sop_model(
             SopConfig().get(),
@@ -518,7 +525,7 @@ def start_detection(
     return JSONResponse({"status":True,"msg":"Start detection successfully","data":runtime_status()})
 
 @api_detection.get("/pause_detection")
-def pause_detection():
+def pause_detection(_user: dict = Depends(require_authenticated)):
     runtime = get_runtime()
 
     if not runtime or not runtime.running:
@@ -551,7 +558,7 @@ def pause_detection():
     })
 
 @api_detection.get("/resume_detection")
-def resume_detection():
+def resume_detection(_user: dict = Depends(require_authenticated)):
     runtime = get_runtime()
 
     if not runtime or not runtime.running:
@@ -585,7 +592,7 @@ def resume_detection():
 
 
 @api_detection.post("/reset_detection")
-def reset_detection():
+def reset_detection(_user: dict = Depends(require_authenticated)):
     """
     只复位 SOP，不关闭摄像头、线程、WebRTC 和结果 WebSocket。
     """
@@ -616,7 +623,7 @@ def reset_detection():
         "data": data,
     })
 @api_detection.get("/stop_detection")
-async def stop_detection():
+async def stop_detection(_user: dict = Depends(require_authenticated)):
     """
     完整停止检测并释放所有资源。
     """

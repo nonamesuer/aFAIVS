@@ -1,4 +1,5 @@
 import axios from "./request";
+import { getAuthHeaders } from "./request";
 const base_url = "http://127.0.0.1:20253";
 const wsBaseUrl = base_url.replace(/^http/i, 'ws'); // 把 HTTP 后端地址转换为 WebSocket 地址。
 const requestWithPath = (path, type = "POST") => {
@@ -24,7 +25,16 @@ const requestWithPath = (path, type = "POST") => {
 };
 export default {
     baseUrl: base_url,
+    authHeaders: getAuthHeaders,
     getLoginUser: requestWithPath("/get_loginUser", "GET"),
+    getAuthStatus: requestWithPath("/auth/status", "GET"),
+    login: requestWithPath("/auth/login", "POST"),
+    logout: requestWithPath("/auth/logout", "POST"),
+    getUsers: requestWithPath("/auth/users", "GET"),
+    createUser: requestWithPath("/auth/users", "POST"),
+    updateUser: (employeeId, data) => axios.put(`${base_url}/auth/users/${encodeURIComponent(employeeId)}`,data),
+    deleteUser: (employeeId) => axios.delete(`${base_url}/auth/users/${encodeURIComponent(employeeId)}`),
+    setLoginEnabled: requestWithPath("/auth/settings", "PUT"),
     //检测相关
     startDetection: requestWithPath("/detection/start_detection", "GET"),
     pauseDetection: requestWithPath("/detection/pause_detection", "GET"),

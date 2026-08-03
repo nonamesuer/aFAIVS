@@ -6,8 +6,9 @@ import logging
 from logging.handlers import RotatingFileHandler
 from views.common import api_common
 from views.detection import register_detection
-from views.config import api_config
+from views.config import api_config,api_config_public
 from views.log import api_log
+from views.auth import api_auth
 import sys
 
 
@@ -49,6 +50,8 @@ def setup_logging():
 # 初始化日志
 setup_logging() 
 app.include_router(api_common,tags=["COMMON"])  
+app.include_router(api_auth,tags=["AUTH"])
 register_detection(app)
 app.include_router(api_config,tags=["CONFIG"])
+app.include_router(api_config_public,tags=["PUBLIC CONFIG"])
 app.include_router(api_log,tags=["LOG"])

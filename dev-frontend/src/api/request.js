@@ -1,4 +1,9 @@
 import axios from "axios"
+export const AUTH_TOKEN_KEY = "afaivs_session_token";
+export const getAuthToken = () => sessionStorage.getItem(AUTH_TOKEN_KEY) || "";
+export const setAuthToken = (token) => token ? sessionStorage.setItem(AUTH_TOKEN_KEY,token) : sessionStorage.removeItem(AUTH_TOKEN_KEY);
+export const clearAuthToken = () => sessionStorage.removeItem(AUTH_TOKEN_KEY);
+export const getAuthHeaders = () => getAuthToken() ? {"X-Session-Token": getAuthToken()} : {};
 const errorHandle = (status, info) => {
     switch (status) {
         case 400:
@@ -40,6 +45,7 @@ instance.interceptors.request.use(
         // if (config.method === "post") {
         //     config.data = JSON.stringify(config.data)
         // }
+        const token = getAuthToken();if (token) config.headers["X-Session-Token"] = token;
         return config; //config包含网络请求所有信息
     },
     error => Promise.reject(error)
@@ -51,6 +57,7 @@ instance.interceptors.response.use(
         const { response } = error;
         if (response) {
             errorHandle(response.status, response.info)
+            if (response.status === 401) {clearAuthToken();window.dispatchEvent(new CustomEvent("faivs-auth-required"));}
         } else {
             error.message = "后端服务连接中断"
             errorHandle(0, error.message)

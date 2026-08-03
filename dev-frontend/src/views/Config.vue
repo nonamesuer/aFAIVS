@@ -110,6 +110,11 @@
                     <span class="common-config-title">{{ $t('config.config_transfer.title') }}</span>
                     <span class="common-config-description">{{ $t('config.config_transfer.entry_description') }}</span>
                 </div>
+                <div class="common-config-entry" @click="userManagementDialogVisible = true">
+                    <el-icon class="common-config-icon"><UserFilled /></el-icon>
+                    <span class="common-config-title">{{ $t('config.user_management.title') }}</span>
+                    <span class="common-config-description">{{ $t('config.user_management.entry_description') }}</span>
+                </div>
             </div>
             <div v-if="resultStorageStatus.pending" class="local-results-notice">
                 <div class="local-results-notice__content">
@@ -263,6 +268,7 @@
           v-model:visible="configTransferDialogVisible"
           @imported="handleConfigImported"
         />
+        <UserManagementDialog v-model:visible="userManagementDialogVisible" />
   </div>
 </template>
 <script setup lang="ts">
@@ -270,7 +276,7 @@ import { ref, onMounted,watch, nextTick, reactive, computed, onUnmounted } from 
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/store";
 import { ElMessage, FormInstance, FormRules } from "element-plus";
-import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer,Aim,CameraFilled,WarningFilled,UploadFilled,DocumentCopy } from "@element-plus/icons-vue";
+import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer,Aim,CameraFilled,WarningFilled,UploadFilled,DocumentCopy,UserFilled } from "@element-plus/icons-vue";
 import { MesAlertWTitle, MesConfirmWTitle } from "@/assets/js/secondpk";
 import api from "@/api/index";
 import SopDialog from "@/components/SopDialog.vue";
@@ -284,6 +290,7 @@ import ManualRegionDialog from "@/components/ManualRegionDialog.vue";
 import ResultMediaDialog from "@/components/ResultMediaDialog.vue";
 import ModelUploadDialog from "@/components/ModelUploadDialog.vue";
 import ConfigTransferDialog from "@/components/ConfigTransferDialog.vue";
+import UserManagementDialog from "@/components/UserManagementDialog.vue";
 const appStore = useAppStore();
 const { t } = useI18n();
 const device1Ref = ref(null);
@@ -293,6 +300,7 @@ const currentMainModel = ref('');
 const modelsList = ref({}); 
 const modelUploadDialogVisible = ref(false);
 const configTransferDialogVisible = ref(false);
+const userManagementDialogVisible = ref(false);
 const cameraList = ref<string[]>([]);
 const labelColorVisible = ref(false);
 const currentMainLabels = ref<Record<string, string>>({});
@@ -658,6 +666,7 @@ const handleConfigImported = async (configType: "main" | "sop") => {
   await getConfig();
   await getModels();
   await getResultStorageStatus();
+  if (configType === "main") window.dispatchEvent(new CustomEvent("faivs-auth-state-changed"));
 };
 const handleChangeMainModel = (modelName: string, edit = false) => {
   appStore.setLoading(true);

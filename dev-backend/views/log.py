@@ -1,13 +1,14 @@
 import re
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from datetime import datetime
 from module._base import PARENT_DIR
 from pathlib import Path
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi import HTTPException
+from module._auth import require_admin
 import tempfile
 import shutil
-api_log = APIRouter()
+api_log = APIRouter(dependencies=[Depends(require_admin)])
 @api_log.get("/sys/error_log")
 def parse_log_file():
     log_entries = []
