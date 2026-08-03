@@ -42,6 +42,17 @@ export default {
     downloadLog: `${base_url}/sys/error_log/download`,
     //配置相关
     openModelFolder: requestWithPath("/open_models_folder", "GET"),
+    uploadModelArchive: (formData, overwrite = false) =>
+        axios.post(`${base_url}/models/upload`, formData, {
+            params: { overwrite },
+            timeout: 600000,
+        }),
+    downloadConfigFile: (configType) =>
+        axios.get(`${base_url}/config-files/${configType}/download`, {
+            responseType: "blob",
+        }),
+    uploadConfigFile: (configType, formData) =>
+        axios.post(`${base_url}/config-files/${configType}/upload`, formData),
     getModels: requestWithPath("/get_models", "GET"),
     getDevice: requestWithPath("/get_device", "GET"),
     getModelLabels: requestWithPath("/model/labels", "GET"),

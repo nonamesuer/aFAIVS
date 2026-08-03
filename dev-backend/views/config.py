@@ -1,11 +1,26 @@
 import logging
 import os
+import json
+import shutil
+import tempfile
+import uuid
+from copy import deepcopy
+from pathlib import Path
 import numpy as np
 import base64
 import cv2
-from fastapi.responses import JSONResponse  
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi import APIRouter, Request,HTTPException,File, UploadFile
-from module._base import CONFIG_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater,DEFAULT_BOX_STYLE_CONFIG,DEFAULT_HAND_STYLE_CONFIG
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
+from module._base import CONFIG_PATH,PARENT_DIR,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater,DEFAULT_BOX_STYLE_CONFIG,DEFAULT_HAND_STYLE_CONFIG
+from module._config_encryptor import ConfigEncryptor
+from module._model_archive import (
+    MAX_MODEL_ARCHIVE_BYTES,
+    ModelAlreadyExistsError,
+    ModelArchiveError,
+    install_model_archive,
+)
 from module._step_feedback import validate_sop_step_feedback_config
 from module._box_style import normalize_area_fill_alpha
 from module._hand_detection import HandTracker
@@ -34,6 +49,8 @@ from pydantic import BaseModel, Field
 from pymodbus.client import ModbusTcpClient
 logger = logging.getLogger(__name__)
 api_config = APIRouter()
+config_encryptor = ConfigEncryptor()
+MAX_CONFIG_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 def _configuration_integer(value, field_name: str) -> int:
@@ -108,6 +125,208 @@ def _hand_preview_points() -> dict[str, list[tuple[float, float]]]:
     return {"l": left_points, "r": right_points}
 
 
+def _normalize_imported_main_config(config_data: object) -> dict:
+    if not isinstance(config_data, dict):
+        raise ValueError("Main configuration must contain a JSON object.")
+
+    normalized = ConfigUpdater(deepcopy(DEFAULT_MAIN_CONFIG)).update(
+        deepcopy(config_data)
+    )
+
+    paths = normalized.get("paths")
+    if not isinstance(paths, dict):
+        raise ValueError("paths must be an object.")
+    for field_name in ("modelPath", "sopPath", "resultPath"):
+        value = paths.get(field_name)
+        if not isinstance(value, str):
+            raise ValueError(f"paths.{field_name} must be a string.")
+        paths[field_name] = value.strip()
+    if not isinstance(paths.get("saveDetectionDatasets"), bool):
+        raise ValueError("paths.saveDetectionDatasets must be a boolean.")
+
+    raw_resolutions = normalized.get("resolutions")
+    if not isinstance(raw_resolutions, list) or not raw_resolutions:
+        raise ValueError("resolutions must be a non-empty array.")
+    resolutions: list[list[int]] = []
+    for index, resolution in enumerate(raw_resolutions):
+        if not isinstance(resolution, (list, tuple)) or len(resolution) != 2:
+            raise ValueError(f"resolutions[{index}] must contain width and height.")
+        width, height = _validate_resolution_dimensions(
+            resolution[0],
+            resolution[1],
+        )
+        if [width, height] not in resolutions:
+            resolutions.append([width, height])
+    normalized["resolutions"] = resolutions
+
+    raw_camera_resolutions = normalized.get("cameraResolution")
+    if not isinstance(raw_camera_resolutions, dict):
+        raise ValueError("cameraResolution must be an object.")
+    camera_resolutions = {}
+    for camera_name, camera_config in raw_camera_resolutions.items():
+        if not isinstance(camera_config, dict):
+            raise ValueError(
+                f"cameraResolution.{camera_name} must be an object."
+            )
+        normalized_camera_name, normalized_camera_config = (
+            _normalize_camera_resolution(
+                {
+                    "cap_name": camera_name,
+                    **camera_config,
+                },
+                resolutions,
+            )
+        )
+        camera_resolutions[normalized_camera_name] = normalized_camera_config
+    normalized["cameraResolution"] = camera_resolutions
+
+    enable_camera = normalized.get("enableCamera")
+    if enable_camera is not None and not isinstance(enable_camera, str):
+        raise ValueError("enableCamera must be a string or null.")
+
+    box_style = normalized.get("boxStyle")
+    if not isinstance(box_style, dict):
+        raise ValueError("boxStyle must be an object.")
+    box_style["areaFillAlpha"] = normalize_area_fill_alpha(
+        box_style.get("areaFillAlpha"),
+        DEFAULT_BOX_STYLE_CONFIG["areaFillAlpha"],
+    )
+
+    normalized["handStyle"] = normalize_hand_style_config(
+        normalized.get("handStyle"),
+        DEFAULT_HAND_STYLE_CONFIG,
+        strict=True,
+    )
+    normalized["manualRegions"] = normalize_manual_regions_config(
+        normalized.get("manualRegions"),
+        strict=True,
+    )
+
+    integration_error = validate_detection_integration_config(normalized)
+    if integration_error:
+        raise ValueError(integration_error)
+    media_error = validate_result_media_config(normalized)
+    if media_error:
+        raise ValueError(media_error)
+    normalized["resultMedia"] = normalize_result_media_config(
+        normalized.get("resultMedia"),
+        strict=True,
+    )
+    return normalized
+
+
+def _normalize_imported_sop_config(config_data: object) -> dict:
+    if not isinstance(config_data, dict):
+        raise ValueError("SOP configuration must contain a JSON object.")
+
+    normalized = deepcopy(config_data)
+    enabled_count = 0
+    main_config = get_main_config()
+    manual_regions = main_config.get("manualRegions")
+    for raw_sop_name, definition in normalized.items():
+        sop_name = normalize_sop_name(raw_sop_name)
+        if sop_name != raw_sop_name:
+            raise ValueError(
+                f"SOP name '{raw_sop_name}' contains leading or trailing spaces."
+            )
+        if not isinstance(definition, dict):
+            raise ValueError(f"SOP '{sop_name}' must be an object.")
+        if not str(definition.get("model") or "").strip():
+            raise ValueError(f"SOP '{sop_name}' model is required.")
+        if not isinstance(definition.get("steps"), list):
+            raise ValueError(f"SOP '{sop_name}' steps must be an array.")
+        if definition.get("enabled") is True:
+            enabled_count += 1
+
+        manual_region_error = validate_sop_manual_region_references(
+            {sop_name: definition},
+            manual_regions,
+        )
+        if manual_region_error:
+            raise ValueError(manual_region_error)
+        feedback_error = validate_sop_step_feedback_config(
+            definition,
+            main_config,
+        )
+        if feedback_error:
+            raise ValueError(f"SOP '{sop_name}': {feedback_error}")
+
+    if enabled_count > 1:
+        raise ValueError("Only one SOP configuration may be enabled.")
+    return normalized
+
+
+def _managed_config_path(config_type: str) -> tuple[str, str]:
+    if config_type == "main":
+        return CONFIG_PATH, "config.enc"
+    if config_type == "sop":
+        return SopConfig().sop_config_path, "sop_config.enc"
+    raise HTTPException(status_code=404, detail="Unsupported configuration type.")
+
+
+def _safe_unlink(file_path: str) -> None:
+    try:
+        os.unlink(file_path)
+    except FileNotFoundError:
+        pass
+
+
+def _atomic_write_json(target_path: str, config_data: dict) -> str | None:
+    target = Path(target_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    backup_path: str | None = None
+    if target.exists():
+        backup_dir = Path(PARENT_DIR) / "backup" / "config_import"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        backup_name = (
+            f"{target.stem}_{datetime.now().strftime('%Y%m%d%H%M%S')}_"
+            f"{uuid.uuid4().hex[:8]}{target.suffix}.bak"
+        )
+        backup_path = str(backup_dir / backup_name)
+        shutil.copy2(target, backup_path)
+
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            delete=False,
+            dir=str(target.parent),
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+        ) as temp_file:
+            temp_path = temp_file.name
+            json.dump(config_data, temp_file, ensure_ascii=False, indent=4)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_path, target)
+        temp_path = ""
+        return backup_path
+    finally:
+        if temp_path:
+            _safe_unlink(temp_path)
+
+
+async def _read_limited_upload(
+    file: UploadFile,
+    maximum_bytes: int,
+) -> bytes:
+    chunks: list[bytes] = []
+    total_bytes = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total_bytes += len(chunk)
+        if total_bytes > maximum_bytes:
+            raise ValueError(
+                f"Uploaded file exceeds the {maximum_bytes // (1024 * 1024)} MB limit."
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 @api_config.get("/get_config")
 def get_config():
     config_datas = get_main_config()
@@ -116,6 +335,226 @@ def get_config():
     if "resolutions" not in config_datas:
         config_datas["resolutions"] = DEFAULT_RESOLUTIONS
     return JSONResponse(content={"status": True, "datas": config_datas,"sops":sop_config_datas})
+
+
+@api_config.get("/config-files/{config_type}/download")
+async def download_configuration_file(config_type: str):
+    temp_encrypted_path = ""
+    try:
+        source_path, download_name = _managed_config_path(config_type)
+        if not os.path.isfile(source_path):
+            raise HTTPException(
+                status_code=404,
+                detail="Configuration file does not exist.",
+            )
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=".enc",
+        ) as temp_file:
+            temp_encrypted_path = temp_file.name
+        config_encryptor.encrypt_file(
+            source_path=source_path,
+            target_path=temp_encrypted_path,
+            method="aes_like",
+        )
+        return FileResponse(
+            path=temp_encrypted_path,
+            filename=download_name,
+            media_type="application/octet-stream",
+            headers={"X-Encryption-Method": "aes_like"},
+            background=BackgroundTask(
+                _safe_unlink,
+                temp_encrypted_path,
+            ),
+        )
+    except HTTPException:
+        if temp_encrypted_path:
+            _safe_unlink(temp_encrypted_path)
+        raise
+    except Exception as exc:
+        if temp_encrypted_path:
+            _safe_unlink(temp_encrypted_path)
+        logger.exception(
+            "Failed to download %s configuration: %s",
+            config_type,
+            exc,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to download configuration file.",
+        ) from exc
+
+
+@api_config.post("/config-files/{config_type}/upload")
+async def upload_configuration_file(
+    config_type: str,
+    file: UploadFile = File(...),
+):
+    try:
+        _managed_config_path(config_type)
+        filename = os.path.basename(
+            str(file.filename or "").replace("\\", "/")
+        )
+        suffix = Path(filename).suffix.lower()
+        if suffix not in {".json", ".enc"}:
+            return JSONResponse(
+                content={
+                    "status": False,
+                    "code": "INVALID_CONFIG_FILE_TYPE",
+                    "msg": "Only .json and .enc configuration files are allowed.",
+                }
+            )
+
+        content = await _read_limited_upload(
+            file,
+            MAX_CONFIG_UPLOAD_BYTES,
+        )
+        if not content:
+            raise ValueError("Uploaded configuration file is empty.")
+        if suffix == ".json":
+            config_data = json.loads(content.decode("utf-8-sig"))
+        else:
+            config_data = config_encryptor.decrypt_config_from_memory(
+                content,
+                method="aes_like",
+            )["data"]
+
+        if config_type == "main":
+            config_data = _normalize_imported_main_config(config_data)
+        else:
+            config_data = _normalize_imported_sop_config(config_data)
+
+        target_path, _ = _managed_config_path(config_type)
+        backup_path = _atomic_write_json(target_path, config_data)
+        return JSONResponse(
+            content={
+                "status": True,
+                "msg": "Configuration file imported successfully.",
+                "data": {
+                    "configType": config_type,
+                    "sourceFilename": filename,
+                    "backupCreated": backup_path is not None,
+                    "backupFilename": (
+                        Path(backup_path).name if backup_path else None
+                    ),
+                },
+            }
+        )
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as exc:
+        return JSONResponse(
+            content={
+                "status": False,
+                "code": "INVALID_CONFIG_FILE",
+                "msg": str(exc),
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "Failed to import %s configuration: %s",
+            config_type,
+            exc,
+        )
+        return JSONResponse(
+            content={
+                "status": False,
+                "code": "CONFIG_IMPORT_FAILED",
+                "msg": f"Failed to import configuration file: {exc}",
+            }
+        )
+    finally:
+        await file.close()
+
+
+@api_config.post("/models/upload")
+async def upload_model_archive(
+    file: UploadFile = File(...),
+    overwrite: bool = False,
+):
+    temp_archive_path = ""
+    try:
+        filename = os.path.basename(
+            str(file.filename or "").replace("\\", "/")
+        )
+        if Path(filename).suffix.lower() != ".zip":
+            return JSONResponse(
+                content={
+                    "status": False,
+                    "code": "INVALID_MODEL_PACKAGE",
+                    "msg": "Only ZIP model packages are allowed.",
+                }
+            )
+
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=".zip",
+        ) as temp_archive:
+            temp_archive_path = temp_archive.name
+            total_bytes = 0
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > MAX_MODEL_ARCHIVE_BYTES:
+                    raise ModelArchiveError(
+                        "Model package exceeds the 1 GB upload limit."
+                    )
+                temp_archive.write(chunk)
+            temp_archive.flush()
+            os.fsync(temp_archive.fileno())
+        if total_bytes == 0:
+            raise ModelArchiveError("Uploaded model package is empty.")
+
+        result = await run_in_threadpool(
+            install_model_archive,
+            temp_archive_path,
+            filename,
+            get_models_path(),
+            overwrite=overwrite,
+        )
+        return JSONResponse(
+            content={
+                "status": True,
+                "msg": "Model package imported successfully.",
+                "data": result,
+            }
+        )
+    except ModelAlreadyExistsError as exc:
+        return JSONResponse(
+            content={
+                "status": False,
+                "code": "MODEL_ALREADY_EXISTS",
+                "msg": str(exc),
+                "data": {"modelName": exc.model_name},
+            }
+        )
+    except ModelArchiveError as exc:
+        return JSONResponse(
+            content={
+                "status": False,
+                "code": "INVALID_MODEL_PACKAGE",
+                "msg": str(exc),
+            }
+        )
+    except Exception as exc:
+        logger.exception("Failed to import model package: %s", exc)
+        return JSONResponse(
+            content={
+                "status": False,
+                "code": "MODEL_IMPORT_FAILED",
+                "msg": f"Failed to import model package: {exc}",
+            }
+        )
+    finally:
+        await file.close()
+        if temp_archive_path:
+            _safe_unlink(temp_archive_path)
 
 
 @api_config.post("/manual_regions/save")
@@ -499,17 +938,22 @@ def open_models_folder():
 def get_models():
     try:
         models_path = get_models_path()
+        os.makedirs(models_path, exist_ok=True)
         model_status = {}
         for model_dir in os.listdir(models_path):
             model_folder = os.path.join(models_path, model_dir)
             if os.path.isdir(model_folder):
-                onnx_file = "example.onnx"
+                onnx_file = None
                 for file in os.listdir(model_folder):
-                    if file.endswith(".onnx"):
+                    if file.lower().endswith(".onnx"):
                         onnx_file = os.path.join(model_folder, file)
                         break
                 cache_file = os.path.join(model_folder, "cache.json")
-                model_status[model_dir] = os.path.exists(onnx_file) and os.path.exists(cache_file)
+                model_status[model_dir] = (
+                    bool(onnx_file)
+                    and os.path.exists(onnx_file)
+                    and os.path.exists(cache_file)
+                )
         return JSONResponse(content={"status":True,"datas": model_status})
     except Exception as e:
         logger.exception("Error getting models")

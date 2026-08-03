@@ -3,7 +3,7 @@
         <div class="el-main-header" ref="device1Ref">
             <div class="el-main-header-left">
               <el-form label-position="top" size="large" :inline="true">
-                  <el-button type="primary" class="btn-modelfolder" :title="$t('button.openmodellib')" circle :icon="FolderOpened" style="font-size: 24px;" @click="openModelFolder" />
+                  <el-button type="primary" class="btn-modelfolder" :title="$t('config.model_upload.open')" circle :icon="UploadFilled" style="font-size: 24px;" @click="modelUploadDialogVisible = true" />
                   <el-form-item :label="$t('config.models')" style="margin-right: 0">
                     <el-select v-model="currentMainModel" :placeholder="t('interacting.select') + t('config.model')"
                         @change="handleChangeMainModel">
@@ -104,6 +104,11 @@
                     <el-icon class="common-config-icon"><CameraFilled /></el-icon>
                     <span class="common-config-title">{{ $t('config.result_media.title') }}</span>
                     <span class="common-config-description">{{ $t('config.result_media.entry_description') }}</span>
+                </div>
+                <div class="common-config-entry" @click="configTransferDialogVisible = true">
+                    <el-icon class="common-config-icon"><DocumentCopy /></el-icon>
+                    <span class="common-config-title">{{ $t('config.config_transfer.title') }}</span>
+                    <span class="common-config-description">{{ $t('config.config_transfer.entry_description') }}</span>
                 </div>
             </div>
             <div v-if="resultStorageStatus.pending" class="local-results-notice">
@@ -250,6 +255,14 @@
           v-model:visible="resultMediaDialogVisible"
           v-model:result-media-config="resultMediaConfig"
         />
+        <ModelUploadDialog
+          v-model:visible="modelUploadDialogVisible"
+          @uploaded="handleModelUploaded"
+        />
+        <ConfigTransferDialog
+          v-model:visible="configTransferDialogVisible"
+          @imported="handleConfigImported"
+        />
   </div>
 </template>
 <script setup lang="ts">
@@ -257,7 +270,7 @@ import { ref, onMounted,watch, nextTick, reactive, computed, onUnmounted } from 
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/store";
 import { ElMessage, FormInstance, FormRules } from "element-plus";
-import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer,Aim,CameraFilled,WarningFilled } from "@element-plus/icons-vue";
+import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer,Aim,CameraFilled,WarningFilled,UploadFilled,DocumentCopy } from "@element-plus/icons-vue";
 import { MesAlertWTitle, MesConfirmWTitle } from "@/assets/js/secondpk";
 import api from "@/api/index";
 import SopDialog from "@/components/SopDialog.vue";
@@ -269,6 +282,8 @@ import ModbusDialog from "@/components/ModbusDialog.vue";
 import DetectionIntegrationDialog from "@/components/DetectionIntegrationDialog.vue";
 import ManualRegionDialog from "@/components/ManualRegionDialog.vue";
 import ResultMediaDialog from "@/components/ResultMediaDialog.vue";
+import ModelUploadDialog from "@/components/ModelUploadDialog.vue";
+import ConfigTransferDialog from "@/components/ConfigTransferDialog.vue";
 const appStore = useAppStore();
 const { t } = useI18n();
 const device1Ref = ref(null);
@@ -276,6 +291,8 @@ const elVideoStreamH = ref("0px");
 const videoStreamHeight = () => { elVideoStreamH.value = `calc(100% - ${device1Ref.value.offsetHeight}px`; };
 const currentMainModel = ref('');
 const modelsList = ref({}); 
+const modelUploadDialogVisible = ref(false);
+const configTransferDialogVisible = ref(false);
 const cameraList = ref<string[]>([]);
 const labelColorVisible = ref(false);
 const currentMainLabels = ref<Record<string, string>>({});
@@ -627,10 +644,20 @@ const getDevice = () => {
     .catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_device_title"), error.message, t("button.ok")))
     .finally(() => { appStore.setLoading(false); });
 };
-const openModelFolder = () => {
-  api.openModelFolder().then((res) => {
-    if (!res.data.status) MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedopenmodelsfolder"), res.data.msg, t("button.ok"));
-  }).catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failedopenmodelsfolder"), error.message, t("button.ok")));
+const handleModelUploaded = async (modelName: string) => {
+  await getModels();
+  if (modelName) {
+    currentMainModel.value = modelName;
+    handleChangeMainModel(modelName);
+  }
+};
+const handleConfigImported = async (configType: "main" | "sop") => {
+  if (configType === "main") {
+    await getDevice();
+  }
+  await getConfig();
+  await getModels();
+  await getResultStorageStatus();
 };
 const handleChangeMainModel = (modelName: string, edit = false) => {
   appStore.setLoading(true);
