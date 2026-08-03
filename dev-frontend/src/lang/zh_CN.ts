@@ -110,7 +110,7 @@ export default{
         confidence:"置信度",
         common_config:"公共配置",
         path_config:"路径配置",
-        path_config_description:"配置模型、操作工序和检测结果的存储路径",
+        path_config_description:"配置模型、操作工序、用户和检测结果的存储路径",
         user_management:{
             title:"用户管理",
             entry_description:"管理登录账号、姓名和系统使用权限",
@@ -245,6 +245,8 @@ export default{
         enter_model_path:"\u8BF7\u8F93\u5165\u6A21\u578B\u8DEF\u5F84\uFF08\u4E3A\u7A7A\u65F6\u4F7F\u7528\u7CFB\u7EDF\u8DEF\u5F84\uFF09",
         sop_path:"操作工序配置路径",
         enter_sop_path:"\u8BF7\u8F93\u5165\u5DE5\u7A0B\u914D\u7F6E\u8DEF\u5F84\uFF08\u4E3A\u7A7A\u65F6\u4F7F\u7528\u7CFB\u7EDF\u8DEF\u5F84\uFF09",
+        user_storage_path:"用户数据存储路径",
+        enter_user_storage_path:"请输入 users.json 的存储目录（为空时使用系统路径）",
         result_storage_path:"\u7ED3\u679C\u5B58\u50A8\u8DEF\u5F84",
         enter_result_storage_path:"\u8BF7\u8F93\u5165\u7ED3\u679C\u5B58\u50A8\u8DEF\u5F84\uFF08\u4E3A\u7A7A\u65F6\u4F7F\u7528\u7CFB\u7EDF\u8DEF\u5F84\uFF09",
         sop_config:"操作工序配置",

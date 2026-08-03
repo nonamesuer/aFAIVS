@@ -327,7 +327,7 @@ const parseResolution = (value: string) => {
     : null;
 };
 //路径
-const pathConfig = ref({ modelPath: "",sopPath:"", resultPath: "", saveDetectionDatasets: false });
+const pathConfig = ref({ modelPath: "",sopPath:"", resultPath: "",userPath: "",saveDetectionDatasets: false });
 const pathDialogVisible = ref(false);
 interface ManualRegion {
   id: string;
@@ -513,8 +513,8 @@ const getConfig = () => {
     const datas = resData.datas;
     sopConfigDatas.value = resData.sops || {};
     if ("paths" in datas) {
-      const { modelPath = "", sopPath = "", resultPath = "", saveDetectionDatasets = false } = datas.paths;
-      pathConfig.value = { ...pathConfig.value, modelPath, sopPath, resultPath, saveDetectionDatasets };
+      const { modelPath = "", sopPath = "", resultPath = "",userPath = "",saveDetectionDatasets = false } = datas.paths;
+      pathConfig.value = { ...pathConfig.value, modelPath, sopPath, resultPath,userPath,saveDetectionDatasets };
     };
     if (datas.boxStyle) {boxStyleConfig.value = {...boxStyleConfig.value,...datas.boxStyle, }};
     if (datas.handStyle) {

@@ -110,7 +110,7 @@ export default{
         confidence:"Confidence",
         common_config:"Common Configuration",
         path_config:"Path Configuration",
-        path_config_description:"Configure storage paths for models, SOP files, and detection results",
+        path_config_description:"Configure storage paths for models, SOP files, users, and detection results",
         user_management:{
             title:"User Management",
             entry_description:"Manage login accounts, names, and system permissions",
@@ -245,6 +245,8 @@ export default{
         enter_model_path:"Please enter the models path (leave empty to use the system path)",
         sop_path:"Operating Procedure Configuration Path",
         enter_sop_path:"Please enter the SOP path (leave empty to use the system path)",
+        user_storage_path:"User Data Storage Path",
+        enter_user_storage_path:"Enter the directory that stores users.json (leave empty to use the system path)",
         result_storage_path:"Result Storage Path",
         enter_result_storage_path:"Please enter the result storage path (leave empty to use the system path)",
         sop_config:"Operating Procedure Configuration",

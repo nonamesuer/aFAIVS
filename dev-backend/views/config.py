@@ -21,7 +21,7 @@ from module._model_archive import (
     ModelArchiveError,
     install_model_archive,
 )
-from module._auth import clear_sessions, has_admin_user, require_admin
+from module._auth import clear_sessions, has_admin_user, prepare_users_storage, require_admin
 from module._step_feedback import validate_sop_step_feedback_config
 from module._box_style import normalize_area_fill_alpha
 from module._hand_detection import HandTracker
@@ -118,7 +118,7 @@ def _normalize_imported_main_config(config_data: object) -> dict:
     if account_login["enabled"] and not has_admin_user():raise ValueError("At least one administrator is required before importing a configuration with account login enabled.")
     paths = normalized.get("paths")
     if not isinstance(paths, dict):raise ValueError("paths must be an object.")
-    for field_name in ("modelPath", "sopPath", "resultPath"):
+    for field_name in ("modelPath", "sopPath", "resultPath", "userPath"):
         value = paths.get(field_name)
         if not isinstance(value, str):raise ValueError(f"paths.{field_name} must be a string.")
         paths[field_name] = value.strip()
@@ -285,6 +285,7 @@ async def upload_configuration_file(config_type: str,file: UploadFile = File(...
             config_data = _normalize_imported_main_config(config_data)
         else:
             config_data = _normalize_imported_sop_config(config_data)
+        if config_type == "main":prepare_users_storage(config_data["paths"].get("userPath"))
         target_path, _ = _managed_config_path(config_type)
         backup_path = _atomic_write_json(target_path, config_data)
         if config_type == "main":clear_sessions()
@@ -627,6 +628,7 @@ async def set_config_paths(request: Request):
         model_path = data.get("modelPath")
         results_path = data.get("resultPath")
         sops_path =data.get("sopPath")
+        users_path = str(data.get("userPath") or "").strip()
         save_datasets = data.get("saveDetectionDatasets", False)
         if model_path and not os.path.exists(model_path):
             try:
@@ -646,16 +648,22 @@ async def set_config_paths(request: Request):
             except Exception as e:
                 logger.error(f"Failed to create results path: {results_path}, error: {e}")
                 return JSONResponse(content={"status":False,"msg":"Results path is not available"})
+        if users_path and not os.path.exists(users_path):
+            try:os.makedirs(users_path)
+            except Exception as e:logger.error(f"Failed to create users path: {users_path}, error: {e}");return JSONResponse(content={"status":False,"msg":"Users path is not available"})
+        users_storage = prepare_users_storage(users_path)
         config_data = get_main_config()
         config_data["paths"] = {
             "modelPath": model_path,
             "sopPath": sops_path,
             "resultPath": results_path,
+            "userPath": users_path,
             "saveDetectionDatasets": save_datasets
         }
         json_file = JsonFile(CONFIG_PATH)
         json_file.write_json_file(config_data)
-        return JSONResponse(content={"status":True,"msg":"Successfully set paths"})
+        return JSONResponse(content={"status":True,"msg":"Successfully set paths","data":{"usersPath": users_storage["path"],"usersMigrated": users_storage["migrated"],"usersBackup": users_storage["backup"]}})
+    except ValueError as e:return JSONResponse(content={"status":False,"msg":str(e)})
     except Exception as e:
         logger.exception(f"Error setting config paths")
         return JSONResponse(content={"status":False,"msg":"Failed to set paths"})

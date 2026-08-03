@@ -6,10 +6,11 @@ import re
 import tempfile
 import threading
 import uuid
+import shutil
 from copy import deepcopy
 from datetime import datetime, timezone
 from fastapi import HTTPException, Request
-from module._base import CONFIG_PATH, USERS_PATH, JsonFile, get_display_name, get_main_config
+from module._base import CONFIG_PATH, JsonFile, get_display_name, get_main_config, get_users_path, resolve_users_path
 
 ROLE_ADMIN = "admin"
 ROLE_OPERATOR = "operator"
@@ -41,24 +42,45 @@ def _normalize_role(value) -> str:
     return role
 
 
-def _read_users_unlocked() -> list[dict]:
-    if not os.path.exists(USERS_PATH):return []
+def _read_users_file_unlocked(users_path: str) -> list[dict]:
+    if not os.path.isfile(users_path):return []
     try:
-        with open(USERS_PATH,"r",encoding="utf-8") as file:data = json.load(file)
-    except (json.JSONDecodeError, OSError):return []
+        with open(users_path,"r",encoding="utf-8") as file:data = json.load(file)
+    except (json.JSONDecodeError,OSError) as exc:raise ValueError(f"Unable to read users file: {users_path}") from exc
     users = data.get("users", []) if isinstance(data, dict) else data
-    return [deepcopy(user) for user in users if isinstance(user, dict)] if isinstance(users, list) else []
+    if not isinstance(users,list):raise ValueError(f"Invalid users file structure: {users_path}")
+    return [deepcopy(user) for user in users if isinstance(user,dict)]
 
 
-def _write_users_unlocked(users: list[dict]) -> None:
-    os.makedirs(os.path.dirname(USERS_PATH),exist_ok=True)
+def _read_users_unlocked() -> list[dict]:return _read_users_file_unlocked(get_users_path())
+
+
+def _write_users_file(users_path: str,users: list[dict]) -> None:
+    os.makedirs(os.path.dirname(users_path),exist_ok=True)
     temp_path = ""
     try:
-        with tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",delete=False,dir=os.path.dirname(USERS_PATH),prefix=".users.",suffix=".tmp") as file:
+        with tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",delete=False,dir=os.path.dirname(users_path),prefix=".users.",suffix=".tmp") as file:
             temp_path = file.name;json.dump({"users": users},file,ensure_ascii=False,indent=4);file.flush();os.fsync(file.fileno())
-        os.replace(temp_path,USERS_PATH);temp_path = ""
+        os.replace(temp_path,users_path);temp_path = ""
     finally:
         if temp_path and os.path.exists(temp_path):os.unlink(temp_path)
+
+
+def _write_users_unlocked(users: list[dict]) -> None:_write_users_file(get_users_path(),users)
+
+
+def prepare_users_storage(user_directory: str | None) -> dict:
+    source_path = get_users_path();target_path = resolve_users_path(user_directory)
+    if os.path.normcase(os.path.abspath(source_path)) == os.path.normcase(os.path.abspath(target_path)):return {"path": target_path,"migrated": False,"backup": None}
+    with _LOCK:
+        os.makedirs(os.path.dirname(target_path),exist_ok=True);source_exists = os.path.isfile(source_path);target_exists = os.path.isfile(target_path);backup_path = None
+        if source_exists:
+            source_users = _read_users_file_unlocked(source_path)
+            if target_exists:backup_path = os.path.join(os.path.dirname(target_path),f"users.backup.{datetime.now().strftime('%Y%m%d%H%M%S%f')}.json");shutil.copy2(target_path,backup_path)
+            _write_users_file(target_path,source_users)
+        elif target_exists:_write_users_file(target_path,_read_users_file_unlocked(target_path))
+        else:_write_users_file(target_path,[])
+        return {"path": target_path,"migrated": source_exists,"backup": backup_path}
 
 
 def list_users(keyword: str = "") -> list[dict]:

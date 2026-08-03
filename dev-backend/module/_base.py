@@ -17,7 +17,8 @@ RESULTS_PATH = os.path.join(PARENT_DIR, "results")
 LOCAL_RESULTS_PATH = os.path.join(PARENT_DIR, "local_results")
 STATIC_PATH = os.path.join(PARENT_DIR, "static")
 CONFIG_PATH = os.path.join(STATIC_PATH, "config.json")
-USERS_PATH = os.path.join(STATIC_PATH, "users.json")
+USERS_FILE_NAME = "users.json"
+USERS_PATH = os.path.join(STATIC_PATH, USERS_FILE_NAME)
 SOP_CONFIG_NAME = "sop_config.json"
 MEDIAPIPE_MODEL_PATH = os.path.join(LIB_PATH, "hand_landmarker.task")
 DEFAULT_RESOLUTIONS=[[320,240],[640,480],[800,600],[1024,768],[1280,720],[1280,960],[1600,1200],[1920,1080],[2048,1536],
@@ -68,6 +69,7 @@ DEFAULT_MAIN_CONFIG = {
         "modelPath": MODELS_PATH,
         "sopPath": STATIC_PATH,
         "resultPath": RESULTS_PATH,
+        "userPath": STATIC_PATH,
         "saveDetectionDatasets": False
     },
     "resolutions": DEFAULT_RESOLUTIONS,
@@ -257,6 +259,12 @@ def get_models_path() -> str:
     paths = path_config.get("paths", {}) if path_config else {}
     model_path = paths.get("modelPath") if isinstance(paths, dict) else None
     return model_path if isinstance(model_path, str) and model_path else MODELS_PATH
+
+def resolve_users_path(user_directory: str | None = None) -> str:return os.path.join(user_directory.strip() if isinstance(user_directory,str) and user_directory.strip() else STATIC_PATH,USERS_FILE_NAME)
+
+def get_users_path() -> str:
+    path_config = get_main_config();paths = path_config.get("paths",{}) if path_config else {};user_directory = paths.get("userPath") if isinstance(paths,dict) else None
+    return resolve_users_path(user_directory)
 
 
 

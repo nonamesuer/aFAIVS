@@ -30,6 +30,10 @@
         />
       </el-form-item>
 
+      <el-form-item :label="$t('config.user_storage_path')" prop="userPath">
+        <el-input v-model="pathForm.userPath" :placeholder="$t('config.enter_user_storage_path')" clearable />
+      </el-form-item>
+
       <el-form-item
         :label="$t('config.result_storage_path')"
         prop="resultPath"
@@ -66,6 +70,7 @@ interface PathConfig {
   modelPath: string
   sopPath: string
   resultPath: string
+  userPath: string
   saveDetectionDatasets: boolean
 }
 
@@ -90,6 +95,7 @@ function createPathForm(config?: Partial<PathConfig>): PathConfig {
     modelPath: config?.modelPath || '',
     sopPath: config?.sopPath || '',
     resultPath: config?.resultPath || '',
+    userPath: config?.userPath || '',
     saveDetectionDatasets: Boolean(config?.saveDetectionDatasets),
   }
 }
