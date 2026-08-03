@@ -1,13 +1,5 @@
 <template>
-  <el-dialog
-    :model-value="visible"
-    class="manual-region-dialog"
-    modal-class="bs-shade"
-    fullscreen
-    destroy-on-close
-    @closed="handleClosed"
-    @update:model-value="emit('update:visible', $event)"
-  >
+  <el-dialog :model-value="visible" class="manual-region-dialog"  modal-class="bs-shade" fullscreen destroy-on-close @closed="handleClosed" @update:model-value="emit('update:visible', $event)">
     <template #header>
       <div class="dialog-header">
         <div>
@@ -16,35 +8,13 @@
         </div>
 
         <div class="header-actions">
-          <el-select
-            v-model="cameraIndex"
-            :placeholder="$t('config.manual_region.select_camera')"
-            style="width: 240px"
-          >
-            <el-option
-              v-for="(camera, index) in cameraList"
-              :key="camera"
-              :label="camera"
-              :value="index"
-            />
+          <el-select size="large" v-model="cameraIndex" :placeholder="$t('config.manual_region.select_camera')"  style="width: 240px">
+            <el-option v-for="(camera, index) in cameraList" :key="camera" :label="camera" :value="index"/>
           </el-select>
-
-          <el-button
-            :type="frozen ? 'warning' : 'primary'"
-            plain
-            :disabled="cameraIndex === null"
-            @click="frozen = !frozen"
-          >
-            {{ frozen
-              ? $t('config.manual_region.resume_preview')
-              : $t('config.manual_region.freeze_preview') }}
+          <el-button :type="frozen ? 'danger' : 'primary'" :plain="!frozen" :disabled="cameraIndex === null" @click="frozen = !frozen">
+            {{ frozen ? $t('config.manual_region.resume_preview') : $t('config.manual_region.freeze_preview') }}
           </el-button>
-
-          <el-button
-            type="primary"
-            :disabled="cameraIndex === null || !frameWidth"
-            @click="beginDrawing"
-          >
+          <el-button type="primary" :disabled="cameraIndex === null || !frameWidth" @click="beginDrawing">
             {{ $t('config.manual_region.draw_region') }}
           </el-button>
         </div>
@@ -53,10 +23,7 @@
 
     <div class="region-layout">
       <section class="canvas-panel">
-        <div
-          class="canvas-wrapper"
-          :class="{ drawing: drawingMode }"
-        >
+        <div class="canvas-wrapper" :class="{ drawing: drawingMode }">
           <canvas
             ref="canvasRef"
             @pointerdown="handlePointerDown"
@@ -65,23 +32,13 @@
             @pointercancel="handlePointerUp"
           />
 
-          <el-empty
-            v-if="cameraIndex === null"
-            :description="$t('config.manual_region.select_camera')"
-          />
-
-          <div
-            v-else-if="!frameWidth"
-            class="preview-status"
-          >
+          <el-empty v-if="cameraIndex === null" :description="$t('config.manual_region.select_camera')"/>
+          <div v-else-if="!frameWidth" class="preview-status">
             <el-icon class="is-loading"><Loading /></el-icon>
             {{ $t('config.manual_region.waiting_preview') }}
           </div>
 
-          <div
-            v-if="drawingMode"
-            class="drawing-tip"
-          >
+          <div v-if="drawingMode" class="drawing-tip" >
             {{ $t('config.manual_region.drawing_tip') }}
           </div>
         </div>
@@ -100,7 +57,7 @@
       <aside class="region-sidebar">
         <div class="sidebar-title">
           <strong>{{ $t('config.manual_region.region_list') }}</strong>
-          <el-tag>{{ workingRegions.length }}</el-tag>
+          <el-tag effect="dark" round>{{ workingRegions.length }}</el-tag>
         </div>
 
         <div class="region-list">
@@ -111,40 +68,21 @@
             :class="['region-list-item', { active: selectedId === region.id }]"
             @click="selectRegion(region.id)"
           >
-            <span
-              class="region-color"
-              :style="{ backgroundColor: region.color }"
-            />
+            <span class="region-color" :style="{ backgroundColor: region.color }"/>
             <span class="region-name">{{ region.name }}</span>
-            <el-tag
-              v-if="region.enabled === false"
-              size="small"
-              type="info"
-            >
+            <el-tag v-if="region.enabled === false" effect="dark" size="small" type="info">
               {{ $t('config.manual_region.disabled') }}
             </el-tag>
           </button>
 
-          <el-empty
-            v-if="!workingRegions.length"
-            :description="$t('config.manual_region.no_regions')"
-            :image-size="90"
-          />
+          <el-empty v-if="!workingRegions.length" :description="$t('config.manual_region.no_regions')" :image-size="90" />
         </div>
 
         <el-divider />
 
-        <el-form
-          v-if="selectedRegion"
-          label-position="top"
-        >
+        <el-form v-if="selectedRegion" label-position="top">
           <el-form-item :label="$t('config.manual_region.region_name')">
-            <el-input
-              v-model="selectedRegion.name"
-              maxlength="64"
-              show-word-limit
-              @input="markDirty"
-            />
+            <el-input v-model="selectedRegion.name" maxlength="64" show-word-limit @input="markDirty"/>
           </el-form-item>
 
           <el-row :gutter="12">
@@ -160,10 +98,7 @@
             </el-col>
             <el-col :span="12">
               <el-form-item :label="$t('config.manual_region.enabled')">
-                <el-switch
-                  v-model="selectedRegion.enabled"
-                  @change="markDirty"
-                />
+                <el-switch v-model="selectedRegion.enabled" @change="markDirty"/>
               </el-form-item>
             </el-col>
           </el-row>
@@ -175,49 +110,28 @@
             <span>Y2: {{ formatCoordinate(selectedRegion.y2) }}</span>
           </div>
 
-          <el-alert
-            :closable="false"
-            type="info"
-            show-icon
-            :title="$t('config.manual_region.adjust_tip')"
-          />
+          <el-alert :closable="false" type="info" show-icon :title="$t('config.manual_region.adjust_tip')"/>
 
           <div class="region-actions">
-            <el-button
-              type="primary"
-              plain
-              @click="redrawSelectedRegion"
-            >
-              {{ $t('config.manual_region.redraw') }}
-            </el-button>
-            <el-button
-              type="danger"
-              plain
-              @click="removeSelectedRegion"
-            >
+            
+            <el-button type="danger" @click="removeSelectedRegion">
               {{ $t('button.delete') }}
+            </el-button>
+            <el-button type="primary" plain @click="redrawSelectedRegion">
+              {{ $t('config.manual_region.redraw') }}
             </el-button>
           </div>
         </el-form>
 
-        <el-empty
-          v-else
-          :description="$t('config.manual_region.select_region')"
-          :image-size="80"
-        />
+        <el-empty v-else :description="$t('config.manual_region.select_region')" :image-size="80"/>
       </aside>
     </div>
 
     <template #footer>
-      <el-button @click="reloadCurrentProfile">
+      <el-button @click="reloadCurrentProfile" plain>
         {{ $t('button.reset') }}
       </el-button>
-      <el-button
-        type="primary"
-        :loading="saving"
-        :disabled="cameraIndex === null || !frameWidth"
-        @click="saveRegions"
-      >
+      <el-button type="primary" :disabled="cameraIndex === null || !frameWidth" @click="saveRegions">
         {{ $t('button.save') }}
       </el-button>
     </template>
@@ -225,22 +139,13 @@
 </template>
 
 <script setup lang="ts">
-import {
-  computed,
-  nextTick,
-  onBeforeUnmount,
-  ref,
-  watch,
-} from 'vue'
-import {
-  ElMessage,
-  ElMessageBox,
-} from 'element-plus'
+import {computed,nextTick,onBeforeUnmount,ref,watch,} from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-
 import api from '@/api/index'
 import { useAppStore } from '@/stores/store'
+import { MesAlertWTitle, MesConfirmWTitle } from '@/assets/js/secondpk'
 
 interface ManualRegion {
   id: string
@@ -308,7 +213,6 @@ const selectedId = ref('')
 const persistedIds = ref(new Set<string>())
 const frozen = ref(false)
 const drawingMode = ref(false)
-const saving = ref(false)
 const dirty = ref(false)
 const frameWidth = ref(0)
 const frameHeight = ref(0)
@@ -323,14 +227,10 @@ const selectedRegion = computed(() =>
 )
 
 const currentCameraName = computed(() =>
-  cameraIndex.value === null
-    ? ''
-    : String(props.cameraList[cameraIndex.value] || '')
+  cameraIndex.value === null ? '' : String(props.cameraList[cameraIndex.value] || '')
 )
 
-const cloneRegion = (region: ManualRegion): ManualRegion => ({
-  ...region,
-})
+const cloneRegion = (region: ManualRegion): ManualRegion => ({...region,})
 
 const normalizeProfileRegions = (profile?: ManualRegionProfile): ManualRegion[] =>
   Array.isArray(profile?.regions)
@@ -489,9 +389,7 @@ const handlePointerDown = (event: PointerEvent) => {
   }
 
   const selected = selectedRegion.value
-  const handle = selected
-    ? regionHandleAt(selected, point.x, point.y)
-    : null
+  const handle = selected ? regionHandleAt(selected, point.x, point.y): null;
   if (selected && handle) {
     interaction = {
       type: 'resize',
@@ -776,38 +674,26 @@ const removeSelectedRegion = async () => {
   const region = selectedRegion.value
   if (!region) return
   try {
-    await ElMessageBox.confirm(
-      t('config.manual_region.delete_confirm', { name: region.name }),
-      t('message.warning'),
-      {
-        confirmButtonText: t('button.delete'),
-        cancelButtonText: t('button.cancel'),
-        type: 'warning',
-      },
-    )
+    await MesConfirmWTitle("warning",t('button.delete'),t('message.messagetext.askdelete'),t('config.manual_region.delete_confirm'),t('button.delete'),t('button.cancel'));
   } catch {
     return
   }
-
   if (persistedIds.value.has(region.id)) {
-    saving.value = true
+    appStore.setLoading(true)
     try {
-      const { data } = await api.deleteManualRegion({
-        cameraName: currentCameraName.value,
-        regionId: region.id,
-      })
+      const { data } = await api.deleteManualRegion({cameraName: currentCameraName.value,regionId: region.id})
       if (!data.status) {
-        ElMessage.error(data.msg)
+        MesAlertWTitle("error",t('message.messagetext.faileddelete'),t('config.manual_region.delete_failed'),data.msg,t('button.ok'));
         return
       }
       dirty.value = true
       emit('update:manualRegions', data.datas)
       persistedIds.value.delete(region.id)
     } catch (error: any) {
-      ElMessage.error(error?.message || t('config.manual_region.delete_failed'))
+      MesAlertWTitle("error",t('message.messagetext.faileddelete'),t('config.manual_region.delete_failed'),error?.message || t('config.manual_region.delete_failed'),t('button.ok'));
       return
     } finally {
-      saving.value = false
+      appStore.setLoading(false)
     }
   }
 
@@ -830,10 +716,7 @@ const validateRegions = () => {
       return t('config.manual_region.name_duplicate', { name: region.name })
     }
     names.add(normalizedName)
-    if (
-      region.x2 - region.x1 < 0.002
-      || region.y2 - region.y1 < 0.002
-    ) {
+    if ( region.x2 - region.x1 < 0.002 || region.y2 - region.y1 < 0.002) {
       return t('config.manual_region.region_too_small', { name: region.name })
     }
   }
@@ -846,7 +729,7 @@ const saveRegions = async () => {
     ElMessage.error(validationError)
     return
   }
-  saving.value = true
+  appStore.setLoading(true)
   try {
     const { data } = await api.saveManualRegions({
       cameraName: currentCameraName.value,
@@ -855,7 +738,7 @@ const saveRegions = async () => {
       regions: workingRegions.value,
     })
     if (!data.status) {
-      ElMessage.error(data.msg)
+      MesAlertWTitle("error",t('message.messagetext.failedsave'),t('config.manual_region.save_failed'),data.msg,t('button.ok'));
       return
     }
     dirty.value = true
@@ -865,9 +748,9 @@ const saveRegions = async () => {
     emit('saved')
     ElMessage.success(t('config.manual_region.save_success'))
   } catch (error: any) {
-    ElMessage.error(error?.message || t('config.manual_region.save_failed'))
+    MesAlertWTitle("error",t('message.messagetext.failedsave'),t('config.manual_region.save_failed'),error?.message || t('config.manual_region.save_failed'),t('button.ok'));
   } finally {
-    saving.value = false
+    appStore.setLoading(false)
   }
 }
 
@@ -938,18 +821,17 @@ onBeforeUnmount(stopPreview)
 }
 
 .region-layout {
-  height: calc(100vh - 170px);
+  height: calc(100vh - 180px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: 16px;
+  color:#000;
 }
 
 .canvas-panel,
 .region-sidebar {
   min-height: 0;
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  background: var(--el-bg-color);
+  background: var(--bs-bgcolor);
 }
 
 .canvas-panel {
@@ -993,7 +875,6 @@ onBeforeUnmount(stopPreview)
   position: absolute;
   z-index: 2;
   padding: 10px 16px;
-  border-radius: 6px;
   color: #fff;
   background: rgba(0, 0, 0, 0.72);
 }
@@ -1011,7 +892,6 @@ onBeforeUnmount(stopPreview)
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  color: var(--el-text-color-secondary);
   border-top: 1px solid var(--el-border-color);
 }
 
@@ -1043,14 +923,14 @@ onBeforeUnmount(stopPreview)
   align-items: center;
   gap: 10px;
   border: 1px solid var(--el-border-color);
-  border-radius: 6px;
+  /* border-radius: 6px; */
   color: var(--el-text-color-primary);
   background: var(--el-bg-color);
   cursor: pointer;
 
   &:hover,
   &.active {
-    border-color: var(--el-color-primary);
+    border-color: var(--bs-primary-color);
     background: var(--el-color-primary-light-9);
   }
 }
@@ -1059,7 +939,6 @@ onBeforeUnmount(stopPreview)
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
-  border-radius: 4px;
 }
 
 .region-name {

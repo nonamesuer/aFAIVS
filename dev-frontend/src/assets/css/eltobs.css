@@ -23,6 +23,7 @@
 
     &:hover {
         color: var(--bs-primary-color);
+        background-color: red;
     }
 
     &.el-button--danger {
@@ -33,8 +34,8 @@
         color: var(--bs-primary-color);
 
         &:hover {
-            background-color: var(--bs-primary-hover-icon-color);
-            color: var(--bs-primary-color);
+            /* background-color: var(--bs-primary-hover-icon-color); */
+            color: var(--bs-primary-hover-color);
         }
     }
 
@@ -63,6 +64,7 @@
 .el-button--danger {
     background-color: red;
     color: #fff;
+    font-size: 16px;
     &:hover {
         background-color: #cc0101;
         color: #fff;
@@ -493,7 +495,7 @@
     position: inherit !important;
 
 }
-
+.el-alert.is-light,
 .el-alert.is-dark {
     .el-alert__content {
         color: #000;
@@ -630,6 +632,9 @@
                 }
             }
         }
+    }
+    .el-input__clear{
+        color:#000;
     }
 }
 

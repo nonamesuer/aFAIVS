@@ -1262,7 +1262,7 @@ const hideExecutionPreview = () => {
 .hands-point-field { border-right: 1px solid #000; padding-right: 8px; }
 .point-tags { display: flex; gap: 5px; flex-wrap: wrap; }
 .hands-point-operator { margin-left: auto; display: flex; gap: 8px; cursor: pointer; }
-.step-feedback-section { margin-top: 16px; padding: 14px; border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--bs-element-bgcolor); }
+.step-feedback-section { margin-top: 16px; padding: 14px;  background: var(--bs-element-bgcolor); }
 .step-feedback-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
 .step-feedback-heading span { color: var(--el-text-color-secondary); font-size: 12px; }
 .feedback-method-options { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 24px;}

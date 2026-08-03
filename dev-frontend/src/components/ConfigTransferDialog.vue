@@ -1,25 +1,8 @@
 <template>
-  <el-dialog
-    :model-value="visible"
-    :title="$t('config.config_transfer.title')"
-    width="680px"
-    destroy-on-close
-    modal-class="bs-shade"
-    @close="emit('update:visible', false)"
-  >
-    <el-alert
-      type="warning"
-      :closable="false"
-      show-icon
-      :title="$t('config.config_transfer.description')"
-    />
-
+  <el-dialog :model-value="visible" :title="$t('config.config_transfer.title')" width="680px" destroy-on-close modal-class="bs-shade" @close="emit('update:visible', false)">
+    <el-alert type="warning" :closable="false" show-icon :title="$t('config.config_transfer.description')"/>
     <div class="config-file-grid">
-      <div
-        v-for="item in configFiles"
-        :key="item.type"
-        class="config-file-card"
-      >
+      <div v-for="item in configFiles" :key="item.type" class="config-file-card" >
         <el-icon class="config-file-card__icon"><Document /></el-icon>
         <div class="config-file-card__body">
           <div class="config-file-card__title">{{ item.title }}</div>
@@ -27,45 +10,20 @@
             {{ item.description }}
           </div>
           <div class="config-file-card__actions">
-            <el-button
-              :icon="Download"
-              :loading="downloading === item.type"
-              @click="downloadFile(item.type)"
-            >
+            <el-button :icon="Download" type="primary" link  @click="downloadFile(item.type)">
               {{ $t("button.download") }}
             </el-button>
-            <el-button
-              type="primary"
-              :icon="Upload"
-              :loading="uploading === item.type"
-              @click="openFilePicker(item.type)"
-            >
+            <el-button type="danger" link :icon="Upload" @click="openFilePicker(item.type)">
               {{ $t("config.config_transfer.import") }}
             </el-button>
           </div>
         </div>
       </div>
     </div>
-
-    <input
-      ref="mainInput"
-      hidden
-      type="file"
-      accept=".enc,.json,application/json"
-      @change="(event) => handleSelectedFile('main', event)"
-    />
-    <input
-      ref="sopInput"
-      hidden
-      type="file"
-      accept=".enc,.json,application/json"
-      @change="(event) => handleSelectedFile('sop', event)"
-    />
-
+    <input ref="mainInput" hidden type="file" accept=".enc,.json,application/json"  @change="(event) => handleSelectedFile('main', event)"/>
+    <input ref="sopInput" hidden type="file" accept=".enc,.json,application/json" @change="(event) => handleSelectedFile('sop', event)"/>
     <template #footer>
-      <el-button @click="emit('update:visible', false)">
-        {{ $t("button.close") }}
-      </el-button>
+      <el-button @click="emit('update:visible', false)" plain>{{ $t("button.close") }}</el-button>
     </template>
   </el-dialog>
 </template>
@@ -73,16 +31,14 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
 import { Document, Download, Upload } from "@element-plus/icons-vue";
+import { MesAlertWTitle, MesConfirmWTitle } from "@/assets/js/secondpk";
+import { useAppStore } from "@/stores/store";
 import api from "@/api/index";
-
+const appStore = useAppStore();
 type ConfigType = "main" | "sop";
-
-defineProps<{
-  visible: boolean;
-}>();
-
+defineProps<{visible: boolean}>();
 const emit = defineEmits<{
   (event: "update:visible", value: boolean): void;
   (event: "imported", configType: ConfigType): void;
@@ -91,8 +47,6 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const mainInput = ref<HTMLInputElement>();
 const sopInput = ref<HTMLInputElement>();
-const uploading = ref<ConfigType | "">("");
-const downloading = ref<ConfigType | "">("");
 
 const configFiles = computed(() => [
   {
@@ -113,15 +67,14 @@ const inputFor = (configType: ConfigType) => {
 
 const openFilePicker = (configType: ConfigType) => {
   const input = inputFor(configType);
-  if (!input || uploading.value) return;
+  if (!input) return;
   input.value = "";
   input.click();
 };
 
 const downloadFile = async (configType: ConfigType) => {
-  if (downloading.value) return;
-  downloading.value = configType;
   try {
+    appStore.setLoading(true);
     const response = await api.downloadConfigFile(configType);
     const blob = new Blob([response.data], {
       type: "application/octet-stream",
@@ -136,18 +89,13 @@ const downloadFile = async (configType: ConfigType) => {
     anchor.remove();
     URL.revokeObjectURL(objectUrl);
   } catch (error: any) {
-    ElMessage.error(
-      error?.message || t("config.config_transfer.download_failed"),
-    );
+    MesAlertWTitle("error", t('displaytext.failed'), t("config.config_transfer.download_failed"), error?.response?.data?.msg || error?.message || t("config.config_transfer.download_failed"), t("button.ok"));
   } finally {
-    downloading.value = "";
+    appStore.setLoading(false);
   }
 };
 
-const handleSelectedFile = async (
-  configType: ConfigType,
-  event: Event,
-) => {
+const handleSelectedFile = async (configType: ConfigType,event: Event,) => {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
@@ -161,23 +109,9 @@ const handleSelectedFile = async (
       ElMessage.error(t("config.config_transfer.invalid_size"));
       return;
     }
-    await ElMessageBox.confirm(
-      t("config.config_transfer.import_confirm", {
-        name:
-          configType === "main"
-            ? t("config.config_transfer.main_title")
-            : t("config.config_transfer.sop_title"),
-      }),
-      t("config.config_transfer.import_confirm_title"),
-      {
-        type: "warning",
-        confirmButtonText: t("button.confirm"),
-        cancelButtonText: t("button.cancel"),
-        modalClass: "bs-shade",
-      },
-    );
-
-    uploading.value = configType;
+    const title = configType === "main" ? t("config.config_transfer.main_title") : t("config.config_transfer.sop_title");
+    await MesConfirmWTitle("warning",t('config.config_transfer.import'),t("config.config_transfer.import_confirm_title"),t("config.config_transfer.import_confirm",{name:title}),t('config.config_transfer.import'),t('button.cancel'));
+    appStore.setLoading(true);
     const formData = new FormData();
     formData.append("file", file, file.name);
     const response = await api.uploadConfigFile(configType, formData);
@@ -190,13 +124,9 @@ const handleSelectedFile = async (
     emit("imported", configType);
   } catch (error: any) {
     if (error === "cancel" || error === "close") return;
-    ElMessage.error(
-      error?.response?.data?.msg ||
-        error?.message ||
-        t("config.config_transfer.import_failed"),
-    );
+    MesAlertWTitle("error", t('displaytext.failed'), t("config.config_transfer.import_failed"), error?.response?.data?.msg || error?.message || t("config.config_transfer.import_failed"), t("button.ok"));
   } finally {
-    uploading.value = "";
+    appStore.setLoading(false);
     input.value = "";
   }
 };
@@ -215,8 +145,8 @@ const handleSelectedFile = async (
   gap: 14px;
   min-height: 150px;
   padding: 18px;
-  border: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
+  color:#000;
+  background: var(--bs-bgcolor);
 
   &__icon {
     flex: 0 0 auto;
@@ -240,7 +170,6 @@ const handleSelectedFile = async (
   &__description {
     flex: 1;
     margin-top: 8px;
-    color: var(--el-text-color-secondary);
     line-height: 1.5;
   }
 

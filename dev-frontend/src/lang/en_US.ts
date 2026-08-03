@@ -92,10 +92,10 @@ export default{
         model_upload:{
             open:"Upload Model Package",
             title:"Upload Model",
-            description:"Upload a ZIP package exported by the training system. It is extracted into the model directory only after validation succeeds.",
+            description:"Upload a ZIP package exported by FAIVS. It is extracted into the model directory only after validation succeeds.",
             drop_hint:"Drop the model package here, or ",
             choose_file:"click to choose",
-            file_tip:"Supports only eFAIVSModel{training_name}_{project_name}_YYYYMMDDHHMMSS.zip up to 1 GB. The package must contain one ONNX file and cache.json.",
+            file_tip:"Only models related to [eFAIVS] downloaded from FAIVS are supported. The package must contain one ONNX file and cache.json.",
             filename:"Filename",
             model_name:"Model Name",
             pending_validation:"Pending server validation",

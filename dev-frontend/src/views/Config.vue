@@ -12,7 +12,7 @@
                   </el-form-item>
                   <el-popover :visible="labelColorVisible" placement="bottom" width="300" trigger="click" popper-style="height: 400px">
                     <div style="width: 100%; max-height: 350px; overflow-y: auto">
-                        <el-row v-for="(color, label, index) in currentMainLabels" :key="index">
+                        <el-row v-for="(color, label, index) in currentMainLabels" :key="index" style="border-bottom: 1px solid #000;">
                         <el-col :span="16">{{ label }}</el-col>
                         <el-col :span="6">
                             <el-color-picker v-model="currentMainLabels[label]"

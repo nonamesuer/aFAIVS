@@ -63,7 +63,7 @@
             {{ $t("config.hand_style_preview_description") }}
           </div>
         </div>
-        <el-button :loading="previewLoading" @click="requestPreview">
+        <el-button link type="primary" :icon="Refresh" :loading="previewLoading" @click="requestPreview">
           {{ $t("config.refresh_preview") }}
         </el-button>
       </div>
@@ -76,13 +76,7 @@
         />
         <el-empty v-else :description="$t('config.preview_not_available')" />
       </div>
-      <el-alert
-        v-if="previewError"
-        :title="previewError"
-        type="error"
-        :closable="false"
-        show-icon
-      />
+      <el-alert v-if="previewError" :title="previewError"  type="error" :closable="false" show-icon/>
     </section>
 
     <template #footer>
@@ -102,6 +96,7 @@
 import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
+import { Refresh } from "@element-plus/icons-vue";
 import api from "@/api/index";
 import { MesAlertWTitle } from "@/assets/js/secondpk";
 import { useAppStore } from "@/stores/store";

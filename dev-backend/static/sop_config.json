@@ -61,8 +61,8 @@
                     "expectedObject": "P1",
                     "fromRegion": {
                         "type": "manual",
-                        "id": "region_9294af60a995463b912c7f3c533a8252",
-                        "name": "from",
+                        "id": "region_f66bb573af414f88b60251a44ee55abb",
+                        "name": "固定区域 1",
                         "cameraName": "TEF1"
                     },
                     "toRegion": "CY",
@@ -95,7 +95,7 @@
             }
         ],
         "create_time": "2026-07-24 16:16:26",
-        "enabled": true,
-        "modify_time": "2026-07-31 09:28:19"
+        "enabled": false,
+        "modify_time": "2026-08-03 13:26:17"
     }
 }

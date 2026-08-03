@@ -1,8 +1,8 @@
 {
     "paths": {
-        "modelPath": "",
-        "sopPath": "",
-        "resultPath": "",
+        "modelPath": "C:\\Users\\LAI8PK\\Desktop\\Projects\\aFAIVS\\dev-backend\\models",
+        "sopPath": "C:\\Users\\LAI8PK\\Desktop\\Projects\\aFAIVS\\dev-backend\\static",
+        "resultPath": "C:\\Users\\LAI8PK\\Desktop\\Projects\\aFAIVS\\dev-backend\\results",
         "saveDetectionDatasets": false
     },
     "resolutions": [
@@ -59,71 +59,15 @@
             2340
         ]
     ],
-    "cameraResolution": {
-        "TEF1": {
-            "width": 800,
-            "height": 600,
-            "area": 600,
-            "clarity": 64
-        },
-        "HP 5MP Camera": {
-            "width": 1024,
-            "height": 768,
-            "area": 640,
-            "clarity": 46
-        }
-    },
     "enableCamera": "TEF1",
+    "cameraResolution": {},
     "boxStyle": {
         "boxThickness": 2,
-        "fontThickness": 3,
-        "fontScale": 0.7,
+        "fontThickness": 2,
+        "fontScale": 0.5,
         "fromAreaFill": false,
-        "targetAreaFill": true,
+        "targetAreaFill": false,
         "areaFillAlpha": 0.5
-    },
-    "modbus": {
-        "host": "127.0.0.1",
-        "port": 5020,
-        "timeout": 3
-    },
-    "detectionIntegration": {
-        "triggers": {
-            "httpApi": false,
-            "usbScanner": false,
-            "modbus": false,
-            "httpParameters": [
-                "code",
-                "station"
-            ],
-            "usbScannerLength": {
-                "min": 1,
-                "max": 128
-            },
-            "modbusSignals": [
-                {
-                    "slaveAddress": 1,
-                    "dataType": "discreteInput",
-                    "address": 0,
-                    "triggerValue": true
-                }
-            ]
-        },
-        "resultFeedback": {
-            "enabled": true,
-            "endpoints": [
-                {
-                    "name": "API 1",
-                    "url": "http://127.0.0.1:20253/http/response_test",
-                    "enabled": true
-                },
-                {
-                    "name": "API 2",
-                    "url": "http://127.0.0.1:8000",
-                    "enabled": true
-                }
-            ]
-        }
     },
     "handStyle": {
         "left": {
@@ -134,31 +78,9 @@
         },
         "right": {
             "keypointSize": 4,
-            "keypointColor": "#FF0000",
+            "keypointColor": "#00FF00",
             "connectionWidth": 2,
             "connectionColor": "#00FF00"
-        }
-    },
-    "manualRegions": {
-        "version": 1,
-        "cameras": {
-            "TEF1": {
-                "referenceWidth": 1280,
-                "referenceHeight": 720,
-                "regions": [
-                    {
-                        "id": "region_9294af60a995463b912c7f3c533a8252",
-                        "name": "from",
-                        "color": "#409EFF",
-                        "shape": "rectangle",
-                        "x1": 0.716634,
-                        "y1": 0.258465,
-                        "x2": 0.848547,
-                        "y2": 0.574367,
-                        "enabled": true
-                    }
-                ]
-            }
         }
     },
     "resultMedia": {
@@ -168,14 +90,58 @@
         "saveNgAnnotatedImage": true,
         "saveStepSuccess": true,
         "saveRunCompleted": true,
-        "imageFormat": "jpg",
-        "jpegQuality": 90,
-        "minFreeDiskPercent": 10,
-        "queueSize": 32,
         "saveNgVideo": true,
         "ngVideoBeforeSeconds": 8,
         "ngVideoAfterSeconds": 5,
         "ngVideoFps": 10,
-        "ngVideoMaxWidth": 1280
+        "ngVideoMaxWidth": 1280,
+        "imageFormat": "jpg",
+        "jpegQuality": 90,
+        "minFreeDiskPercent": 10,
+        "queueSize": 32
+    },
+    "manualRegions": {
+        "version": 1,
+        "cameras": {
+            "TEF1": {
+                "referenceWidth": 640,
+                "referenceHeight": 480,
+                "regions": [
+                    {
+                        "id": "region_f66bb573af414f88b60251a44ee55abb",
+                        "name": "固定区域 1",
+                        "color": "#409EFF",
+                        "shape": "rectangle",
+                        "x1": 0.444401,
+                        "y1": 0.219097,
+                        "x2": 0.597656,
+                        "y2": 0.423438,
+                        "enabled": true
+                    }
+                ]
+            }
+        }
+    },
+    "modbus": {
+        "host": "127.0.0.1",
+        "port": 502,
+        "timeout": 3
+    },
+    "detectionIntegration": {
+        "triggers": {
+            "httpApi": false,
+            "httpParameters": [],
+            "usbScanner": false,
+            "usbScannerLength": {
+                "min": 1,
+                "max": 128
+            },
+            "modbus": false,
+            "modbusSignals": []
+        },
+        "resultFeedback": {
+            "enabled": false,
+            "endpoints": []
+        }
     }
 }

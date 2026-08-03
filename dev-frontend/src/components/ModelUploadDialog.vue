@@ -1,31 +1,10 @@
 <template>
-  <el-dialog
-    :model-value="visible"
-    :title="$t('config.model_upload.title')"
-    width="560px"
-    destroy-on-close
-    modal-class="bs-shade"
-    @close="closeDialog"
-  >
-    <el-alert
-      type="info"
-      :closable="false"
-      show-icon
+  <el-dialog :model-value="visible" :title="$t('config.model_upload.title')" width="560px" destroy-on-close modal-class="bs-shade" @close="closeDialog">
+    <el-alert type="info" :closable="false" show-icon
       :title="$t('config.model_upload.description')"
     />
 
-    <el-upload
-      ref="uploadRef"
-      class="model-upload"
-      drag
-      accept=".zip,application/zip"
-      :auto-upload="false"
-      :limit="1"
-      :file-list="fileList"
-      :on-change="handleFileChange"
-      :on-remove="handleFileRemove"
-      :on-exceed="handleExceed"
-    >
+    <el-upload ref="uploadRef" class="model-upload" drag accept=".zip,application/zip" :auto-upload="false" :limit="1" :file-list="fileList" :on-change="handleFileChange" :on-remove="handleFileRemove" :on-exceed="handleExceed">
       <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
       <div class="el-upload__text">
         {{ $t("config.model_upload.drop_hint") }}
@@ -50,10 +29,9 @@
     </div>
 
     <template #footer>
-      <el-button @click="closeDialog">{{ $t("button.cancel") }}</el-button>
+      <el-button @click="closeDialog" plain>{{ $t("button.cancel") }}</el-button>
       <el-button
         type="primary"
-        :loading="uploading"
         :disabled="!selectedFile"
         @click="submitUpload"
       >
@@ -68,7 +46,6 @@ import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   ElMessage,
-  ElMessageBox,
   genFileId,
   type UploadFile,
   type UploadFiles,
@@ -79,7 +56,9 @@ import {
 } from "element-plus";
 import { UploadFilled } from "@element-plus/icons-vue";
 import api from "@/api/index";
-
+import { MesAlertWTitle, MesConfirmWTitle } from "@/assets/js/secondpk";
+import { useAppStore } from "@/stores/store";
+const appStore = useAppStore();
 const props = defineProps<{
   visible: boolean;
 }>();
@@ -93,13 +72,12 @@ const { t } = useI18n();
 const uploadRef = ref<UploadInstance>();
 const fileList = ref<UploadUserFile[]>([]);
 const selectedFile = ref<File | null>(null);
-const uploading = ref(false);
+
+const MODEL_ARCHIVE_FILENAME_PATTERN = /^(?:[A-Za-z0-9])?FAIVSModel[^_]+_([\w.-]+)_\d{14}\.zip$/i;
 
 const inferredModelName = computed(() => {
   if (!selectedFile.value) return "";
-  const match = selectedFile.value.name.match(
-    /^eFAIVSModel[^_]+_([\w.-]+)_\d{14}\.zip$/i,
-  );
+  const match = selectedFile.value.name.match(MODEL_ARCHIVE_FILENAME_PATTERN);
   return match?.[1] || "";
 });
 
@@ -117,7 +95,6 @@ const resetSelection = () => {
 };
 
 const closeDialog = () => {
-  if (uploading.value) return;
   resetSelection();
   emit("update:visible", false);
 };
@@ -143,12 +120,10 @@ const validateFile = (file: File) => {
 };
 
 const inferredNameFromFilename = (filename: string) => {
-  return /^eFAIVSModel[^_]+_([\w.-]+)_\d{14}\.zip$/i.exec(filename)?.[1] || "";
+  return MODEL_ARCHIVE_FILENAME_PATTERN.exec(filename)?.[1] || "";
 };
 
-const handleFileChange = (
-  uploadFile: UploadFile,
-  uploadFiles: UploadFiles,
+const handleFileChange = (uploadFile: UploadFile,uploadFiles: UploadFiles,
 ) => {
   const rawFile = uploadFile.raw;
   if (!rawFile || !validateFile(rawFile)) {
@@ -181,49 +156,28 @@ const uploadFile = async (overwrite: boolean) => {
 };
 
 const submitUpload = async () => {
-  if (!selectedFile.value || uploading.value) return;
-  uploading.value = true;
+  if (!selectedFile.value ) return;
   try {
     let response = await uploadFile(false);
-    if (
-      !response?.data?.status &&
-      response?.data?.code === "MODEL_ALREADY_EXISTS"
-    ) {
-      const modelName =
-        response.data?.data?.modelName || inferredModelName.value;
-      await ElMessageBox.confirm(
-        t("config.model_upload.overwrite_confirm", { name: modelName }),
-        t("config.model_upload.overwrite_title"),
-        {
-          type: "warning",
-          confirmButtonText: t("button.confirm"),
-          cancelButtonText: t("button.cancel"),
-          modalClass: "bs-shade",
-        },
-      );
+    if (!response?.data?.status && response?.data?.code === "MODEL_ALREADY_EXISTS") {
+      const modelName = response.data?.data?.modelName || inferredModelName.value;
+      await MesConfirmWTitle("warning", t('config.model_upload.open'), t('config.model_upload.overwrite_title'), t("config.model_upload.overwrite_confirm", { name: modelName }), t('button.confirm'), t('button.cancel'));
+      appStore.setLoading(true);
       response = await uploadFile(true);
     }
     if (!response?.data?.status) {
-      throw new Error(
-        response?.data?.msg || t("config.model_upload.failed"),
-      );
+      throw new Error( response?.data?.msg || t("config.model_upload.failed"));
     }
-    const modelName =
-      response.data?.data?.modelName || inferredModelName.value;
-    ElMessage.success(
-      t("config.model_upload.success", { name: modelName }),
-    );
+    const modelName =response.data?.data?.modelName || inferredModelName.value;
+    ElMessage.success(t("config.model_upload.success", { name: modelName }) );
     emit("uploaded", modelName);
+    
     closeDialog();
   } catch (error: any) {
     if (error === "cancel" || error === "close") return;
-    ElMessage.error(
-      error?.response?.data?.msg ||
-        error?.message ||
-        t("config.model_upload.failed"),
-    );
+    MesAlertWTitle("error", t('displaytext.failed'), t("config.model_upload.failed"), error?.response?.data?.msg || error?.message || t("config.model_upload.failed"), t("button.ok"));
   } finally {
-    uploading.value = false;
+    appStore.setLoading(false);
   }
 };
 </script>

@@ -16,11 +16,7 @@
             <el-form-item :label="$t('config.targetarea_fill')" prop="targetAreaFill">
                 <el-switch v-model="boxStyleForm.targetAreaFill" />
             </el-form-item>
-            <el-form-item
-                :label="$t('config.area_fill_alpha')"
-                prop="areaFillAlpha"
-                style="width: 100%"
-            >
+            <el-form-item :label="$t('config.area_fill_alpha')" prop="areaFillAlpha" style="width: 100%">
                 <el-slider
                     v-model="areaFillPercent"
                     :min="0"

@@ -17,45 +17,22 @@ MAX_MODEL_ARCHIVE_FILES = 10
 MAX_COMPRESSION_RATIO = 250
 MAX_MODEL_NAME_LENGTH = 100
 
-MODEL_ARCHIVE_PATTERN = re.compile(
-    r"^eFAIVSModel[^_]+_(?P<project>[\w.-]+)_(?P<timestamp>\d{14})\.zip$",
-    re.IGNORECASE | re.UNICODE,
-)
+MODEL_ARCHIVE_PATTERN = re.compile(r"^(?:[A-Za-z0-9])?FAIVSModel[^_]+_(?P<project>[\w.-]+)_(?P<timestamp>\d{14})\.zip$",re.IGNORECASE | re.UNICODE,)
 MODEL_NAME_PATTERN = re.compile(r"^[\w.-]+$", re.UNICODE)
-WINDOWS_RESERVED_NAMES = {
-    "CON",
-    "PRN",
-    "AUX",
-    "NUL",
-    *(f"COM{index}" for index in range(1, 10)),
-    *(f"LPT{index}" for index in range(1, 10)),
-}
+WINDOWS_RESERVED_NAMES = {"CON","PRN","AUX","NUL",*(f"COM{index}" for index in range(1, 10)),*(f"LPT{index}" for index in range(1, 10)),}
 MODEL_INSTALL_LOCK = threading.Lock()
-
-
 class ModelArchiveError(ValueError):
     pass
-
 
 class ModelAlreadyExistsError(ModelArchiveError):
     def __init__(self, model_name: str):
         super().__init__(f"Model '{model_name}' already exists")
         self.model_name = model_name
-
-
 def normalize_model_name(value: str) -> str:
     model_name = str(value or "").strip()
-    if not model_name:
-        raise ModelArchiveError("Model project name is missing")
-    if len(model_name) > MAX_MODEL_NAME_LENGTH:
-        raise ModelArchiveError(
-            f"Model project name must not exceed {MAX_MODEL_NAME_LENGTH} characters"
-        )
-    if (
-        model_name in {".", ".."}
-        or model_name.endswith((".", " "))
-        or not MODEL_NAME_PATTERN.fullmatch(model_name)
-    ):
+    if not model_name:raise ModelArchiveError("Model project name is missing")
+    if len(model_name) > MAX_MODEL_NAME_LENGTH:raise ModelArchiveError(f"Model project name must not exceed {MAX_MODEL_NAME_LENGTH} characters")
+    if model_name in {".", ".."} or model_name.endswith((".", " ")) or not MODEL_NAME_PATTERN.fullmatch(model_name):
         raise ModelArchiveError(
             "Model project name may contain only letters, numbers, "
             "underscores, hyphens and periods"
@@ -73,10 +50,9 @@ def model_name_from_archive_filename(filename: str) -> str:
     if match is None:
         raise ModelArchiveError(
             "Invalid model package filename. Expected "
-            "eFAIVSModel{model_times_name}_{project_name}_YYYYMMDDHHMMSS.zip"
+            "[prefix]FAIVSModel{model_times_name}_{project_name}_YYYYMMDDHHMMSS.zip"
         )
     return normalize_model_name(match.group("project"))
-
 
 def _validate_member(member: zipfile.ZipInfo) -> PurePosixPath:
     member_name = member.filename.replace("\\", "/")
@@ -102,9 +78,7 @@ def _validate_archive(
     if not members:
         raise ModelArchiveError("Model package is empty")
     if len(members) > MAX_MODEL_ARCHIVE_FILES:
-        raise ModelArchiveError(
-            f"Model package may contain at most {MAX_MODEL_ARCHIVE_FILES} files"
-        )
+        raise ModelArchiveError(f"Model package may contain at most {MAX_MODEL_ARCHIVE_FILES} files")
 
     total_size = 0
     onnx_members: list[zipfile.ZipInfo] = []
@@ -156,13 +130,7 @@ def _copy_archive_member(
         os.fsync(target.fileno())
 
 
-def _install_model_archive(
-    archive_path: str,
-    original_filename: str,
-    models_path: str,
-    *,
-    overwrite: bool = False,
-) -> dict:
+def _install_model_archive(archive_path: str,original_filename: str,models_path: str,*,overwrite: bool = False,) -> dict:
     model_name = model_name_from_archive_filename(original_filename)
     os.makedirs(models_path, exist_ok=True)
     models_root = os.path.abspath(models_path)
@@ -243,18 +211,7 @@ def _install_model_archive(
         shutil.rmtree(work_root, ignore_errors=True)
 
 
-def install_model_archive(
-    archive_path: str,
-    original_filename: str,
-    models_path: str,
-    *,
-    overwrite: bool = False,
-) -> dict:
+def install_model_archive(archive_path: str,original_filename: str, models_path: str,*,overwrite: bool = False,) -> dict:
     """Serialize installs so two uploads cannot replace the same model at once."""
     with MODEL_INSTALL_LOCK:
-        return _install_model_archive(
-            archive_path,
-            original_filename,
-            models_path,
-            overwrite=overwrite,
-        )
+        return _install_model_archive(archive_path,original_filename, models_path,overwrite=overwrite)

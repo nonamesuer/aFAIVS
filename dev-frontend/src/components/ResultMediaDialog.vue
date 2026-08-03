@@ -151,10 +151,10 @@
     </el-scrollbar>
 
     <template #footer>
-      <el-button @click="$emit('update:visible', false)">
+      <el-button @click="$emit('update:visible', false)" plain>
         {{ $t('button.cancel') }}
       </el-button>
-      <el-button type="primary" :loading="saving" @click="handleSave">
+      <el-button type="primary" @click="handleSave">
         {{ $t('button.save') }}
       </el-button>
     </template>
@@ -166,6 +166,9 @@ import { reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import api from '@/api/index'
+import { useAppStore } from '@/stores/store'
+import { MesAlertWTitle } from '@/assets/js/secondpk'
+const appStore = useAppStore()
 
 interface ResultMediaConfig {
   enabled: boolean
@@ -214,7 +217,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const saving = ref(false)
 const form = reactive<ResultMediaConfig>({ ...defaults })
 
 const normalize = (
@@ -257,25 +259,21 @@ const handleSave = async () => {
     return
   }
 
-  saving.value = true
   try {
+    appStore.setLoading(true)
     const payload = normalize(form)
     const response = await api.modifyConfig({ resultMedia: payload })
     if (!response.data?.status) {
-      ElMessage.error(response.data?.msg || t('config.result_media.save_failed'))
+      MesAlertWTitle("error", t('displaytext.failed'), t("config.result_media.save_failed"), response.data?.msg || t('config.result_media.save_failed'), t("button.ok"));
       return
     }
     emit('update:resultMediaConfig', payload)
     emit('update:visible', false)
     ElMessage.success(t('config.result_media.save_success'))
   } catch (error: any) {
-    ElMessage.error(
-      error?.response?.data?.msg ||
-        error?.message ||
-        t('config.result_media.save_failed'),
-    )
+    MesAlertWTitle("error", t('displaytext.failed'), t("config.result_media.save_failed"), error?.response?.data?.msg || error?.message || t('config.result_media.save_failed'), t("button.ok"));
   } finally {
-    saving.value = false
+    appStore.setLoading(false)
   }
 }
 
@@ -294,9 +292,9 @@ const handleClosed = () => {
 
 .setting-card {
   padding: 16px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 8px;
-  background: var(--el-fill-color-blank);
+  /* border: 1px solid var(--el-border-color-light); */
+  /* border-radius: 8px; */
+  background: var(--bs-bgcolor);
 }
 
 .setting-row {
