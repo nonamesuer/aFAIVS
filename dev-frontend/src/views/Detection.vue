@@ -361,6 +361,7 @@ const MAX_ALERT_COUNT = 30
 const RECONNECT_DELAY_MS = 3000
 const TIMEOUT_TICK_MS = 1000
 const EXTERNAL_STATUS_POLL_MS = 1000
+const AUDIO_PLAYBACK_EVENT_STORAGE_KEY = 'afaivs_audio_playback_events'
 
 const createEmptyDetectionResult = () => ({
     step: null,
@@ -433,10 +434,18 @@ let webRtcStartToken = 0
 let lastSopEventKey = ''
 let lastCriticalAlertKey = ''
 const handledFeedbackEventIds = new Set()
+const handledAudioPlaybackEventIds = new Set((() => {try {const value = JSON.parse(sessionStorage.getItem(AUDIO_PLAYBACK_EVENT_STORAGE_KEY) || '[]');return Array.isArray(value) ? value.slice(-100) : []} catch {return []}})())
+const audioResourceUrlCache = new Map()
 let lastTriggerCycleAt = null
 let scannerBuffer = ''
 let scannerResetTimer = null
 let lastExternalRequestId = null
+let feedbackAudioQueue = []
+let feedbackAudioProcessing = false
+let feedbackAudioGeneration = 0
+let currentFeedbackAudio = null
+let cancelCurrentFeedbackAudio = null
+let audioPlaybackUnlocked = false
 
 const okCount = computed(() => Number(detectionResult.value.ok_count || 0))
 const ngCount = computed(() => Number(detectionResult.value.ng_count || 0))
@@ -981,9 +990,7 @@ function applySopState(sop) {
 }
 
 function getFeedbackEventText(feedbackEvent = {}) {
-    const channel = feedbackEvent.channel === 'modbus'
-        ? t('displaytext.modbusfeedbackname')
-        : t('displaytext.httpfeedbackname')
+    const channel = {modbus:t('displaytext.modbusfeedbackname'),audio:t('displaytext.audiofeedbackname'),http:t('displaytext.httpfeedbackname')}[feedbackEvent.channel] || feedbackEvent.channel || ''
     const eventType = {
         operation_error: t('displaytext.feedbackoperationerror'),
         step_success: t('displaytext.feedbackstepsuccess'),
@@ -995,6 +1002,7 @@ function getFeedbackEventText(feedbackEvent = {}) {
         pending: t('displaytext.feedbackpending'),
         success: t('displaytext.feedbacksuccess'),
         failed: t('displaytext.feedbackfailed'),
+        play: t('displaytext.feedbackplay'),
     }[feedbackEvent.status] || feedbackEvent.status || ''
     const target = feedbackEvent.target ? `[${feedbackEvent.target}]` : ''
     const detail = feedbackEvent.message ? `：${feedbackEvent.message}` : ''
@@ -1006,6 +1014,51 @@ function getFeedbackEventText(feedbackEvent = {}) {
         target,
         detail,
     })
+}
+
+async function unlockAudioPlayback() {
+    if (audioPlaybackUnlocked) return
+    try {const audio = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');audio.muted = true;await audio.play();audio.pause();audioPlaybackUnlocked = true} catch {}
+}
+
+async function getAudioResourceUrl(audioId) {
+    if (audioResourceUrlCache.has(audioId)) return audioResourceUrlCache.get(audioId)
+    const response = await api.getAudioResourceFile(audioId);const url = URL.createObjectURL(response.data);audioResourceUrlCache.set(audioId,url);return url
+}
+
+function updateAudioPlaybackEvent(feedbackEvent,status,message) {
+    const eventId = String(feedbackEvent.id || '');const index = events.value.findIndex(item => item.id === `feedback-event-${eventId}`);const updated = {...feedbackEvent,status,message}
+    if (index >= 0) events.value[index] = {...events.value[index],level:status === 'success' ? 'success' : 'error',text:getFeedbackEventText(updated)}
+    if (status !== 'failed') return
+    const alert = {id:`audio-alert-${eventId}`,level:'error',code:'AUDIO_PLAYBACK_FAILED',message:getFeedbackEventText(updated),confirmed:false};alerts.value = [alert,...alerts.value].slice(0,MAX_ALERT_COUNT);showCriticalAlert(alert,8000)
+}
+
+function playAudioQueueItem(item) {
+    return new Promise(async resolve => {
+        try {
+            const url = await getAudioResourceUrl(item.audioId);const audio = new Audio(url);currentFeedbackAudio = audio;audio.volume = Math.min(1,Math.max(0,Number(item.volume ?? 80) / 100));let finished = false
+            const finish = (result) => {if (finished) return;finished = true;audio.onended = null;audio.onerror = null;cancelCurrentFeedbackAudio = null;if (currentFeedbackAudio === audio) currentFeedbackAudio = null;resolve(result)}
+            cancelCurrentFeedbackAudio = () => {audio.pause();finish({cancelled:true})};audio.onended = () => finish({success:true});audio.onerror = () => finish({error:new Error(t('config.audio_resources.preview_failed'))});await audio.play()
+        } catch (error) {cancelCurrentFeedbackAudio = null;currentFeedbackAudio = null;resolve({error})}
+    })
+}
+
+async function processFeedbackAudioQueue() {
+    if (feedbackAudioProcessing) return
+    feedbackAudioProcessing = true;const generation = feedbackAudioGeneration
+    while (generation === feedbackAudioGeneration && feedbackAudioQueue.length) {const item = feedbackAudioQueue.shift();const result = await playAudioQueueItem(item);if (result?.cancelled || generation !== feedbackAudioGeneration) continue;if (result?.success) updateAudioPlaybackEvent(item,'success',t('displaytext.audioplaybacksuccess'));else updateAudioPlaybackEvent(item,'failed',result?.error?.response?.data?.detail || result?.error?.message || t('displaytext.audioplaybackfailed'))}
+    if (generation === feedbackAudioGeneration) feedbackAudioProcessing = false
+}
+
+function enqueueFeedbackAudio(feedbackEvent) {
+    const eventId = String(feedbackEvent.id || '');if (!eventId || handledAudioPlaybackEventIds.has(eventId)) return;handledAudioPlaybackEventIds.add(eventId);if (handledAudioPlaybackEventIds.size > 100) handledAudioPlaybackEventIds.delete(handledAudioPlaybackEventIds.values().next().value);try {sessionStorage.setItem(AUDIO_PLAYBACK_EVENT_STORAGE_KEY,JSON.stringify(Array.from(handledAudioPlaybackEventIds)))} catch {}
+    const audioId = String(feedbackEvent.audioId || '').trim();if (!audioId) return updateAudioPlaybackEvent(feedbackEvent,'failed',t('config.sop_step_config.audio_resource_invalid'))
+    feedbackAudioQueue.push({...feedbackEvent,audioId});processFeedbackAudioQueue()
+}
+
+function resetFeedbackAudioPlayback(releaseCache = false) {
+    feedbackAudioGeneration += 1;feedbackAudioQueue = [];cancelCurrentFeedbackAudio?.();cancelCurrentFeedbackAudio = null;currentFeedbackAudio = null;feedbackAudioProcessing = false
+    if (releaseCache) {for (const url of audioResourceUrlCache.values()) URL.revokeObjectURL(url);audioResourceUrlCache.clear()}
 }
 
 function syncFeedbackEvents(feedback = {}) {
@@ -1036,6 +1089,8 @@ function syncFeedbackEvents(feedback = {}) {
             },
             ...events.value,
         ].slice(0, MAX_EVENT_COUNT)
+
+        if (feedbackEvent.channel === 'audio' && feedbackEvent.status === 'play') enqueueFeedbackAudio(feedbackEvent)
 
         if (!failed) {
             continue
@@ -1683,6 +1738,7 @@ async function pollDetectionStatus() {
 }
 
 function clearDetectionHistory() {
+    resetFeedbackAudioPlayback()
     events.value = []
     alerts.value = []
     clearCriticalAlert()
@@ -1751,6 +1807,7 @@ function applyResetDetectionResult(response, clearHistory = false) {
 }
 
 async function handleStartDetection() {
+    await unlockAudioPlayback()
     if (
         !cameraName.value ||
         cameraName.value === t('displaytext.noconfigcamera')
@@ -1920,6 +1977,8 @@ onMounted(async () => {
         updateFooterHintOverflow,
     )
     window.addEventListener('keydown', handleScannerKeydown, true)
+    window.addEventListener('pointerdown',unlockAudioPlayback,true)
+    window.addEventListener('keydown',unlockAudioPlayback,true)
     window.addEventListener('blur', handleScannerContextLost)
     document.addEventListener('visibilitychange', handleScannerContextLost)
 
@@ -1940,6 +1999,8 @@ onBeforeUnmount(() => {
         updateFooterHintOverflow,
     )
     window.removeEventListener('keydown', handleScannerKeydown, true)
+    window.removeEventListener('pointerdown',unlockAudioPlayback,true)
+    window.removeEventListener('keydown',unlockAudioPlayback,true)
     window.removeEventListener('blur', handleScannerContextLost)
     document.removeEventListener('visibilitychange', handleScannerContextLost)
     clearScannerBuffer()
@@ -1959,6 +2020,7 @@ onBeforeUnmount(() => {
 
     stopStream()
     closeResultSocket()
+    resetFeedbackAudioPlayback(true)
 })
 
 watch(

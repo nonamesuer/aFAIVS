@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 
 from pymodbus.client import ModbusTcpClient
 
+from module._audio_resources import audio_resource_ids,get_audio_resource
 from module._base import get_main_config
 
 
@@ -23,6 +24,7 @@ MAX_STEP_HTTP_ENDPOINTS = 5
 MOMENTARY_COIL_DELAY_SECONDS = 0.3
 WRITABLE_MODBUS_TYPES = {"coil", "holdingRegister"}
 HTTP_FEEDBACK_DEBUG_FILE_LOCK = threading.Lock()
+AUDIO_VOLUME_DEFAULT = 80
 
 
 def _is_integer(value: Any) -> bool:
@@ -96,6 +98,16 @@ def validate_sop_step_feedback_config(
             validation_error = _validate_modbus_feedback_signal(signal)
             if validation_error:return f"SOP completion: {validation_error}"
         if enabled and not signals:return "SOP completion must configure at least one Modbus feedback signal"
+        audio_completion = sop_completion_feedback.get("audio",{})
+        if not isinstance(audio_completion,dict):return "sopCompletionFeedback.audio must be an object"
+        audio_enabled = audio_completion.get("enabled",False)
+        if not isinstance(audio_enabled,bool):return "sopCompletionFeedback.audio.enabled must be boolean"
+        audio_id = audio_completion.get("audioId","")
+        volume = audio_completion.get("volume",AUDIO_VOLUME_DEFAULT)
+        if not isinstance(audio_id,str):return "sopCompletionFeedback.audio.audioId must be a string"
+        if not _is_integer(volume) or not 0 <= volume <= 100:return "SOP completion audio volume must be an integer between 0 and 100"
+        if audio_enabled and not audio_id.strip():return "SOP completion must select an audio resource"
+        if audio_enabled and audio_id.strip() not in audio_resource_ids():return "SOP completion selected an audio resource that does not exist"
     steps = body.get("steps")
     if steps is None:
         return ""
@@ -151,6 +163,16 @@ def validate_sop_step_feedback_config(
             all_signals.extend(signals)
         if modbus_feedback.get("enabled") is True and not all_signals:
             return f"Step {index + 1} must configure at least one Modbus feedback signal"
+        audio_feedback = feedback.get("audio",{})
+        if not isinstance(audio_feedback,dict):return f"Step {index + 1} audio feedback must be an object"
+        audio_enabled = audio_feedback.get("enabled",False);error_audio_id = audio_feedback.get("errorAudioId","");completion_audio_id = audio_feedback.get("completionAudioId","");volume = audio_feedback.get("volume",AUDIO_VOLUME_DEFAULT)
+        if not isinstance(audio_enabled,bool):return f"Step {index + 1} audio feedback enabled must be boolean"
+        if not isinstance(error_audio_id,str) or not isinstance(completion_audio_id,str):return f"Step {index + 1} audio resource IDs must be strings"
+        if not _is_integer(volume) or not 0 <= volume <= 100:return f"Step {index + 1} audio volume must be an integer between 0 and 100"
+        selected_audio_ids = [audio_id.strip() for audio_id in (error_audio_id,completion_audio_id) if audio_id.strip()]
+        if audio_enabled and not selected_audio_ids:return f"Step {index + 1} must select at least one audio resource"
+        available_audio_ids = audio_resource_ids() if audio_enabled else set()
+        if audio_enabled and any(audio_id not in available_audio_ids for audio_id in selected_audio_ids):return f"Step {index + 1} selected an audio resource that does not exist"
     return ""
 
 
@@ -316,6 +338,11 @@ class StepFeedbackDispatcher:
                     run_id,
                 )
 
+        audio_feedback = self._sop_completion_feedback.get("audio",{}) if event_type == "sop_completed" else feedback.get("audio",{})
+        if isinstance(audio_feedback,dict) and audio_feedback.get("enabled") is True:
+            audio_id = audio_feedback.get("audioId","") if event_type == "sop_completed" else audio_feedback.get("errorAudioId" if event_type == "operation_error" else "completionAudioId","")
+            if isinstance(audio_id,str) and audio_id.strip():self._publish_audio_playback(audio_id.strip(),audio_feedback.get("volume",AUDIO_VOLUME_DEFAULT),event_type,step,run_id)
+
     def _publish_status(
         self,
         *,
@@ -326,6 +353,7 @@ class StepFeedbackDispatcher:
         run_id: str | None,
         target: str,
         message: str,
+        extra: dict[str,Any] | None = None,
     ) -> None:
         if self.status_callback is None:
             return
@@ -344,10 +372,19 @@ class StepFeedbackDispatcher:
             "message": message,
             "timestamp": time.time(),
         }
+        if isinstance(extra,dict):event.update(extra)
         try:
             self.status_callback(event)
         except Exception:
             logger.exception("Failed to publish step feedback status")
+
+    def _publish_audio_playback(self,audio_id: str,volume: Any,event_type: str,step: dict[str,Any],run_id: str | None) -> None:
+        try:
+            resource = get_audio_resource(audio_id);normalized_volume = int(volume) if _is_integer(volume) and 0 <= volume <= 100 else AUDIO_VOLUME_DEFAULT
+            self._publish_status(status="play",channel="audio",event_type=event_type,step=step,run_id=run_id,target=str(resource.get("name") or resource.get("originalName") or audio_id),message="Audio playback requested",extra={"audioId":audio_id,"volume":normalized_volume})
+        except Exception as exc:
+            self._publish_status(status="failed",channel="audio",event_type=event_type,step=step,run_id=run_id,target=audio_id,message=str(exc) or exc.__class__.__name__)
+            logger.exception("Failed to prepare audio feedback resource %s",audio_id)
 
     def _send_http_feedback(
         self,

@@ -127,6 +127,10 @@
         </article>
       </div>
     </section>
+    <section class="feedback-channel" :class="{enabled:draft.audio.enabled}">
+      <header><div class="channel-title"><span class="channel-icon"><el-icon><Headset /></el-icon></span><div><b>{{ $t('config.sop_step_config.audio_channel_name') }}</b><small>{{ $t('config.sop_step_config.feedback_channel_audio_description') }}</small></div></div><div class="channel-status"><el-tag :type="draft.audio.enabled ? 'success' : 'info'" effect="dark">{{ draft.audio.enabled ? $t('config.sop_step_config.feedback_status_audio_enabled') : $t('config.sop_step_config.feedback_status_disabled') }}</el-tag><el-switch v-model="draft.audio.enabled" /></div></header>
+      <div v-if="draft.audio.enabled" class="channel-content audio-channel-content"><el-alert v-if="!availableAudioResources.length" type="warning" :closable="false" show-icon :title="$t('config.sop_step_config.audio_feedback_unavailable')"/><el-form label-position="top"><el-row :gutter="16"><el-col :span="13"><el-form-item :label="$t('config.sop_step_config.sop_completion_audio')"><el-select v-model="draft.audio.audioId" clearable filterable :placeholder="$t('config.sop_step_config.select_audio_resource')"><el-option v-for="audio in availableAudioResources" :key="audio.id" :label="audio.name" :value="audio.id"><span>{{ audio.name }}</span><small class="audio-option-file">{{ audio.originalName }}</small></el-option></el-select></el-form-item></el-col><el-col :span="7"><el-form-item :label="$t('config.sop_step_config.audio_volume')"><el-slider v-model="draft.audio.volume" :min="0" :max="100" show-input /></el-form-item></el-col><el-col :span="4" class="preview-cell"><el-button :disabled="!draft.audio.audioId" @click="togglePreview"><el-icon><VideoPause v-if="previewing"/><VideoPlay v-else/></el-icon>{{ previewing ? $t('config.audio_resources.stop') : $t('config.audio_resources.preview') }}</el-button></el-col></el-row></el-form></div>
+    </section>
     <template #footer
       ><div class="dialog-footer">
         <el-button @click="$emit('update:visible', false)" plain>{{ $t("button.cancel") }}</el-button
@@ -139,10 +143,11 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from "vue";
+import { computed,onBeforeUnmount,reactive,ref } from "vue";
 import { ElMessage } from "element-plus";
-import { Connection, Delete, InfoFilled } from "@element-plus/icons-vue";
+import { Connection, Delete, Headset, VideoPause, VideoPlay } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
+import api from '@/api/index';
 
 type DataType = "coil" | "holdingRegister";
 type Signal = {
@@ -152,14 +157,15 @@ type Signal = {
   triggerValue: boolean | number;
   instantaneous: boolean;
 };
-type Feedback = { modbus: { enabled: boolean; signals: Signal[] } };
-const props = defineProps<{ visible: boolean; modelValue: any }>();
+type Feedback = { modbus: { enabled: boolean; signals: Signal[] };audio:{enabled:boolean;audioId:string;volume:number} };
+const props = defineProps<{ visible: boolean; modelValue: any;audioResources:Array<{id:string;name:string;originalName?:string;fileAvailable?:boolean}> }>();
 const emit = defineEmits<{
   (event: "update:visible", value: boolean): void;
   (event: "save", value: Feedback): void;
 }>();
 const { t } = useI18n();
 const MAX_SIGNALS = 3;
+const availableAudioResources = computed(() => (props.audioResources || []).filter(audio => audio?.id && audio?.name && audio?.fileAvailable !== false));const availableAudioIds = computed(() => new Set(availableAudioResources.value.map(audio => audio.id)));
 const createSignal = (): Signal => ({
   slaveAddress: 1,
   dataType: "coil",
@@ -192,9 +198,11 @@ const normalize = (value: any): Feedback => ({
       ? value.modbus.signals.slice(0, MAX_SIGNALS).map(normalizeSignal)
       : [],
   },
+  audio:{enabled:value?.audio?.enabled === true,audioId:typeof value?.audio?.audioId === 'string' ? value.audio.audioId : '',volume:Number.isInteger(value?.audio?.volume) ? Math.min(100,Math.max(0,value.audio.volume)) : 80},
 });
 const draft = reactive<Feedback>(normalize(null));
 const resetDraft = () => Object.assign(draft, normalize(props.modelValue));
+const previewing = ref(false);let previewAudio:HTMLAudioElement|null = null;let previewUrl = '';const stopPreview = () => {if (previewAudio) {previewAudio.pause();previewAudio.src = ''}previewAudio = null;previewing.value = false;if (previewUrl) URL.revokeObjectURL(previewUrl);previewUrl = ''};const togglePreview = async () => {if (previewing.value) return stopPreview();if (!draft.audio.audioId) return;try {const response = await api.getAudioResourceFile(draft.audio.audioId);previewUrl = URL.createObjectURL(response.data);previewAudio = new Audio(previewUrl);previewAudio.volume = draft.audio.volume / 100;previewAudio.onended = stopPreview;previewAudio.onerror = () => {stopPreview();ElMessage.error(t('config.audio_resources.preview_failed'))};previewing.value = true;await previewAudio.play()} catch (error:any) {stopPreview();ElMessage.error(error?.response?.data?.detail || error?.message || t('config.audio_resources.preview_failed'))}};onBeforeUnmount(stopPreview);
 const addSignal = () =>
   draft.modbus.signals.length < MAX_SIGNALS
     ? draft.modbus.signals.push(createSignal())
@@ -228,6 +236,8 @@ const save = () => {
     return ElMessage.error(
       t("config.sop_step_config.invalid_step_modbus_signal")
     );
+  if (value.audio.enabled && (!value.audio.audioId || !availableAudioIds.value.has(value.audio.audioId))) return ElMessage.error(t('config.sop_step_config.sop_completion_audio_required'));
+  stopPreview();
   emit("save", value);
   emit("update:visible", false);
 };
@@ -279,6 +289,7 @@ const save = () => {
 .channel-content {
   padding: 16px 18px 6px;
 }
+.audio-channel-content :deep(.el-select){width:100%}.audio-option-file{float:right;margin-left:12px;color:var(--el-text-color-secondary)}.preview-cell{display:flex;align-items:center;padding-top:26px}.preview-cell .el-button{width:100%}
 .signal-toolbar {
   display: flex;
   justify-content: space-between;

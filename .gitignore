@@ -225,3 +225,5 @@ node_modules/
 backup/
 update_temp/
 doc/
+results/
+audio_resources/

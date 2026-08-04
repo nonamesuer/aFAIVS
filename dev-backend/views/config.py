@@ -10,7 +10,7 @@ import numpy as np
 import base64
 import cv2
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi import APIRouter, Request,HTTPException,File, UploadFile, Depends
+from fastapi import APIRouter, Request,HTTPException,File, Form, UploadFile, Depends
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from module._base import CONFIG_PATH,STATIC_PATH,DEFAULT_MAIN_CONFIG,SopConfig,get_models_path,JsonFile,get_main_config,DEFAULT_RESOLUTIONS,ConfigUpdater,DEFAULT_BOX_STYLE_CONFIG,DEFAULT_HAND_STYLE_CONFIG
@@ -21,7 +21,8 @@ from module._model_archive import (
     ModelArchiveError,
     install_model_archive,
 )
-from module._auth import clear_sessions, has_admin_user, prepare_users_storage, require_admin
+from module._auth import clear_sessions, has_admin_user, prepare_users_storage, require_admin, require_authenticated
+from module._audio_resources import MAX_AUDIO_FILE_BYTES,create_audio_resource,delete_audio_resource,get_audio_resource_file,list_audio_resources,rename_audio_resource
 from module._step_feedback import validate_sop_step_feedback_config
 from module._box_style import normalize_area_fill_alpha
 from module._hand_detection import HandTracker
@@ -333,6 +334,50 @@ async def upload_model_archive(file: UploadFile = File(...),overwrite: bool = Fa
         await file.close()
         if temp_archive_path:
             _safe_unlink(temp_archive_path)
+
+
+@api_config.get("/audio_resources")
+def get_audio_resources():
+    try:return {"status":True,"datas":list_audio_resources(include_references=True)}
+    except Exception as exc:logger.exception("Failed to list audio resources");return JSONResponse({"status":False,"msg":str(exc)})
+
+
+@api_config.post("/audio_resources/upload")
+async def upload_audio_resource(file: UploadFile = File(...),name: str = Form("")):
+    try:
+        content = await _read_limited_upload(file,MAX_AUDIO_FILE_BYTES);resource = await run_in_threadpool(create_audio_resource,file.filename or "",content,name)
+        return {"status":True,"msg":"Audio resource uploaded successfully.","data":resource}
+    except ValueError as exc:return JSONResponse({"status":False,"msg":str(exc)})
+    except Exception as exc:logger.exception("Failed to upload audio resource");return JSONResponse({"status":False,"msg":str(exc)})
+    finally:await file.close()
+
+
+@api_config.put("/audio_resources/{audio_id}")
+async def update_audio_resource(audio_id: str,request: Request):
+    try:
+        body = await request.json();resource = await run_in_threadpool(rename_audio_resource,audio_id,body.get("name") if isinstance(body,dict) else "")
+        return {"status":True,"msg":"Audio resource renamed successfully.","data":resource}
+    except FileNotFoundError as exc:raise HTTPException(status_code=404,detail=str(exc))
+    except ValueError as exc:return JSONResponse({"status":False,"msg":str(exc)})
+    except Exception as exc:logger.exception("Failed to rename audio resource");return JSONResponse({"status":False,"msg":str(exc)})
+
+
+@api_config.delete("/audio_resources/{audio_id}")
+async def remove_audio_resource(audio_id: str):
+    try:await run_in_threadpool(delete_audio_resource,audio_id);return {"status":True,"msg":"Audio resource deleted successfully."}
+    except FileNotFoundError as exc:raise HTTPException(status_code=404,detail=str(exc))
+    except RuntimeError as exc:return JSONResponse({"status":False,"code":"AUDIO_RESOURCE_IN_USE","msg":str(exc)})
+    except ValueError as exc:return JSONResponse({"status":False,"msg":str(exc)})
+    except Exception as exc:logger.exception("Failed to delete audio resource");return JSONResponse({"status":False,"msg":str(exc)})
+
+
+@api_config_public.get("/audio_resources/{audio_id}/file")
+def read_audio_resource_file(audio_id: str,_user: dict = Depends(require_authenticated)):
+    try:
+        file_path,resource = get_audio_resource_file(audio_id)
+        return FileResponse(file_path,media_type=resource.get("mimeType") or "application/octet-stream",headers={"Cache-Control":"private, max-age=3600"})
+    except FileNotFoundError as exc:raise HTTPException(status_code=404,detail=str(exc))
+    except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc))
 
 
 @api_config.post("/manual_regions/save")

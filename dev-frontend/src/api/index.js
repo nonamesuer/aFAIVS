@@ -69,6 +69,11 @@ export default {
         }),
     uploadConfigFile: (configType, formData) =>
         axios.post(`${base_url}/config-files/${configType}/upload`, formData),
+    getAudioResources: () => axios.get(`${base_url}/audio_resources`),
+    uploadAudioResource: (formData) => axios.post(`${base_url}/audio_resources/upload`,formData,{timeout:120000}),
+    renameAudioResource: (audioId,name) => axios.put(`${base_url}/audio_resources/${encodeURIComponent(audioId)}`,{name}),
+    deleteAudioResource: (audioId) => axios.delete(`${base_url}/audio_resources/${encodeURIComponent(audioId)}`),
+    getAudioResourceFile: (audioId) => axios.get(`${base_url}/audio_resources/${encodeURIComponent(audioId)}/file`,{responseType:"blob",timeout:30000}),
     getModels: requestWithPath("/get_models", "GET"),
     getDevice: requestWithPath("/get_device", "GET"),
     getModelLabels: requestWithPath("/model/labels", "GET"),

@@ -105,6 +105,12 @@
                     <span class="common-config-title">{{ $t('config.result_media.title') }}</span>
                     <span class="common-config-description">{{ $t('config.result_media.entry_description') }}</span>
                 </div>
+                <div class="common-config-entry" @click="audioResourceDialogVisible = true">
+                    <el-icon class="common-config-icon"><Headset /></el-icon>
+                    <span class="common-config-title">{{ $t('config.audio_resources.title') }}</span>
+                    <span class="common-config-description">{{ $t('config.audio_resources.entry_description') }}</span>
+                    <el-tag class="common-config-status" type="info" effect="plain" size="small">{{ $t('config.audio_resources.count',{count:audioResources.length}) }}</el-tag>
+                </div>
                 <div class="common-config-entry" @click="configTransferDialogVisible = true">
                     <el-icon class="common-config-icon"><DocumentCopy /></el-icon>
                     <span class="common-config-title">{{ $t('config.config_transfer.title') }}</span>
@@ -225,6 +231,7 @@
             :manualRegions="manualRegionsConfig"
             :steps="editSteps"
             :resultFeedbackConfig="detectionIntegrationConfig.resultFeedback"
+            :audioResources="audioResources"
             @close="handleCloseSignalSet"
             @save="handleSavePositionRow"
             @modelChanged="(model) => handleChangeMainModel(model)"
@@ -260,6 +267,7 @@
           v-model:visible="resultMediaDialogVisible"
           v-model:result-media-config="resultMediaConfig"
         />
+        <AudioResourceDialog v-model:visible="audioResourceDialogVisible" @changed="handleAudioResourcesChanged" />
         <ModelUploadDialog
           v-model:visible="modelUploadDialogVisible"
           @uploaded="handleModelUploaded"
@@ -276,7 +284,7 @@ import { ref, onMounted,watch, nextTick, reactive, computed, onUnmounted } from 
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/store";
 import { ElMessage, FormInstance, FormRules } from "element-plus";
-import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer,Aim,CameraFilled,WarningFilled,UploadFilled,DocumentCopy,UserFilled } from "@element-plus/icons-vue";
+import { FolderOpened,Brush,Crop,Connection,SetUp,Pointer,Aim,CameraFilled,WarningFilled,UploadFilled,DocumentCopy,UserFilled,Headset } from "@element-plus/icons-vue";
 import { MesAlertWTitle, MesConfirmWTitle } from "@/assets/js/secondpk";
 import api from "@/api/index";
 import SopDialog from "@/components/SopDialog.vue";
@@ -291,6 +299,7 @@ import ResultMediaDialog from "@/components/ResultMediaDialog.vue";
 import ModelUploadDialog from "@/components/ModelUploadDialog.vue";
 import ConfigTransferDialog from "@/components/ConfigTransferDialog.vue";
 import UserManagementDialog from "@/components/UserManagementDialog.vue";
+import AudioResourceDialog from "@/components/AudioResourceDialog.vue";
 const appStore = useAppStore();
 const { t } = useI18n();
 const device1Ref = ref(null);
@@ -301,6 +310,8 @@ const modelsList = ref({});
 const modelUploadDialogVisible = ref(false);
 const configTransferDialogVisible = ref(false);
 const userManagementDialogVisible = ref(false);
+const audioResourceDialogVisible = ref(false);
+const audioResources = ref<any[]>([]);
 const cameraList = ref<string[]>([]);
 const labelColorVisible = ref(false);
 const currentMainLabels = ref<Record<string, string>>({});
@@ -488,6 +499,7 @@ onMounted(async () => {
     // 配置中的 enableCamera 依赖相机列表，必须先完成设备读取。
     await getDevice();
     await getConfig();
+    await loadAudioResources();
     await getResultStorageStatus();
     resultStorageStatusTimer = window.setInterval(
       getResultStorageStatus,
@@ -596,6 +608,8 @@ const getConfig = () => {
     .catch((error) => MesAlertWTitle("error", t("message.error"), t("message.messagetext.failed_get_config"), error.message, t("button.ok")))
     .finally(() => { appStore.setLoading(false); });
 };
+const loadAudioResources = async () => {try {const {data} = await api.getAudioResources();if (data?.status) audioResources.value = Array.isArray(data.datas) ? data.datas : [];} catch (error) {console.error("Failed to load audio resources",error)}};
+const handleAudioResourcesChanged = (resources:any[]) => {audioResources.value = Array.isArray(resources) ? resources : []};
 const getResultStorageStatus = async () => {
   try {
     const response = await api.getResultStorageStatus({});

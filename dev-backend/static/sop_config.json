@@ -61,6 +61,11 @@
                         "instantaneous": false
                     }
                 ]
+            },
+            "audio": {
+                "enabled": false,
+                "audioId": "",
+                "volume": 80
             }
         },
         "steps": [
@@ -101,6 +106,12 @@
                             "enabled": false,
                             "errorSignals": [],
                             "completionSignals": []
+                        },
+                        "audio": {
+                            "enabled": true,
+                            "errorAudioId": "audio_78459c29f1b549139eadbcb1f7a824d2",
+                            "completionAudioId": "",
+                            "volume": 80
                         }
                     }
                 },
@@ -109,7 +120,7 @@
             }
         ],
         "create_time": "2026-07-24 16:16:26",
-        "enabled": false,
-        "modify_time": "2026-08-03 16:42:10"
+        "enabled": true,
+        "modify_time": "2026-08-04 10:11:24"
     }
 }

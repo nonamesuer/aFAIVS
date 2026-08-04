@@ -299,6 +299,10 @@
                       <el-checkbox v-model="currentModbusFeedbackEnabled">
                         {{ $t('config.sop_step_config.modbus_step_feedback') }}
                       </el-checkbox>
+                      <el-divider direction="vertical" style="border-left:1px solid #000"/>
+                      <el-checkbox v-model="currentAudioFeedbackEnabled" :disabled="!audioFeedbackAvailable">
+                        {{ $t('config.sop_step_config.audio_step_feedback') }}
+                      </el-checkbox>
                     </div>
                   </el-form-item>
 
@@ -309,6 +313,7 @@
                     :title="$t('config.sop_step_config.http_step_feedback_unavailable')"
                     show-icon
                   />
+                  <el-alert v-if="!audioFeedbackAvailable" type="warning" :closable="false" :title="$t('config.sop_step_config.audio_feedback_unavailable')" show-icon />
 
                   <el-form-item
                     v-if="currentStep.context.resultFeedback.http.enabled"
@@ -330,6 +335,12 @@
                       />
                     </el-select>
                   </el-form-item>
+
+                  <el-row v-if="currentStep.context.resultFeedback.audio.enabled" :gutter="12" class="audio-feedback-config">
+                    <el-col :span="9"><el-form-item :label="$t('config.sop_step_config.operation_error_audio')"><el-select v-model="currentStep.context.resultFeedback.audio.errorAudioId" clearable filterable :placeholder="$t('config.sop_step_config.select_audio_resource')"><el-option v-for="audio in availableAudioResources" :key="audio.id" :label="audio.name" :value="audio.id"><span>{{ audio.name }}</span><small class="audio-option-file">{{ audio.originalName }}</small></el-option></el-select></el-form-item></el-col>
+                    <el-col :span="9"><el-form-item :label="$t('config.sop_step_config.step_success_audio')"><el-select v-model="currentStep.context.resultFeedback.audio.completionAudioId" clearable filterable :placeholder="$t('config.sop_step_config.select_audio_resource')"><el-option v-for="audio in availableAudioResources" :key="audio.id" :label="audio.name" :value="audio.id"><span>{{ audio.name }}</span><small class="audio-option-file">{{ audio.originalName }}</small></el-option></el-select></el-form-item></el-col>
+                    <el-col :span="6"><el-form-item :label="$t('config.sop_step_config.audio_volume')"><el-slider v-model="currentStep.context.resultFeedback.audio.volume" :min="0" :max="100" show-input /></el-form-item></el-col>
+                  </el-row>
 
                   <div v-if="currentStep.context.resultFeedback.modbus.enabled" class="modbus-feedback-groups">
                     <div
@@ -530,10 +541,10 @@
         <!-- <span v-if="!currentValidation.valid" class="assistant-error-dot"></span> -->
       </button>
     </div>
-    <SopCompletionFeedbackDialog v-model:visible="sopCompletionFeedbackDialogVisible" :model-value="sopCompletionFeedback" @save="applySopCompletionFeedback" />
+    <SopCompletionFeedbackDialog v-model:visible="sopCompletionFeedbackDialogVisible" :model-value="sopCompletionFeedback" :audio-resources="availableAudioResources" @save="applySopCompletionFeedback" />
     <template #footer>
       <div class="sop-dialog-footer">
-        <el-button class="completion-feedback-entry" plain @click="sopCompletionFeedbackDialogVisible = true"><el-icon><Connection /></el-icon><span>{{ $t('config.sop_step_config.sop_completion_feedback') }}</span><el-tag :type="sopCompletionFeedback.modbus.enabled ? 'success' : 'info'" effect="dark" round>{{ sopCompletionFeedback.modbus.enabled ? $t('config.sop_step_config.feedback_status_enabled_count',{count:sopCompletionSignalCount}) : $t('config.sop_step_config.feedback_status_disabled') }}</el-tag></el-button>
+        <el-button class="completion-feedback-entry" plain @click="sopCompletionFeedbackDialogVisible = true"><el-icon><Connection /></el-icon><span>{{ $t('config.sop_step_config.sop_completion_feedback') }}</span><el-tag :type="sopCompletionEnabledChannelCount ? 'success' : 'info'" effect="dark" round>{{ sopCompletionStatusText }}</el-tag></el-button>
         <div><el-button type="primary" plain @click="handleReset">{{ $t('button.reset') }}</el-button><el-button type="primary" size="large" @click="handleSave">{{ $t('button.save') }}</el-button></div>
       </div>
     </template>
@@ -589,6 +600,7 @@ const props = defineProps<{
       enabled: boolean
     }>
   }
+  audioResources: Array<{id:string;name:string;originalName?:string;fileAvailable?:boolean}>
 }>()
 
 const emit = defineEmits<{
@@ -666,10 +678,11 @@ const normalizeStepFeedback = (feedback: any) => ({
       ? feedback.modbus.completionSignals.slice(0, MAX_STEP_FEEDBACK_SIGNALS).map(normalizeFeedbackSignal)
       : [],
   },
+  audio: {enabled:feedback?.audio?.enabled === true,errorAudioId:typeof feedback?.audio?.errorAudioId === 'string' ? feedback.audio.errorAudioId : '',completionAudioId:typeof feedback?.audio?.completionAudioId === 'string' ? feedback.audio.completionAudioId : '',volume:Number.isInteger(feedback?.audio?.volume) ? Math.min(100,Math.max(0,feedback.audio.volume)) : 80},
 })
 
-const normalizeSopCompletionFeedback = (feedback: any) => ({modbus:{enabled:feedback?.modbus?.enabled === true,signals:Array.isArray(feedback?.modbus?.signals) ? feedback.modbus.signals.slice(0,MAX_STEP_FEEDBACK_SIGNALS).map(normalizeFeedbackSignal) : []}})
-const sopCompletionFeedback = ref(normalizeSopCompletionFeedback(null));const sopCompletionFeedbackDialogVisible = ref(false);const sopCompletionSignalCount = computed(() => sopCompletionFeedback.value.modbus.signals.length);const applySopCompletionFeedback = (value:any) => {sopCompletionFeedback.value = normalizeSopCompletionFeedback(value)}
+const normalizeSopCompletionFeedback = (feedback: any) => ({modbus:{enabled:feedback?.modbus?.enabled === true,signals:Array.isArray(feedback?.modbus?.signals) ? feedback.modbus.signals.slice(0,MAX_STEP_FEEDBACK_SIGNALS).map(normalizeFeedbackSignal) : []},audio:{enabled:feedback?.audio?.enabled === true,audioId:typeof feedback?.audio?.audioId === 'string' ? feedback.audio.audioId : '',volume:Number.isInteger(feedback?.audio?.volume) ? Math.min(100,Math.max(0,feedback.audio.volume)) : 80}})
+const sopCompletionFeedback = ref(normalizeSopCompletionFeedback(null));const sopCompletionFeedbackDialogVisible = ref(false);const sopCompletionSignalCount = computed(() => sopCompletionFeedback.value.modbus.signals.length);const sopCompletionEnabledChannelCount = computed(() => Number(sopCompletionFeedback.value.modbus.enabled) + Number(sopCompletionFeedback.value.audio.enabled));const sopCompletionStatusText = computed(() => sopCompletionEnabledChannelCount.value ? t('config.sop_step_config.feedback_status_enabled_channels',{channels:[sopCompletionFeedback.value.modbus.enabled ? `Modbus ${sopCompletionSignalCount.value}` : '',sopCompletionFeedback.value.audio.enabled ? t('config.sop_step_config.audio_channel_name') : ''].filter(Boolean).join(' + ')}) : t('config.sop_step_config.feedback_status_disabled'));const applySopCompletionFeedback = (value:any) => {sopCompletionFeedback.value = normalizeSopCompletionFeedback(value)}
 watch(() => props.modelCameraForm.sopCompletionFeedback,value => {sopCompletionFeedback.value = normalizeSopCompletionFeedback(value)}, {immediate:true,deep:true})
 
 const stepsLocal = ref<any[]>([])
@@ -840,6 +853,9 @@ const availableHttpFeedbackEndpoints = computed(() => {
 })
 
 const httpFeedbackAvailable = computed(() => availableHttpFeedbackEndpoints.value.length > 0)
+const availableAudioResources = computed(() => (props.audioResources || []).filter(audio => audio?.id && audio?.name && audio?.fileAvailable !== false))
+const audioFeedbackAvailable = computed(() => availableAudioResources.value.length > 0)
+const availableAudioIds = computed(() => new Set(availableAudioResources.value.map(audio => audio.id)))
 
 const allStepsMarkedForHttpFeedback = () =>
   stepsLocal.value.length > 0
@@ -888,6 +904,8 @@ const currentModbusFeedbackEnabled = computed<boolean>({
     if (feedback) feedback.modbus.enabled = enabled
   },
 })
+
+const currentAudioFeedbackEnabled = computed<boolean>({get:() => audioFeedbackAvailable.value && currentStep.value?.context?.resultFeedback?.audio?.enabled === true,set:enabled => {const feedback = ensureStepFeedback(currentStep.value);if (feedback) feedback.audio.enabled = audioFeedbackAvailable.value && enabled}})
 
 const applyHttpFeedbackToAllSteps = computed<boolean>({
   get: () => allStepsMarkedForHttpFeedback(),
@@ -991,6 +1009,12 @@ const validateStepFeedback = (step: any): string => {
     if (signals.some(signal => !isValidFeedbackSignal(signal))) {
       return t('config.sop_step_config.invalid_step_modbus_signal')
     }
+  }
+  if (feedback.audio.enabled) {
+    const selectedIds = [feedback.audio.errorAudioId,feedback.audio.completionAudioId].filter(Boolean)
+    if (!audioFeedbackAvailable.value) return t('config.sop_step_config.audio_feedback_unavailable')
+    if (!selectedIds.length) return t('config.sop_step_config.step_audio_required')
+    if (selectedIds.some(audioId => !availableAudioIds.value.has(audioId))) return t('config.sop_step_config.audio_resource_invalid')
   }
   return ''
 }
@@ -1108,6 +1132,7 @@ const handleSave = async () => {
   const normalizedSopCompletionFeedback = normalizeSopCompletionFeedback(sopCompletionFeedback.value)
   if (normalizedSopCompletionFeedback.modbus.enabled && !normalizedSopCompletionFeedback.modbus.signals.length) return ElMessage.error(t('config.sop_step_config.sop_completion_signal_required'))
   if (normalizedSopCompletionFeedback.modbus.signals.some(signal => !isValidFeedbackSignal(signal))) return ElMessage.error(t('config.sop_step_config.invalid_step_modbus_signal'))
+  if (normalizedSopCompletionFeedback.audio.enabled && (!normalizedSopCompletionFeedback.audio.audioId || !availableAudioIds.value.has(normalizedSopCompletionFeedback.audio.audioId))) return ElMessage.error(t('config.sop_step_config.sop_completion_audio_required'))
   for (let index = 0; index < stepsLocal.value.length; index += 1) {
     const rawStep = stepsLocal.value[index]
     if (!isStepRequiredFieldsValid(rawStep)) {
@@ -1279,6 +1304,9 @@ const hideExecutionPreview = () => {
 .feedback-method-options { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 24px;}
 .http-feedback-options { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;}
 .http-feedback-options :deep(.el-checkbox) { margin-right: 0; }
+.audio-feedback-config { margin-top: 8px; padding: 10px 8px 0; border: 1px dashed var(--el-border-color); background: var(--bs-bgcolor); }
+.audio-feedback-config :deep(.el-select) { width: 100%; }
+.audio-option-file { float: right; margin-left: 12px; color: var(--el-text-color-secondary); }
 .modbus-feedback-groups { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
 .modbus-feedback-group { padding: 10px; border: 1px dashed var(--el-border-color); border-radius: 6px; background: var(--bs-bgcolor); }
 .feedback-group-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
