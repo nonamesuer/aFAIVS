@@ -49,6 +49,20 @@
     "CY_test1": {
         "model": "CY1",
         "confidence": 0.5,
+        "sopCompletionFeedback": {
+            "modbus": {
+                "enabled": false,
+                "signals": [
+                    {
+                        "slaveAddress": 1,
+                        "dataType": "coil",
+                        "address": 0,
+                        "triggerValue": true,
+                        "instantaneous": false
+                    }
+                ]
+            }
+        },
         "steps": [
             {
                 "id": 1,
@@ -96,6 +110,6 @@
         ],
         "create_time": "2026-07-24 16:16:26",
         "enabled": false,
-        "modify_time": "2026-08-03 13:26:17"
+        "modify_time": "2026-08-03 16:42:10"
     }
 }

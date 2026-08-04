@@ -353,6 +353,7 @@ class DetectorWorker:
             sop_name=self.sop_name,
             model_name=self.model_name,
             camera_name=self.camera.camera_name,
+            sop_config=self.sop_machine.sop_config,
             status_callback=self._handle_feedback_status,
         )
         self.hand_worker: HandDetectorWorker | None = None
@@ -426,7 +427,7 @@ class DetectorWorker:
         self.result_store.set_sop_config(self.sop_machine.sop_config)
         if wait_for_trigger:
             sop_result = self.sop_machine.snapshot(reason="Waiting for configured trigger")
-            self.feedback_dispatcher.reset(sop_result)
+            self.feedback_dispatcher.reset(sop_result,self.sop_machine.sop_config)
             with self.result_lock:
                 self.result["sop"] = sop_result
                 self.result["manualRegions"] = manual_regions
@@ -436,7 +437,7 @@ class DetectorWorker:
             self.sop_machine.start()
             self._refresh_hand_tracker()
             sop_result = self.sop_machine.snapshot(reason="SOP started")
-            self.feedback_dispatcher.reset(sop_result)
+            self.feedback_dispatcher.reset(sop_result,self.sop_machine.sop_config)
             self.result_store.consume_sop_snapshot(sop_result)
         with self.result_lock:
             self.result["manualRegions"] = manual_regions
@@ -622,7 +623,7 @@ class DetectorWorker:
                     matched=False,
                     reason=f"Detection started by {source} trigger",
                 )
-                self.feedback_dispatcher.reset(sop_result)
+                self.feedback_dispatcher.reset(sop_result,self.sop_machine.sop_config)
                 # 先记录初始状态
                 self.result_store.consume_sop_snapshot(sop_result)
                 self._last_sop_state = sop_result.get("state")
@@ -702,7 +703,7 @@ class DetectorWorker:
                 else:
                     reason = "SOP reset"
                 sop_result = self.sop_machine.snapshot(matched=False,reason=reason)
-                self.feedback_dispatcher.reset(sop_result)
+                self.feedback_dispatcher.reset(sop_result,self.sop_machine.sop_config)
                 self.result_store.consume_sop_snapshot(sop_result)
                 self._last_sop_state = sop_result.get("state")
 

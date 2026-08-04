@@ -376,6 +376,9 @@
     .el-dialog__close {
         font-size: 24px;
     }
+    .el-dialog__body{
+        color: #000;
+    }
 
     .el-select--large .el-select__wrapper {
         height: 45px;

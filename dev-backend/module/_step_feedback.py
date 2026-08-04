@@ -81,7 +81,21 @@ def validate_sop_step_feedback_config(
     body: dict[str, Any],
     main_config: dict[str, Any] | None = None,
 ) -> str:
-    """Validate optional per-step result feedback configuration."""
+    """Validate optional SOP-level and per-step result feedback configuration."""
+    sop_completion_feedback = body.get("sopCompletionFeedback")
+    if sop_completion_feedback is not None:
+        if not isinstance(sop_completion_feedback, dict):return "sopCompletionFeedback must be an object"
+        modbus_completion = sop_completion_feedback.get("modbus", {})
+        if not isinstance(modbus_completion, dict):return "sopCompletionFeedback.modbus must be an object"
+        enabled = modbus_completion.get("enabled", False)
+        if not isinstance(enabled, bool):return "sopCompletionFeedback.modbus.enabled must be boolean"
+        signals = modbus_completion.get("signals", [])
+        if not isinstance(signals, list):return "sopCompletionFeedback.modbus.signals must be an array"
+        if len(signals) > MAX_STEP_FEEDBACK_SIGNALS:return f"SOP completion allows at most {MAX_STEP_FEEDBACK_SIGNALS} Modbus feedback signals"
+        for signal in signals:
+            validation_error = _validate_modbus_feedback_signal(signal)
+            if validation_error:return f"SOP completion: {validation_error}"
+        if enabled and not signals:return "SOP completion must configure at least one Modbus feedback signal"
     steps = body.get("steps")
     if steps is None:
         return ""
@@ -150,6 +164,7 @@ class StepFeedbackDispatcher:
         sop_name: str | None = None,
         model_name: str | None,
         camera_name: str | None,
+        sop_config: dict[str, Any] | None = None,
         status_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.project_name = project_name or ""
@@ -159,20 +174,24 @@ class StepFeedbackDispatcher:
         self.status_callback = status_callback
         self._previous_states: dict[str, str] = {}
         self._previous_sop_state = ""
+        self._sop_completion_feedback: dict[str, Any] = {}
         self._status_lock = threading.Lock()
         self._status_sequence = 0
-        # HTTP endpoints and Modbus are independent tasks. A slow endpoint must
-        # not delay the detector thread or another feedback channel.
-        # Public HTTP feedback allows up to five endpoints; the sixth worker
-        # keeps Modbus independent even when all five HTTP endpoints are slow.
-        self._executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="step-feedback")
+        self._http_executor = ThreadPoolExecutor(max_workers=5,thread_name_prefix="http-feedback")
+        # Modbus uses one ordered worker so final-step completion is always
+        # written before the SOP-completed signal produced by the same snapshot.
+        self._modbus_executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix="modbus-feedback")
+        self._set_sop_config(sop_config)
 
     @staticmethod
     def _step_key(step: dict[str, Any], index: int) -> str:
         return str(step.get("id", index))
 
-    def reset(self, snapshot: dict[str, Any] | None = None) -> None:
+    def _set_sop_config(self,sop_config: dict[str, Any] | None) -> None:self._sop_completion_feedback = deepcopy((sop_config or {}).get("sopCompletionFeedback", {})) if isinstance(sop_config,dict) else {}
+
+    def reset(self, snapshot: dict[str, Any] | None = None, sop_config: dict[str, Any] | None = None) -> None:
         current_snapshot = snapshot or {}
+        if sop_config is not None:self._set_sop_config(sop_config)
         self._previous_states = {}
         self._previous_sop_state = str(current_snapshot.get("state", ""))
         for index, step in enumerate(current_snapshot.get("steps", [])):
@@ -209,7 +228,7 @@ class StepFeedbackDispatcher:
             return
 
         # The final step has just emitted step_success above. Send one extra
-        # HTTP-only event so receivers can distinguish "last step succeeded"
+        # SOP-level event so receivers can distinguish "last step succeeded"
         # from "the whole SOP run completed".
         final_step = next(
             (
@@ -225,7 +244,6 @@ class StepFeedbackDispatcher:
                 deepcopy(final_step),
                 deepcopy(snapshot),
                 run_id,
-                include_modbus=False,
             )
 
     def _schedule_event(
@@ -272,7 +290,7 @@ class StepFeedbackDispatcher:
             selected_urls = http_feedback.get("endpointUrls", [])
             if isinstance(selected_urls, list):
                 for selected_url in selected_urls:
-                    self._executor.submit(
+                    self._http_executor.submit(
                         self._send_http_feedback,
                         selected_url,
                         payload,
@@ -281,16 +299,16 @@ class StepFeedbackDispatcher:
                         run_id,
                     )
 
-        modbus_feedback = feedback.get("modbus", {})
+        modbus_feedback = (self._sop_completion_feedback.get("modbus", {}) if event_type == "sop_completed" else feedback.get("modbus", {}))
         if (
             include_modbus
             and isinstance(modbus_feedback, dict)
             and modbus_feedback.get("enabled") is True
         ):
-            group_name = "errorSignals" if event_type == "operation_error" else "completionSignals"
+            group_name = "signals" if event_type == "sop_completed" else ("errorSignals" if event_type == "operation_error" else "completionSignals")
             signals = modbus_feedback.get(group_name, [])
             if isinstance(signals, list) and signals:
-                self._executor.submit(
+                self._modbus_executor.submit(
                     self._send_modbus_feedback,
                     signals,
                     event_type,
@@ -514,4 +532,4 @@ class StepFeedbackDispatcher:
 
     def shutdown(self) -> None:
         # Do not block detector shutdown, but let already queued feedback finish.
-        self._executor.shutdown(wait=False, cancel_futures=False)
+        self._http_executor.shutdown(wait=False,cancel_futures=False);self._modbus_executor.shutdown(wait=False,cancel_futures=False)

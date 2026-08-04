@@ -530,11 +530,12 @@
         <!-- <span v-if="!currentValidation.valid" class="assistant-error-dot"></span> -->
       </button>
     </div>
+    <SopCompletionFeedbackDialog v-model:visible="sopCompletionFeedbackDialogVisible" :model-value="sopCompletionFeedback" @save="applySopCompletionFeedback" />
     <template #footer>
-      <el-button type="primary" plain @click="handleReset">{{ $t('button.reset') }}</el-button>
-      <el-button type="primary" size="large" @click="handleSave">
-        {{ $t('button.save') }}
-      </el-button>
+      <div class="sop-dialog-footer">
+        <el-button class="completion-feedback-entry" plain @click="sopCompletionFeedbackDialogVisible = true"><el-icon><Connection /></el-icon><span>{{ $t('config.sop_step_config.sop_completion_feedback') }}</span><el-tag :type="sopCompletionFeedback.modbus.enabled ? 'success' : 'info'" effect="dark" round>{{ sopCompletionFeedback.modbus.enabled ? $t('config.sop_step_config.feedback_status_enabled_count',{count:sopCompletionSignalCount}) : $t('config.sop_step_config.feedback_status_disabled') }}</el-tag></el-button>
+        <div><el-button type="primary" plain @click="handleReset">{{ $t('button.reset') }}</el-button><el-button type="primary" size="large" @click="handleSave">{{ $t('button.save') }}</el-button></div>
+      </div>
     </template>
   </el-dialog>
 </template>
@@ -546,9 +547,10 @@ import { ElMessage } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 // import { Delete, Setting } from '@element-plus/icons-vue'
 import robotImage from '@/assets/img/robot.png';
-import { ArrowDownBold, ArrowUpBold, Close,Delete,InfoFilled,WarningFilled } from '@element-plus/icons-vue';
+import { ArrowDownBold, ArrowUpBold, Close,Connection,Delete,InfoFilled,WarningFilled } from '@element-plus/icons-vue';
 import { VueDraggable } from 'vue-draggable-plus';
 import Hands from './Hands.vue';
+import SopCompletionFeedbackDialog from './SopCompletionFeedbackDialog.vue';
 import {
   isManualRegionReference,
   normalizeObjectDetection,
@@ -665,6 +667,10 @@ const normalizeStepFeedback = (feedback: any) => ({
       : [],
   },
 })
+
+const normalizeSopCompletionFeedback = (feedback: any) => ({modbus:{enabled:feedback?.modbus?.enabled === true,signals:Array.isArray(feedback?.modbus?.signals) ? feedback.modbus.signals.slice(0,MAX_STEP_FEEDBACK_SIGNALS).map(normalizeFeedbackSignal) : []}})
+const sopCompletionFeedback = ref(normalizeSopCompletionFeedback(null));const sopCompletionFeedbackDialogVisible = ref(false);const sopCompletionSignalCount = computed(() => sopCompletionFeedback.value.modbus.signals.length);const applySopCompletionFeedback = (value:any) => {sopCompletionFeedback.value = normalizeSopCompletionFeedback(value)}
+watch(() => props.modelCameraForm.sopCompletionFeedback,value => {sopCompletionFeedback.value = normalizeSopCompletionFeedback(value)}, {immediate:true,deep:true})
 
 const stepsLocal = ref<any[]>([])
 const activeStepIndex = ref(0)
@@ -1084,6 +1090,7 @@ const handleDeleteStep = () => {
 
 const handleReset = () => {
   stepsLocal.value = JSON.parse(JSON.stringify(props.steps || []))
+  sopCompletionFeedback.value = normalizeSopCompletionFeedback(props.modelCameraForm.sopCompletionFeedback)
   activeStepIndex.value = 0
 }
 
@@ -1098,6 +1105,9 @@ const handleSave = async () => {
     ElMessage.error(t('message.messagetext.blankSopConfig'))
     return
   }
+  const normalizedSopCompletionFeedback = normalizeSopCompletionFeedback(sopCompletionFeedback.value)
+  if (normalizedSopCompletionFeedback.modbus.enabled && !normalizedSopCompletionFeedback.modbus.signals.length) return ElMessage.error(t('config.sop_step_config.sop_completion_signal_required'))
+  if (normalizedSopCompletionFeedback.modbus.signals.some(signal => !isValidFeedbackSignal(signal))) return ElMessage.error(t('config.sop_step_config.invalid_step_modbus_signal'))
   for (let index = 0; index < stepsLocal.value.length; index += 1) {
     const rawStep = stepsLocal.value[index]
     if (!isStepRequiredFieldsValid(rawStep)) {
@@ -1136,6 +1146,7 @@ const handleSave = async () => {
     camera: props.modelCameraForm.camera,
     model: props.modelCameraForm.model,
     confidence: props.modelCameraForm.confidence / 100,
+    sopCompletionFeedback: normalizedSopCompletionFeedback,
     steps: normalizedSteps.map(step => ({
       id: step.id,
       name: step.name,
@@ -1277,6 +1288,7 @@ const hideExecutionPreview = () => {
 .feedback-signal-card :deep(.el-input-number), .feedback-signal-card :deep(.el-select) { width: 100%; }
 .feedback-signal-unavailable { color: var(--el-text-color-placeholder); font-size: 12px; }
 .feedback-signal-delete { display: flex; align-items: center; justify-content: center; padding-top: 24px; }
+.sop-dialog-footer { width:100%; display:flex; align-items:center; justify-content:space-between; gap:16px; }.sop-dialog-footer>div { display:flex; gap:8px; }.completion-feedback-entry { height:40px; padding:0 12px; border-color:var(--el-border-color); }.completion-feedback-entry .el-tag { margin-left:6px; }
 // .validation-alert { margin-top: 16px; }
 .right-sidebar-wrapper { flex: 1; min-height: 0; overflow: auto; }
 /* =========================================================
