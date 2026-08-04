@@ -304,7 +304,7 @@
 
                   <el-alert
                     v-if="!httpFeedbackAvailable"
-                    type="info"
+                    type="warning"
                     :closable="false"
                     :title="$t('config.sop_step_config.http_step_feedback_unavailable')"
                     show-icon
