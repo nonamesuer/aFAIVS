@@ -417,6 +417,7 @@ let lastCriticalAlertKey = '';
 const handledFeedbackEventIds = new Set();
 const handledAudioPlaybackEventIds = new Set((() => {try {const value = JSON.parse(sessionStorage.getItem(AUDIO_PLAYBACK_EVENT_STORAGE_KEY) || '[]');return Array.isArray(value) ? value.slice(-100) : []} catch {return []}})());
 const audioResourceUrlCache = new Map();
+const SILENT_AUDIO_UNLOCK_URI = 'data:audio/wav;base64,UklGRsQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 let lastTriggerCycleAt = null;
 let scannerBuffer = '';
 let scannerResetTimer = null;
@@ -427,6 +428,7 @@ let feedbackAudioGeneration = 0;
 let currentFeedbackAudio = null;
 let cancelCurrentFeedbackAudio = null;
 let audioPlaybackUnlocked = false;
+let audioUnlockPromise = null;
 
 const okCount = computed(() => Number(detectionResult.value.ok_count || 0));
 const ngCount = computed(() => Number(detectionResult.value.ng_count || 0));
@@ -802,7 +804,8 @@ function getFeedbackEventText(feedbackEvent = {}) {
 
 async function unlockAudioPlayback() {
     if (audioPlaybackUnlocked) return;
-    try {const audio = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');audio.muted = true;await audio.play();audio.pause();audioPlaybackUnlocked = true} catch {};
+    if (audioUnlockPromise) return audioUnlockPromise;
+    const audio = new Audio(SILENT_AUDIO_UNLOCK_URI);audio.preload = 'auto';audioUnlockPromise = audio.play().then(() => {audio.pause();audioPlaybackUnlocked = true}).catch(() => {}).finally(() => {audioUnlockPromise = null});return audioUnlockPromise;
 };
 
 async function getAudioResourceUrl(audioId) {

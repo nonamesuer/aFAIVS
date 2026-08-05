@@ -144,7 +144,7 @@
                     </div>
                 </div>
                 <el-button
-                  type="warning"
+                  class="el-button--black"
                   :loading="syncingLocalResults"
                   :disabled="!resultStorageStatus.configuredPathAvailable"
                   @click="handleSyncLocalResults"
@@ -1045,6 +1045,7 @@ const handleChangeEnable = (value: boolean, sopName: string) => {
   justify-content: space-between;
   padding: 2px 16px 14px;
   position: sticky;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 
   .el-main-header-left {
     display: flex;
@@ -1111,15 +1112,13 @@ const handleChangeEnable = (value: boolean, sopName: string) => {
     gap: 20px;
     margin-top: 16px;
     padding: 14px 16px;
-    border: 1px solid var(--el-color-warning-light-5);
-    border-radius: 8px;
-    background: var(--el-color-warning-light-9);
+    /* border: 1px solid var(--bs-alert-warning-bgcolor); */
+    background: var(--bs-alert-warning-bgcolor);
   }
   .local-results-notice__content {
     display: flex;
     align-items: flex-start;
     gap: 12px;
-    color: var(--el-color-warning-dark-2);
   }
   .local-results-notice__title {
     font-weight: 700;
