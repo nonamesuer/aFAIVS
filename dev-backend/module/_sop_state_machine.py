@@ -16,6 +16,7 @@ from module._manual_regions import (
     region_reference_key,
     region_reference_name,
 )
+from module._sop_config import normalize_ready_check_config
 
 
 DEFAULT_STEP_TIMEOUT_SECONDS = 30.0
@@ -358,8 +359,8 @@ class SOPStateMachine:
         stable_frames: int = 3,
         min_score: float | None = None,
         default_step_timeout: float = DEFAULT_STEP_TIMEOUT_SECONDS,
-        enable_ready_check: bool = True,
-        ready_check_timeout: float = 10.0,
+        enable_ready_check: bool | None = None,
+        ready_check_timeout: float | None = None,
     ):
         self.sop_config = sop_config or {}
         self.sop_name = str(
@@ -385,8 +386,9 @@ class SOPStateMachine:
         self.last_reason = ""
         self.paused_at: float | None = None
         self.state_before_pause: SOPRunState | None = None
-        self.enable_ready_check = enable_ready_check
-        self.ready_check_timeout = ready_check_timeout
+        ready_check = normalize_ready_check_config(self.sop_config.get("readyCheck"))
+        self.enable_ready_check = ready_check["enabled"] if enable_ready_check is None else bool(enable_ready_check)
+        self.ready_check_timeout = float(ready_check["timeout"] if ready_check_timeout is None else ready_check_timeout)
         self.ready_started_at: float | None = None
 
 
@@ -421,8 +423,8 @@ class SOPStateMachine:
         stable_frames: int = 3,
         min_score: float | None = None,
         default_step_timeout: float = DEFAULT_STEP_TIMEOUT_SECONDS,
-        enable_ready_check: bool = True,
-        ready_check_timeout: float = 10.0,
+        enable_ready_check: bool | None = None,
+        ready_check_timeout: float | None = None,
     ) -> "SOPStateMachine":
         return cls(
             select_enabled_sop_config(sop_map),

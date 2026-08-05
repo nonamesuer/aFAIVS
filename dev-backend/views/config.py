@@ -43,6 +43,7 @@ from module._manual_regions import (
     validate_sop_manual_region_references,
 )
 from module._sop_config import (
+    normalize_ready_check_config,
     normalize_sop_name,
     upsert_sop_definition,
 )
@@ -168,6 +169,7 @@ def _normalize_imported_sop_config(config_data: object) -> dict:
         if not isinstance(definition, dict):raise ValueError(f"SOP '{sop_name}' must be an object.")
         if not str(definition.get("model") or "").strip():raise ValueError(f"SOP '{sop_name}' model is required.")
         if not isinstance(definition.get("steps"), list):raise ValueError(f"SOP '{sop_name}' steps must be an array.")
+        definition["readyCheck"] = normalize_ready_check_config(definition.get("readyCheck"), strict=True)
         if definition.get("enabled") is True:
             enabled_count += 1
         manual_region_error = validate_sop_manual_region_references( {sop_name: definition}, manual_regions,)
@@ -860,6 +862,7 @@ async def update_sop_config(request:Request):
                 for other_sop_name in sop_config_datas:
                     if other_sop_name != sop_name:
                         sop_config_datas[other_sop_name]["enabled"] = False
+        sop_config_datas[sop_name]["readyCheck"] = normalize_ready_check_config(sop_config_datas[sop_name].get("readyCheck"), strict=True)
         SopConfig().set(sop_config_datas)
         return {"status": True,"datas": sop_config_datas,"msg": "SOP configuration updated successfully."}
     except ValueError as e:

@@ -108,6 +108,12 @@ export default {
         camera: "\u6444\u50CF\u5934",
         cameras: "\u6444\u50CF\u5934",
         confidence: "置信度",
+        ready_check: {
+            enabled: "步骤准备检查",
+            enabled_description: "每个步骤开始前检查所需区域和对象是否已经准备完成",
+            timeout: "准备超时",
+            timeout_invalid: "准备超时时间必须为 1 到 3600 秒的整数",
+        },
         common_config: "公共配置",
         path_config: "路径配置",
         path_config_description: "配置模型、操作工序、用户和检测结果的存储路径",

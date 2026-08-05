@@ -41,6 +41,14 @@
           </div>
           <b class="confidence-value">{{ modelCameraForm.confidence / 100 }}</b>
         </el-form-item>
+        <el-form-item>
+          <template #label><span class="ready-check-label">{{ $t('config.ready_check.enabled') }}<el-tooltip :content="$t('config.ready_check.enabled_description')" placement="bottom"><el-icon><InfoFilled /></el-icon></el-tooltip></span></template>
+          <el-switch v-model="modelCameraForm.readyCheck.enabled" />
+        </el-form-item>
+        <el-form-item :label="$t('config.ready_check.timeout')" prop="readyCheck.timeout">
+          <el-input-number v-model="modelCameraForm.readyCheck.timeout" :min="1" :max="3600" :precision="0" controls-position="right" :disabled="!modelCameraForm.readyCheck.enabled" style="width: 110px" />
+          <span class="ready-check-unit">{{ $t('interacting.seconds') }}</span>
+        </el-form-item>
       </el-form>
     </template>
 
@@ -612,6 +620,7 @@ const emit = defineEmits<{
 
 const HAND_SIDES = ['l', 'r'] as const
 const modelFormRef = ref<FormInstance>()
+const normalizeReadyCheck = (value: any) => ({enabled:value?.enabled !== false,timeout:Number.isInteger(value?.timeout) && value.timeout >= 1 && value.timeout <= 3600 ? value.timeout : 10})
 const validateSopName = (_rule: unknown, value: unknown, callback: (error?: Error) => void) => {
   const sopName = String(value || '').trim()
   if (!sopName) return callback(new Error(t('config.sop_name_required')))
@@ -624,9 +633,11 @@ const validateSopName = (_rule: unknown, value: unknown, callback: (error?: Erro
   }
   callback()
 }
+const validateReadyCheckTimeout = (_rule: unknown, value: unknown, callback: (error?: Error) => void) => {const timeout = Number(value);if (!Number.isInteger(timeout) || timeout < 1 || timeout > 3600) return callback(new Error(t('config.ready_check.timeout_invalid')));callback()}
 const modelFormRules: FormRules = {
   sopName: [{ validator: validateSopName, trigger: ['blur', 'change'] }],
   model: [{ required: true, message: t('config.model_required'), trigger: 'change' }],
+  'readyCheck.timeout': [{ validator: validateReadyCheckTimeout, trigger: ['blur', 'change'] }],
 }
 const ALL_HAND_POINTS = Array.from({ length: 21 }, (_value, index) => index)
 const MAX_STEP_FEEDBACK_SIGNALS = 3
@@ -1171,6 +1182,7 @@ const handleSave = async () => {
     camera: props.modelCameraForm.camera,
     model: props.modelCameraForm.model,
     confidence: props.modelCameraForm.confidence / 100,
+    readyCheck: normalizeReadyCheck(props.modelCameraForm.readyCheck),
     sopCompletionFeedback: normalizedSopCompletionFeedback,
     steps: normalizedSteps.map(step => ({
       id: step.id,
@@ -1279,6 +1291,8 @@ const hideExecutionPreview = () => {
 <style scoped lang="scss">
 .ghost { opacity: 0.5; background: var(--bs-info-color); }
 .confidence-value { margin-left: 5px; }
+.ready-check-label { display: inline-flex; align-items: center; gap: 4px; }
+.ready-check-unit { margin-left: 6px; }
 .manual-region-option { display: inline-flex; align-items: center; gap: 8px; }
 .manual-region-option i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
 .sop-layout { height: 100%; min-height: 0; overflow: hidden; background: #fff; color: #000; }

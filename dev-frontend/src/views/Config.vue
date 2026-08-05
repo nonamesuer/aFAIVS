@@ -488,11 +488,14 @@ const formattedPendingSize = computed(() => {
 // 参数配置相关
 const signalSetVisible = ref(false);
 const createSopCompletionFeedback = () => ({modbus:{enabled:false,signals:[]}});
+const createReadyCheck = () => ({enabled:true,timeout:10});
+const normalizeReadyCheck = (value:any) => ({enabled:value?.enabled !== false,timeout:Number.isInteger(value?.timeout) && value.timeout >= 1 && value.timeout <= 3600 ? value.timeout : 10});
 const modelCameraForm = ref({
   sopName: "",
   originalSopName: "",
   model: "",
   confidence: 50,
+  readyCheck: createReadyCheck(),
   sopCompletionFeedback: createSopCompletionFeedback(),
 });
 onMounted(async () => {
@@ -906,6 +909,7 @@ const handleAddSOP = ()=>{
       originalSopName: "",
       model: "",
       confidence: 50,
+      readyCheck: createReadyCheck(),
       sopCompletionFeedback: createSopCompletionFeedback(),
     };
     sopDialogVisible.value = true;
@@ -917,6 +921,7 @@ const handleCloseSignalSet = () => {
   modelCameraForm.value.originalSopName = "";
   modelCameraForm.value.model = "";
   modelCameraForm.value.confidence = 50;
+  modelCameraForm.value.readyCheck = createReadyCheck();
   modelCameraForm.value.sopCompletionFeedback = createSopCompletionFeedback();
 };
 
@@ -991,6 +996,7 @@ const handelEditSop = (sopName: string) => {
   modelCameraForm.value.originalSopName = sopName;
   modelCameraForm.value.model = modelName;
   modelCameraForm.value.confidence = cof.confidence * 100;
+  modelCameraForm.value.readyCheck = normalizeReadyCheck(cof.readyCheck);
   modelCameraForm.value.sopCompletionFeedback = JSON.parse(JSON.stringify(cof.sopCompletionFeedback || createSopCompletionFeedback()));
   if (cof) {
     editSteps.value = cof.steps || [];

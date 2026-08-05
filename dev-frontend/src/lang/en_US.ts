@@ -108,6 +108,12 @@ export default{
         camera:"Camera",
         cameras:"Cameras",
         confidence:"Confidence",
+        ready_check:{
+            enabled:"Step Ready Check",
+            enabled_description:"Check that required regions and objects are ready before each step starts",
+            timeout:"Ready Timeout",
+            timeout_invalid:"Ready timeout must be an integer from 1 to 3600 seconds",
+        },
         common_config:"Common Configuration",
         path_config:"Path Configuration",
         path_config_description:"Configure storage paths for models, SOP files, users, and detection results",
