@@ -261,6 +261,7 @@
           v-model:visible="manualRegionDialogVisible"
           v-model:manual-regions="manualRegionsConfig"
           :camera-list="cameraList"
+          :camera-resolutions="cameraResolution"
           @saved="getConfig"
         />
         <ResultMediaDialog

@@ -33,9 +33,7 @@
           <div>{{ formatTime(lastUpdated) }}</div>
         </div>
       </section>
-
-      <el-alert
-        v-if="overview.storage?.usingLocalData"
+      <el-alert v-if="overview.storage?.usingLocalData"
         class="storage-alert"
         type="warning"
         :closable="false"
@@ -59,15 +57,15 @@
 
       <section class="kpi-grid">
         <article class="kpi-card kpi-blue">
-          <div class="kpi-icon"><DataAnalysis /></div>
+          <el-icon size="48" color="var(--accent)"><DataAnalysis /></el-icon>
           <div>
-            <span>{{ $t("results.kpi.total") }}</span
-            ><strong>{{ number(summary.total) }}</strong
-            ><small>{{ $t("results.kpi.total_hint") }}</small>
+            <span>{{ $t("results.kpi.total") }}</span>
+            <strong>{{ number(summary.total) }}</strong>
+            <small>{{ $t("results.kpi.total_hint") }}</small>
           </div>
         </article>
         <article class="kpi-card kpi-green">
-          <div class="kpi-icon"><CircleCheckFilled /></div>
+          <el-icon size="48" color="var(--accent)"><CircleCheckFilled /></el-icon>
           <div>
             <span>{{ $t("results.kpi.first_pass") }}</span
             ><strong>{{ percent(summary.firstPassRate) }}</strong
@@ -77,7 +75,7 @@
           </div>
         </article>
         <article class="kpi-card kpi-violet">
-          <div class="kpi-icon"><Finished /></div>
+          <el-icon size="48" color="var(--accent)"><Finished /></el-icon>
           <div>
             <span>{{ $t("results.kpi.completion") }}</span
             ><strong>{{ percent(summary.completionRate) }}</strong
@@ -88,7 +86,7 @@
           </div>
         </article>
         <article class="kpi-card kpi-orange">
-          <div class="kpi-icon"><WarningFilled /></div>
+          <el-icon size="48" color="var(--accent)"><WarningFilled /></el-icon>
           <div>
             <span>{{ $t("results.kpi.deviation") }}</span
             ><strong>{{ number(summary.deviation) }}</strong
@@ -104,52 +102,39 @@
         <article class="panel trend-panel">
           <div class="panel-heading">
             <div>
-              <span class="section-kicker">{{ $t("results.analysis") }}</span>
               <h3>{{ $t("results.trend_title") }}</h3>
             </div>
             <div class="legend">
-              <span><i class="ok"></i>{{ $t("results.quality.ok") }}</span
-              ><span
-                ><i class="ng"></i
-                >{{ $t("results.quality.with_deviation") }}</span
-              >
+              <span>
+                <i class="ok"></i>
+                {{ $t("results.quality.ok") }}
+              </span>
+              <span>
+                <i class="ng"></i>
+                {{ $t("results.quality.with_deviation") }}
+              </span>
             </div>
           </div>
           <div v-if="trend.length" class="trend-chart">
             <div v-for="item in trend" :key="item.day" class="trend-column">
               <div class="trend-value">{{ item.total }}</div>
               <div class="trend-bar">
-                <i
-                  class="bar-ng"
-                  :style="{ height: `${barHeight(item.deviation)}%` }"
-                ></i
-                ><i
-                  class="bar-ok"
-                  :style="{ height: `${barHeight(item.ok)}%` }"
-                ></i>
+                <i class="bar-ng" :style="{ height: `${barHeight(item.deviation)}%` }"></i>
+                <i class="bar-ok" :style="{ height: `${barHeight(item.ok)}%` }"></i>
               </div>
               <span>{{ shortDay(item.day) }}</span>
             </div>
           </div>
-          <el-empty
-            v-else
-            :description="$t('results.no_data')"
-            :image-size="72"
-          />
+          <el-empty v-else :description="$t('results.no_data')" :image-size="72"/>
         </article>
         <article class="panel ranking-panel">
           <div class="panel-heading">
             <div>
-              <span class="section-kicker">TOP SOP</span>
               <h3>{{ $t("results.sop_ranking") }}</h3>
             </div>
           </div>
           <div v-if="ranking.length" class="ranking-list">
-            <div
-              v-for="(item, index) in ranking"
-              :key="item.name"
-              class="ranking-item"
-            >
+            <div v-for="(item, index) in ranking" :key="item.name" class="ranking-item">
               <span class="rank">{{ String(index + 1).padStart(2, "0") }}</span>
               <div class="rank-content">
                 <div>
@@ -160,110 +145,45 @@
                   :percentage="rate(item.ok, item.total)"
                   :stroke-width="7"
                   :show-text="false"
-                  color="#00a878"
+                  color="var(--bs-turquoise-color)"
                 />
               </div>
               <small>{{ percent(rate(item.ok, item.total)) }}</small>
             </div>
           </div>
-          <el-empty
-            v-else
-            :description="$t('results.no_data')"
-            :image-size="72"
-          />
+          <el-empty v-else :description="$t('results.no_data')" :image-size="72"/>
         </article>
       </section>
 
       <section class="panel query-panel">
         <div class="panel-heading">
           <div>
-            <span class="section-kicker">QUERY BUILDER</span>
             <h3>{{ $t("results.query_title") }}</h3>
           </div>
-          <el-button
-            type="primary"
-            plain
-            :icon="Download"
-            :loading="exporting"
-            @click="exportData"
-            >{{ $t("results.export") }}</el-button
-          >
+          <el-button type="primary" size="small" link :icon="Download" :loading="exporting" @click="exportData">{{ $t("results.export") }}</el-button>
         </div>
         <div class="filter-grid">
-          <el-input
-            v-model="filters.keyword"
-            clearable
-            :prefix-icon="Search"
-            :placeholder="$t('results.keyword_placeholder')"
-            @keyup.enter="search"
-          />
-          <el-date-picker
-            v-model="filters.dateRange"
-            type="daterange"
-            value-format="x"
-            :start-placeholder="$t('results.start_date')"
-            :end-placeholder="$t('results.end_date')"
-            :range-separator="$t('results.to')"
-          />
-          <el-select
-            v-model="filters.sopName"
-            clearable
-            filterable
-            :placeholder="$t('results.sop')"
-            ><el-option
-              v-for="item in overview.options?.sopNames || []"
-              :key="item"
-              :label="item"
-              :value="item"
-          /></el-select>
-          <el-select
-            v-model="filters.cameraName"
-            clearable
-            filterable
-            :placeholder="$t('results.camera')"
-            ><el-option
-              v-for="item in overview.options?.cameraNames || []"
-              :key="item"
-              :label="item"
-              :value="item"
-          /></el-select>
-          <el-select
-            v-model="filters.executionStatus"
-            clearable
-            :placeholder="$t('results.execution_status')"
-            ><el-option
-              v-for="item in executionOptions"
-              :key="item"
-              :label="$t(`results.execution.${item}`)"
-              :value="item"
-          /></el-select>
-          <el-select
-            v-model="filters.qualityStatus"
-            clearable
-            :placeholder="$t('results.quality_status')"
-            ><el-option
-              v-for="item in qualityOptions"
-              :key="item"
-              :label="$t(`results.quality.${item}`)"
-              :value="item"
-          /></el-select>
-          <el-select
-            v-model="filters.hasMedia"
-            clearable
-            :placeholder="$t('results.evidence_filter')"
-            ><el-option
-              :label="$t('results.with_evidence')"
-              value="true" /><el-option
-              :label="$t('results.without_evidence')"
-              value="false"
-          /></el-select>
+          <el-input size="small" v-model="filters.keyword" clearable :prefix-icon="Search"  :placeholder="$t('results.keyword_placeholder')"  @keyup.enter="search" />
+          <el-date-picker style="box-sizing: border-box;" v-model="filters.dateRange" type="daterange"  value-format="x" :start-placeholder="$t('results.start_date')"  :end-placeholder="$t('results.end_date')" :range-separator="$t('results.to')"/>
+          <el-select v-model="filters.sopName" clearable  filterable :placeholder="$t('results.sop')" >
+            <el-option v-for="item in overview.options?.sopNames || []" :key="item" :label="item" :value="item"/>
+          </el-select>
+          <el-select v-model="filters.cameraName" clearable filterable :placeholder="$t('results.camera')">
+            <el-option v-for="item in overview.options?.cameraNames || []" :key="item" :label="item" :value="item"/>
+          </el-select>
+          <el-select v-model="filters.executionStatus" clearable :placeholder="$t('results.execution_status')">
+            <el-option v-for="item in executionOptions" :key="item" :label="$t(`results.execution.${item}`)" :value="item"/>
+          </el-select>
+          <el-select v-model="filters.qualityStatus"  clearable :placeholder="$t('results.quality_status')">
+            <el-option v-for="item in qualityOptions" :key="item" :label="$t(`results.quality.${item}`)" :value="item"/>
+          </el-select>
+          <el-select v-model="filters.hasMedia" clearable :placeholder="$t('results.evidence_filter')">
+            <el-option :label="$t('results.with_evidence')" value="true" />
+            <el-option :label="$t('results.without_evidence')" value="false"/>
+          </el-select>
           <div class="filter-actions">
-            <el-button type="primary" :icon="Search" @click="search">{{
-              $t("button.search")
-            }}</el-button
-            ><el-button :icon="RefreshLeft" @click="resetFilters">{{
-              $t("button.reset")
-            }}</el-button>
+            <el-button type="primary" size="small" :icon="Search" @click="search">{{ $t("button.search") }}</el-button>
+            <el-button type="primary" :icon="RefreshLeft" plain size="small" @click="resetFilters">{{ $t("button.reset") }}</el-button>
           </div>
         </div>
       </section>
@@ -272,126 +192,93 @@
         <div class="table-title">
           <div>
             <h3>{{ $t("results.list_title") }}</h3>
-            <span>{{
-              $t("results.total_records", { count: number(resultData.total) })
-            }}</span>
+            <span>{{ $t("results.total_records", { count: number(resultData.total) }) }}</span>
           </div>
           <div class="table-legend">
-            <span class="source configured">{{
-              $t("results.configured_storage")
-            }}</span
-            ><span class="source local">{{ $t("results.local_storage") }}</span>
+            <span class="source configured">{{ $t("results.configured_storage") }}</span>
+            <span class="source local">{{ $t("results.local_storage") }}</span>
           </div>
         </div>
-        <el-table
-          :data="resultData.items"
-          row-key="runId"
-          stripe
-          class="result-table"
-          empty-text=""
-          @row-dblclick="openDetail"
-        >
-          <template #empty
-            ><el-empty :description="$t('results.no_results')"
-          /></template>
-          <el-table-column width="8"
-            ><template #default="{ row }"
-              ><i class="source-line" :class="row.storageSource"></i></template
-          ></el-table-column>
-          <el-table-column :label="$t('results.result')" min-width="150"
-            ><template #default="{ row }"
-              ><div class="status-stack">
-                <el-tag
-                  :type="executionType(row.executionStatus)"
-                  effect="dark"
-                  round
-                  >{{
-                    $t(
-                      `results.execution.${knownExecution(row.executionStatus)}`
-                    )
-                  }}</el-tag
-                ><span :class="['quality-text', row.qualityStatus]">{{
-                  $t(`results.quality.${knownQuality(row.qualityStatus)}`)
-                }}</span>
-              </div></template
-            ></el-table-column
-          >
-          <el-table-column :label="$t('results.sn')" min-width="150"
-            ><template #default="{ row }"
-              ><div class="primary-cell">
-                <b>{{ row.externalReference || "-" }}</b
-                ><small>{{ shortId(row.runId) }}</small>
-              </div></template
-            ></el-table-column
-          >
-          <el-table-column :label="$t('results.sop')" min-width="155"
-            ><template #default="{ row }"
-              ><div class="primary-cell">
-                <b>{{ row.sopName || "-" }}</b
-                ><small>{{ row.projectName || row.modelName || "-" }}</small>
-              </div></template
-            ></el-table-column
-          >
-          <el-table-column :label="$t('results.operator')" min-width="135"
-            ><template #default="{ row }"
-              ><div class="icon-cell">
-                <el-icon><User /></el-icon
-                ><span>{{ row.operatorName || "-" }}</span>
-              </div></template
-            ></el-table-column
-          >
-          <el-table-column :label="$t('results.progress')" min-width="165"
-            ><template #default="{ row }"
-              ><div class="progress-cell">
+        <el-table :data="resultData.items" row-key="runId" stripe class="result-table" empty-text="" @row-dblclick="openDetail">
+          <template #empty>
+            <el-empty :description="$t('results.no_results')"/>
+          </template>
+          <el-table-column width="20">
+            <template #default="{ row }">
+              <div class="source-line" :class="row.storageSource"></div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('results.result')" min-width="100">
+            <template #default="{ row }">
+              <div class="status-stack">
+                <el-tag :type="executionType(row.executionStatus)" effect="dark">
+                  {{ $t(`results.execution.${knownExecution(row.executionStatus)}`) }}
+                </el-tag> 
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('displaytext.status')" min-width="100">
+            <template #default="{ row }">
+              <span :class="['quality-text', row.qualityStatus]">{{ $t(`results.quality.${knownQuality(row.qualityStatus)}`) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('results.sn')" min-width="150">
+            <template #default="{ row }">
+              <div class="primary-cell">
+                <b>{{ row.externalReference || "-" }}</b>
+                <small>{{ shortId(row.runId) }}</small>
+              </div></template>
+            </el-table-column>
+          <el-table-column :label="$t('results.sop')" min-width="155">
+            <template #default="{ row }">
+              <div class="primary-cell">
+                <b>{{ row.sopName || "-" }}</b>
+                <small>{{ row.projectName || row.modelName || "-" }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('results.operator')" min-width="135">
+            <template #default="{ row }"><div class="icon-cell">
+                <el-icon><User /></el-icon>
+                <span>{{ row.operatorName || "-" }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('results.progress')" min-width="165">
+            <template #default="{ row }"><div class="progress-cell">
                 <div>
                   <span>{{ row.completedSteps }}/{{ row.totalSteps }}</span
                   ><small>NG {{ row.ngCount }}</small>
                 </div>
-                <el-progress
-                  :percentage="rate(row.completedSteps, row.totalSteps)"
-                  :stroke-width="6"
-                  :show-text="false"
-                  :color="row.ngCount ? '#e26b3a' : '#00a878'"
-                /></div></template
-          ></el-table-column>
-          <el-table-column :label="$t('results.duration')" width="115"
-            ><template #default="{ row }"
-              ><b class="mono">{{
-                duration(
-                  row.totalDurationMs ||
-                    (row.endedAtMs || Date.now()) - row.startedAtMs
-                )
-              }}</b></template
-            ></el-table-column
-          >
-          <el-table-column :label="$t('results.started_at')" width="170"
-            ><template #default="{ row }"
-              ><div class="primary-cell">
-                <span>{{ formatDate(row.startedAtMs) }}</span
-                ><small>{{ formatClock(row.startedAtMs) }}</small>
-              </div></template
-            ></el-table-column
-          >
-          <el-table-column
-            :label="$t('results.evidence')"
-            width="92"
-            align="center"
-            ><template #default="{ row }"
-              ><el-badge :value="row.mediaCount" :hidden="!row.mediaCount"
-                ><el-icon :class="['media-icon', { active: row.mediaCount }]"
-                  ><PictureFilled /></el-icon></el-badge></template
-          ></el-table-column>
-          <el-table-column fixed="right" width="105" align="center"
-            ><template #default="{ row }"
-              ><el-button
-                type="primary"
-                link
-                :icon="View"
-                @click="openDetail(row)"
-                >{{ $t("button.detail") }}</el-button
-              ></template
-            ></el-table-column
-          >
+                <el-progress :percentage="rate(row.completedSteps, row.totalSteps)" :stroke-width="6" :show-text="false" :color="row.ngCount ? 'var(--bs-danger-color)' : 'var(--bs-success-color)'"
+                /></div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('results.duration')" width="115">
+            <template #default="{ row }">
+              <b class="mono">{{ duration(row.totalDurationMs || (row.endedAtMs || Date.now()) - row.startedAtMs) }}</b>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('results.started_at')" width="170">
+            <template #default="{ row }">
+              <div class="primary-cell">
+                <span>{{ formatDate(row.startedAtMs) }}</span>
+                <small>{{ formatClock(row.startedAtMs) }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('results.evidence')" width="92" align="center" class-name="evidence-col">
+            <template #default="{ row }">
+              <el-badge :value="row.mediaCount" :hidden="!row.mediaCount" badge-style="background:var(--bs-danger-color);border:none;">
+                <el-icon :class="['media-icon', { active: row.mediaCount }]"><PictureFilled /></el-icon>
+              </el-badge>
+            </template>
+          </el-table-column>
+          <el-table-column fixed="right" width="105" align="center">
+            <template #default="{ row }">
+              <el-button type="primary" link :icon="View" @click="openDetail(row)">{{ $t("button.detail") }}</el-button>
+            </template>
+          </el-table-column>
         </el-table>
         <div class="pagination">
           <el-pagination
@@ -979,6 +866,7 @@ const loadResults = async () => {
     page_size: pagination.pageSize,
   });
   Object.assign(resultData, response.data?.data || { items: [], total: 0 });
+  console.log("resultData", resultData);
 };
 const changePageSize = () => {
   pagination.page = 1;
@@ -1310,8 +1198,7 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   top: -220px;
   z-index: 0;
 }
-.eyebrow,
-.section-kicker {
+.eyebrow{
   color: #5bd2ff;
   font-size: 11px;
   font-weight: 800;
@@ -1367,11 +1254,11 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
 }
 .kpi-card {
   background: #fff;
-  border-radius: 4px;
   padding: 22px;
   display: flex;
   align-items: center;
-  gap: 18px;
+  
+  gap: 30px;
   border: 1px solid #e5eaf0;
   box-shadow: 0 7px 20px rgba(26, 52, 73, 0.06);
   position: relative;
@@ -1383,45 +1270,34 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   left: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
+  width: 6px;
   background: var(--accent);
 }
-.kpi-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: color-mix(in srgb, var(--accent) 12%, white);
-  color: var(--accent);
-  font-size: 25px;
-}
+
 .kpi-card span,
 .kpi-card small {
   display: block;
-  color: #71808f;
 }
 .kpi-card strong {
   display: block;
   font-size: 29px;
   line-height: 1.2;
   margin: 4px 0;
-  color: #152b3c;
 }
 .kpi-card small {
   font-size: 11px;
 }
 .kpi-blue {
-  --accent: #007bc0;
+  --accent: var(--bs-primary-color);
 }
 .kpi-green {
-  --accent: #00a878;
+  --accent: var(--bs-success-color);
 }
 .kpi-violet {
-  --accent: #7559c7;
+  --accent: var(--bs-purple-color);
 }
 .kpi-orange {
-  --accent: #e26b3a;
+  --accent: var(--bs-danger-color);
 }
 .insight-grid {
   display: grid;
@@ -1432,7 +1308,6 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
 .panel {
   background: #fff;
   border: 1px solid #e1e7ed;
-  border-radius: 4px;
   box-shadow: 0 6px 18px rgba(25, 48, 69, 0.05);
 }
 .trend-panel,
@@ -1452,9 +1327,7 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   margin: 4px 0 0;
   font-size: 18px;
 }
-.section-kicker {
-  color: #007bc0;
-}
+
 .legend {
   display: flex;
   gap: 18px;
@@ -1465,14 +1338,13 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   display: inline-block;
   width: 9px;
   height: 9px;
-  border-radius: 2px;
   margin-right: 6px;
 }
 .legend .ok {
-  background: #00a878;
+  background: var(--bs-success-color);
 }
 .legend .ng {
-  background: #e26b3a;
+  background: var(--bs-danger-color);
 }
 .trend-chart {
   height: 190px;
@@ -1494,7 +1366,6 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
 .trend-column span,
 .trend-value {
   font-size: 10px;
-  color: #7c8995;
 }
 .trend-bar {
   width: min(28px, 70%);
@@ -1502,7 +1373,6 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   display: flex;
   flex-direction: column-reverse;
   background: #eef3f6;
-  border-radius: 3px 3px 0 0;
   overflow: hidden;
 }
 .trend-bar i {
@@ -1510,10 +1380,10 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   min-height: 0;
 }
 .bar-ok {
-  background: linear-gradient(#21c994, #00a878);
+  background: var(--bs-success-color);
 }
 .bar-ng {
-  background: #e26b3a;
+  background: var(--bs-danger-color);
 }
 .ranking-list {
   margin-top: 14px;
@@ -1543,7 +1413,7 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
 }
 .rank-content span,
 .ranking-item small {
-  color: #6d7a86;
+  // color: #6d7a86;
   font-size: 11px;
 }
 .ranking-item small {
@@ -1555,7 +1425,7 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
 .filter-grid {
   display: grid;
   grid-template-columns: 1.35fr 1.65fr repeat(5, 1fr) auto;
-  gap: 10px;
+  gap: 20px;
   margin-top: 18px;
 }
 .filter-grid :deep(.el-date-editor) {
@@ -1592,24 +1462,23 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   display: inline-block;
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  // border-radius: 50%;
   margin-right: 6px;
 }
 .source.configured:before {
-  background: #007bc0;
+  background: var(--bs-primary-color);
 }
 .source.local:before {
-  background: #e26b3a;
+  background: var(--bs-danger-color);
 }
 .source-line {
   display: block;
   width: 3px;
   height: 34px;
-  border-radius: 4px;
-  background: #007bc0;
+  background: var(--bs-primary-color) !important;
 }
 .source-line.local {
-  background: #e26b3a;
+  background: var(--bs-danger-color) !important;
 }
 .result-table :deep(.el-table__cell) {
   padding: 13px 0;
@@ -1666,6 +1535,11 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   font-size: 22px;
   color: #aab3bb;
 }
+// .results-page 
+:deep(.evidence-col .cell) {
+  overflow: visible;
+}
+
 .media-icon.active {
   color: #007bc0;
 }

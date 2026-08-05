@@ -132,7 +132,7 @@
         "triggers": {
             "httpApi": false,
             "httpParameters": [],
-            "usbScanner": false,
+            "usbScanner": true,
             "usbScannerLength": {
                 "min": 1,
                 "max": 128

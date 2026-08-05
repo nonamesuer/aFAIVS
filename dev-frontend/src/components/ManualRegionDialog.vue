@@ -8,13 +8,13 @@
         </div>
 
         <div class="header-actions">
-          <el-select size="large" v-model="cameraIndex" :placeholder="$t('config.manual_region.select_camera')"  style="width: 240px">
-            <el-option v-for="(camera, index) in cameraList" :key="camera" :label="camera" :value="index"/>
+          <el-select size="large" v-model="selectedCameraName" filterable allow-create default-first-option :placeholder="$t('config.manual_region.select_camera')" style="width: 240px">
+            <el-option v-for="camera in selectableCameraNames" :key="camera" :label="camera" :value="camera"/>
           </el-select>
-          <el-button :type="frozen ? 'danger' : 'primary'" :plain="!frozen" :disabled="cameraIndex === null" @click="frozen = !frozen">
+          <el-button v-if="previewSource === 'camera'" :type="frozen ? 'danger' : 'primary'" :plain="!frozen" :disabled="currentDeviceCameraIndex < 0 || !frameWidth" @click="frozen = !frozen">
             {{ frozen ? $t('config.manual_region.resume_preview') : $t('config.manual_region.freeze_preview') }}
           </el-button>
-          <el-button type="primary" :disabled="cameraIndex === null || !frameWidth" @click="beginDrawing">
+          <el-button type="primary" :disabled="!selectedCameraName || !frameWidth || aspectRatioMismatch" @click="beginDrawing">
             {{ $t('config.manual_region.draw_region') }}
           </el-button>
         </div>
@@ -23,6 +23,21 @@
 
     <div class="region-layout">
       <section class="canvas-panel">
+        <div class="preview-toolbar">
+          <div class="preview-source-selector">
+            <span>{{ $t('config.manual_region.preview_source') }}</span>
+            <el-radio-group v-model="previewSource" @change="handlePreviewSourceChange">
+              <el-radio-button value="camera"><el-icon><VideoCamera /></el-icon>{{ $t('config.manual_region.live_camera') }}</el-radio-button>
+              <el-radio-button value="image"><el-icon><UploadFilled /></el-icon>{{ $t('config.manual_region.temporary_image') }}</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div v-if="previewSource === 'image'" class="image-source-actions">
+            <input ref="imageInputRef" class="image-file-input" type="file" accept=".jpg,.jpeg,.png,.bmp,.webp,image/jpeg,image/png,image/bmp,image/webp" @change="handleImageSelected"/>
+            <el-button :disabled="!selectedCameraName" @click="openImagePicker"><el-icon><UploadFilled /></el-icon>{{ uploadedImageName ? $t('config.manual_region.replace_image') : $t('config.manual_region.select_image') }}</el-button>
+            <el-tag v-if="uploadedImageName" closable effect="plain" @close="clearUploadedImage">{{ uploadedImageName }}</el-tag>
+            <span class="temporary-image-hint">{{ $t('config.manual_region.temporary_image_hint') }}</span>
+          </div>
+        </div>
         <div class="canvas-wrapper" :class="{ drawing: drawingMode }">
           <canvas
             ref="canvasRef"
@@ -32,16 +47,20 @@
             @pointercancel="handlePointerUp"
           />
 
-          <el-empty v-if="cameraIndex === null" :description="$t('config.manual_region.select_camera')"/>
-          <div v-else-if="!frameWidth" class="preview-status">
+          <el-empty v-if="!selectedCameraName" :description="$t('config.manual_region.select_camera')"/>
+          <div v-else-if="!frameWidth && previewSource === 'camera' && currentDeviceCameraIndex >= 0" class="preview-status">
             <el-icon class="is-loading"><Loading /></el-icon>
             {{ $t('config.manual_region.waiting_preview') }}
           </div>
+          <el-empty v-else-if="!frameWidth && previewSource === 'camera'" :description="$t('config.manual_region.camera_unavailable')"/>
+          <el-empty v-else-if="!frameWidth" :description="$t('config.manual_region.upload_image_tip')"/>
 
           <div v-if="drawingMode" class="drawing-tip" >
             {{ $t('config.manual_region.drawing_tip') }}
           </div>
         </div>
+
+        <el-alert v-if="aspectRatioMismatch" class="ratio-warning" :closable="false" type="error" show-icon :title="$t('config.manual_region.ratio_mismatch', { imageWidth: frameWidth, imageHeight: frameHeight, cameraWidth: expectedFrameSize.width, cameraHeight: expectedFrameSize.height })"/>
 
         <div class="canvas-footer">
           <span>
@@ -131,7 +150,7 @@
       <el-button @click="reloadCurrentProfile" plain>
         {{ $t('button.reset') }}
       </el-button>
-      <el-button type="primary" :disabled="cameraIndex === null || !frameWidth" @click="saveRegions">
+      <el-button type="primary" :disabled="!selectedCameraName || !frameWidth || aspectRatioMismatch" @click="saveRegions">
         {{ $t('button.save') }}
       </el-button>
     </template>
@@ -141,7 +160,7 @@
 <script setup lang="ts">
 import {computed,nextTick,onBeforeUnmount,ref,watch,} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Loading } from '@element-plus/icons-vue'
+import { Loading, UploadFilled, VideoCamera } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import api from '@/api/index'
 import { useAppStore } from '@/stores/store'
@@ -170,6 +189,13 @@ interface ManualRegionsConfig {
   cameras: Record<string, ManualRegionProfile>
 }
 
+interface CameraResolution {
+  width: number
+  height: number
+}
+
+type PreviewSource = 'camera' | 'image'
+
 type HandleName = 'nw' | 'ne' | 'sw' | 'se'
 type Interaction =
   | {
@@ -195,6 +221,7 @@ type Interaction =
 const props = defineProps<{
   visible: boolean
   cameraList: string[]
+  cameraResolutions?: Record<string, CameraResolution>
   manualRegions: ManualRegionsConfig
 }>()
 
@@ -207,7 +234,10 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const appStore = useAppStore()
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-const cameraIndex = ref<number | null>(null)
+const imageInputRef = ref<HTMLInputElement | null>(null)
+const selectedCameraName = ref('')
+const previewSource = ref<PreviewSource>('camera')
+const uploadedImageName = ref('')
 const workingRegions = ref<ManualRegion[]>([])
 const selectedId = ref('')
 const persistedIds = ref(new Set<string>())
@@ -219,16 +249,27 @@ const frameHeight = ref(0)
 
 let socket: WebSocket | null = null
 let latestBitmap: ImageBitmap | null = null
+let uploadedImageFile: File | null = null
 let frameDecoding = false
 let interaction: Interaction | null = null
+let previewVersion = 0
 
 const selectedRegion = computed(() =>
   workingRegions.value.find(region => region.id === selectedId.value) || null
 )
 
-const currentCameraName = computed(() =>
-  cameraIndex.value === null ? '' : String(props.cameraList[cameraIndex.value] || '')
-)
+const currentCameraName = computed(() => selectedCameraName.value.trim())
+const selectableCameraNames = computed(() => [...new Set([...props.cameraList, ...Object.keys(props.cameraResolutions || {}), ...Object.keys(props.manualRegions?.cameras || {})].map(name => String(name || '').trim()).filter(Boolean))])
+const currentDeviceCameraIndex = computed(() => props.cameraList.indexOf(currentCameraName.value))
+const expectedFrameSize = computed(() => {
+  const configured = props.cameraResolutions?.[currentCameraName.value]
+  const profile = props.manualRegions?.cameras?.[currentCameraName.value]
+  return {width: Number(configured?.width || profile?.referenceWidth || 0),height: Number(configured?.height || profile?.referenceHeight || 0)}
+})
+const aspectRatioMismatch = computed(() => {
+  if (previewSource.value !== 'image' || !frameWidth.value || !frameHeight.value || !expectedFrameSize.value.width || !expectedFrameSize.value.height) return false
+  return Math.abs(frameWidth.value / frameHeight.value - expectedFrameSize.value.width / expectedFrameSize.value.height) > 0.01
+})
 
 const cloneRegion = (region: ManualRegion): ManualRegion => ({...region,})
 
@@ -303,7 +344,7 @@ const selectRegion = (regionId: string) => {
 
 const beginDrawing = () => {
   if (!frameWidth.value) return
-  frozen.value = true
+  if (previewSource.value === 'camera') frozen.value = true
   drawingMode.value = true
   selectedId.value = ''
   interaction = null
@@ -617,6 +658,7 @@ const renderCanvas = (
 }
 
 const stopPreview = () => {
+  previewVersion += 1
   if (socket) {
     socket.onmessage = null
     socket.onerror = null
@@ -634,13 +676,14 @@ const stopPreview = () => {
 
 const startPreview = () => {
   stopPreview()
-  if (cameraIndex.value === null) return
-  socket = new WebSocket(
+  if (previewSource.value !== 'camera' || currentDeviceCameraIndex.value < 0) return
+  const activeSocket = new WebSocket(
     `ws://localhost:${appStore.servicePort}/ws/video_streaming`
-    + `?camera_id=${cameraIndex.value}&mode=manual-region`
+    + `?camera_id=${currentDeviceCameraIndex.value}&mode=manual-region`
   )
-  socket.binaryType = 'arraybuffer'
-  socket.onmessage = async event => {
+  socket = activeSocket
+  activeSocket.binaryType = 'arraybuffer'
+  activeSocket.onmessage = async event => {
     if (frozen.value || frameDecoding || !(event.data instanceof ArrayBuffer)) return
     const buffer = new Uint8Array(event.data)
     if (buffer.byteLength < 4) return
@@ -656,6 +699,7 @@ const startPreview = () => {
       const bitmap = await createImageBitmap(
         new Blob([buffer.slice(4)], { type: 'image/jpeg' })
       )
+      if (socket !== activeSocket || previewSource.value !== 'camera') {bitmap.close();return}
       latestBitmap?.close()
       latestBitmap = bitmap
       frameWidth.value = bitmap.width
@@ -665,9 +709,53 @@ const startPreview = () => {
       frameDecoding = false
     }
   }
-  socket.onerror = () => {
-    ElMessage.error(t('config.manual_region.preview_failed'))
+  activeSocket.onerror = () => {if (socket === activeSocket && previewSource.value === 'camera') ElMessage.error(t('config.manual_region.preview_failed'))}
+}
+
+const loadUploadedImage = async (file: File) => {
+  stopPreview()
+  const version = previewVersion
+  try {
+    const bitmap = await createImageBitmap(file)
+    if (previewSource.value !== 'image' || version !== previewVersion) {bitmap.close();return}
+    latestBitmap = bitmap
+    frameWidth.value = bitmap.width
+    frameHeight.value = bitmap.height
+    frozen.value = true
+    renderCanvas()
+  } catch {
+    ElMessage.error(t('config.manual_region.image_decode_failed'))
   }
+}
+
+const openImagePicker = () => imageInputRef.value?.click()
+
+const handleImageSelected = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (!['image/jpeg','image/png','image/bmp','image/webp'].includes(file.type) && !/\.(jpe?g|png|bmp|webp)$/i.test(file.name)) return ElMessage.error(t('config.manual_region.invalid_image_type'))
+  if (file.size > 20 * 1024 * 1024) return ElMessage.error(t('config.manual_region.image_too_large'))
+  uploadedImageFile = file
+  uploadedImageName.value = file.name
+  previewSource.value = 'image'
+  await loadUploadedImage(file)
+}
+
+const clearUploadedImage = () => {
+  uploadedImageFile = null
+  uploadedImageName.value = ''
+  if (previewSource.value === 'image') stopPreview()
+}
+
+const handlePreviewSourceChange = async (source: string | number | boolean | undefined) => {
+  drawingMode.value = false
+  interaction = null
+  if (source === 'camera') {frozen.value = false;startPreview();return}
+  frozen.value = true
+  if (uploadedImageFile) await loadUploadedImage(uploadedImageFile)
+  else stopPreview()
 }
 
 const removeSelectedRegion = async () => {
@@ -724,6 +812,7 @@ const validateRegions = () => {
 }
 
 const saveRegions = async () => {
+  if (aspectRatioMismatch.value) {ElMessage.error(t('config.manual_region.ratio_mismatch', {imageWidth: frameWidth.value,imageHeight: frameHeight.value,cameraWidth: expectedFrameSize.value.width,cameraHeight: expectedFrameSize.value.height}));return}
   const validationError = validateRegions()
   if (validationError) {
     ElMessage.error(validationError)
@@ -756,7 +845,10 @@ const saveRegions = async () => {
 
 const handleClosed = () => {
   stopPreview()
-  cameraIndex.value = null
+  selectedCameraName.value = ''
+  previewSource.value = 'camera'
+  uploadedImageFile = null
+  uploadedImageName.value = ''
   workingRegions.value = []
   selectedId.value = ''
   drawingMode.value = false
@@ -771,19 +863,20 @@ watch(
       return
     }
     await nextTick()
-    cameraIndex.value = props.cameraList.length ? 0 : null
-    if (cameraIndex.value === null) {
-      reloadCurrentProfile()
-    }
+    selectedCameraName.value = selectableCameraNames.value[0] || ''
+    if (!selectedCameraName.value) reloadCurrentProfile()
   },
 )
 
-watch(cameraIndex, async (next, previous) => {
+watch(selectedCameraName, async (next, previous) => {
   if (!props.visible || next === previous) return
   frozen.value = false
+  uploadedImageFile = null
+  uploadedImageName.value = ''
   await nextTick()
   reloadCurrentProfile()
-  startPreview()
+  if (previewSource.value === 'camera') startPreview()
+  else stopPreview()
 })
 
 watch(
@@ -839,6 +932,15 @@ onBeforeUnmount(stopPreview)
   flex-direction: column;
   overflow: hidden;
 }
+
+.preview-toolbar { min-height: 52px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--el-border-color); }
+.preview-source-selector,.image-source-actions { display: flex; align-items: center; gap: 10px; }
+.preview-source-selector .el-icon,.image-source-actions .el-icon { margin-right: 5px; }
+.image-file-input { display: none; }
+.image-source-actions { min-width: 0; }
+.image-source-actions .el-tag { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.temporary-image-hint { color: var(--el-text-color-secondary); font-size: 13px; white-space: nowrap; }
+.ratio-warning { flex: none; }
 
 .canvas-wrapper {
   position: relative;
@@ -979,5 +1081,8 @@ onBeforeUnmount(stopPreview)
   .canvas-panel {
     min-height: 55vh;
   }
+
+  .preview-toolbar,.image-source-actions { align-items: flex-start; flex-direction: column; }
+  .temporary-image-hint { white-space: normal; }
 }
 </style>
