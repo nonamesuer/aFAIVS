@@ -66,7 +66,7 @@
         "boxThickness": 2,
         "fontThickness": 2,
         "fontScale": 0.5,
-        "fromAreaFill": false,
+        "fromAreaFill": true,
         "targetAreaFill": false,
         "areaFillAlpha": 0.5
     },
@@ -117,6 +117,17 @@
                         "y1": 0.725173,
                         "x2": 0.758073,
                         "y2": 0.929514,
+                        "enabled": true
+                    },
+                    {
+                        "id": "region_9951c3fa30c841f5907911f6f455301a",
+                        "name": "固定区域 2",
+                        "color": "#409EFF",
+                        "shape": "rectangle",
+                        "x1": 0.342708,
+                        "y1": 0.321979,
+                        "x2": 0.544661,
+                        "y2": 0.512951,
                         "enabled": true
                     }
                 ]

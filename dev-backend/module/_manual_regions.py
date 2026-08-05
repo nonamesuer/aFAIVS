@@ -280,6 +280,7 @@ def build_manual_region_detections(
     camera_name: str,
     frame_width: int,
     frame_height: int,
+    included_region_keys: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Convert saved normalized rectangles to virtual detection boxes."""
 
@@ -287,14 +288,17 @@ def build_manual_region_detections(
     profile = normalized["cameras"].get(str(camera_name or "").strip())
     if not profile or frame_width <= 0 or frame_height <= 0:
         return []
+    included = None if included_region_keys is None else {str(key or "").strip().casefold() for key in included_region_keys if str(key or "").strip()}
 
     detections: list[dict[str, Any]] = []
     for region in profile["regions"]:
         if region.get("enabled") is False:
             continue
+        region_key = manual_region_key(region["id"])
+        if included is not None and region_key.casefold() not in included:continue
         detections.append(
             {
-                "label": manual_region_key(region["id"]),
+                "label": region_key,
                 "displayLabel": region["name"],
                 "points": [
                     [
@@ -315,6 +319,29 @@ def build_manual_region_detections(
             }
         )
     return detections
+
+
+def collect_step_manual_region_keys(step: Any) -> set[str]:
+    """Return every manual region used by one runtime/configured SOP step."""
+    if isinstance(step, dict):context = step.get("context", {});rule_groups = (step.get("doneWhen", []),step.get("ngWhen", []))
+    else:context = getattr(step,"context",{});rule_groups = (getattr(step,"done_when",[]),getattr(step,"ng_when",[]))
+    context = context if isinstance(context,dict) else {}
+    references = [context.get("fromRegion"),context.get("toRegion")]
+    for rules in rule_groups:
+        if isinstance(rules,list):references.extend((rule.get("region") or rule.get("toRegion")) for rule in rules if isinstance(rule,dict))
+    return {region_reference_key(reference) for reference in references if is_manual_region_reference(reference)}
+
+
+def collect_sop_manual_region_keys(definition: Any) -> set[str]:
+    """Return manual regions referenced anywhere in one SOP definition."""
+    if not isinstance(definition,dict):return set()
+    keys: set[str] = set()
+    steps = definition.get("steps", [])
+    if isinstance(steps,list):
+        for step in steps:keys.update(collect_step_manual_region_keys(step))
+    extra_regions = definition.get("materialSourceRegions", [])
+    if isinstance(extra_regions,list):keys.update(region_reference_key(reference) for reference in extra_regions if is_manual_region_reference(reference))
+    return keys
 
 
 def _manual_regions_by_id(config: Any) -> dict[str, tuple[str, dict[str, Any]]]:

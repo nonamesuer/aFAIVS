@@ -29,6 +29,8 @@ from module._camera_settings import (
 )
 from module._manual_regions import (
     build_manual_region_detections,
+    collect_sop_manual_region_keys,
+    collect_step_manual_region_keys,
     normalize_manual_regions_config,
     validate_sop_manual_region_references,
 )
@@ -374,13 +376,16 @@ class DetectorWorker:
         if validation_error:
             raise ValueError(validation_error)
 
-    def _current_manual_region_detections(self) -> list[dict]:
+    def _manual_region_detections(self, included_region_keys: set[str]) -> list[dict]:
         return build_manual_region_detections(
             self.manual_regions_config,
             self.camera.camera_name,
             int(self.camera.actual_width or 0),
             int(self.camera.actual_height or 0),
+            included_region_keys,
         )
+    def _current_manual_region_detections(self) -> list[dict]:return self._manual_region_detections(collect_step_manual_region_keys(self.sop_machine.current_step))
+    def _sop_manual_region_detections(self) -> list[dict]:return self._manual_region_detections(collect_sop_manual_region_keys(self.sop_machine.sop_config))
     def _refresh_hand_tracker(self) -> None:
         """按当前SOP是否需要手部识别，惰性创建/销毁 HandTracker，避免不需要时白白耗CPU。"""
         needs_hands = self.sop_machine.requires_hand_tracking
@@ -498,18 +503,16 @@ class DetectorWorker:
         hands=None,
     ) -> None:
         label_box_datas = detection.get("datas", [])
-        manual_regions = self._current_manual_region_detections()
-        observation_boxes = [
-            *label_box_datas,
-            *manual_regions,
-        ]
         completed_now = False
         media_events: list[dict] = []
         with self.state_lock:
+            media_manual_regions = self._current_manual_region_detections()
+            observation_boxes = [*label_box_datas,*self._sop_manual_region_detections()]
             sop_result = self.sop_machine.update(
                 observation_boxes,
                 hands=hands,
             )
+            visible_manual_regions = self._current_manual_region_detections()
             run_id = self.result_store.current_run_id
             media_events = self.result_store.consume_sop_snapshot(sop_result)
             self.feedback_dispatcher.process_snapshot(sop_result, run_id)
@@ -518,7 +521,7 @@ class DetectorWorker:
                 self.result["step"] = 1 if self.result.get("step", 1) == 1 else 2
                 self.result["gesture"] = "gesture"
                 self.result["detections"] = label_box_datas
-                self.result["manualRegions"] = manual_regions
+                self.result["manualRegions"] = visible_manual_regions
                 self.result["hands"] = hands or {}
                 self.result["hand_action_points"] = (self.sop_machine.current_hand_action_points(hands) if hands else [])
                 self.result["sop"] = sop_result
@@ -533,6 +536,7 @@ class DetectorWorker:
 
         if media_events:
             media_snapshot = self.snapshot()
+            media_snapshot["manualRegions"] = media_manual_regions
             self.media_recorder.capture_events(
                 event_refs=media_events,
                 raw_frame=frame,

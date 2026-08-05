@@ -78,16 +78,11 @@
                 "timeout": 30,
                 "context": {
                     "expectedObject": "P1",
-                    "fromRegion": {
-                        "type": "manual",
-                        "id": "region_f66bb573af414f88b60251a44ee55abb",
-                        "name": "固定区域 1",
-                        "cameraName": "TEF1"
-                    },
+                    "fromRegion": "A1",
                     "toRegion": "CY",
                     "objectDetection": {
-                        "source": false,
-                        "transit": true,
+                        "source": true,
+                        "transit": false,
                         "target": true
                     },
                     "missTolerance": 5,
@@ -125,6 +120,6 @@
         ],
         "create_time": "2026-07-24 16:16:26",
         "enabled": true,
-        "modify_time": "2026-08-05 14:10:46"
+        "modify_time": "2026-08-05 16:25:32"
     }
 }
