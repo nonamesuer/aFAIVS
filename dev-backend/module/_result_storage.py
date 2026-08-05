@@ -210,18 +210,22 @@ def _insert_row(
 
 def _copy_file_atomic(source: str, target: str) -> int:
     os.makedirs(os.path.dirname(target), exist_ok=True)
+    source_size = os.path.getsize(source)
     if os.path.exists(target):
-        source_size = os.path.getsize(source)
         if os.path.getsize(target) == source_size:
             return source_size
 
     temp_path = f"{target}.sync-{uuid.uuid4().hex}.part"
     try:
-        shutil.copy2(source, temp_path)
-        with open(temp_path, "rb") as copied_file:
+        with open(source, "rb") as source_file, open(temp_path, "wb") as copied_file:
+            shutil.copyfileobj(source_file, copied_file, length=1024 * 1024)
+            copied_file.flush()
             os.fsync(copied_file.fileno())
+        if os.path.getsize(temp_path) != source_size:raise OSError(f"Copied result file size mismatch: {source}")
+        try:shutil.copystat(source, temp_path)
+        except OSError:logger.debug("Unable to copy result file metadata from %s to %s",source,temp_path,exc_info=True)
         os.replace(temp_path, target)
-        return os.path.getsize(target)
+        return source_size
     finally:
         try:
             if os.path.exists(temp_path):
