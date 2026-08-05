@@ -227,3 +227,5 @@ update_temp/
 doc/
 results/
 audio_resources/
+dev-frontend/out/
+logs/

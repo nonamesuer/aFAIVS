@@ -5,21 +5,41 @@
         <b>{{ $t("public.faivs") }}</b> > 
         <b>{{ $t("results.title") }}</b>
       </div>
-      <div class="header-right">
-        <img src="@/assets/img/bosch.26cf9c8e.svg" style="height: 28px; vertical-align: middle" alt=""/>
-        <el-button :icon="Refresh" circle @click="loadAll" />
-        <el-dropdown trigger="click" @command="langChange" style="cursor: pointer">
-          <span  class="el-dropdown-link">{{ currentLanguage }}<el-icon class="el-icon--right"><ArrowDown /></el-icon></span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="en">English</el-dropdown-item>
-              <el-dropdown-item command="zh">Chinese</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-      </div>
     </el-header>
-    <el-main>
+
+  </el-container>
+
+
+
+  <div class="results-page" v-loading="loading">
+
+
+
+
+    <header class="app-header">
+      <div class="brand">
+        <b>{{ $t("public.faivs") }}</b> > 
+        <b>{{ $t("results.title") }}</b>
+      </div>
+      <div class="header-actions">
+        <el-button :icon="Refresh" circle @click="loadAll" /><el-dropdown
+          trigger="click"
+          @command="langChange"
+          ><span class="language"
+            >{{ currentLanguage }}<el-icon><ArrowDown /></el-icon></span
+          ><template #dropdown
+            ><el-dropdown-menu
+              ><el-dropdown-item command="en">English</el-dropdown-item
+              ><el-dropdown-item command="zh"
+                >Chinese</el-dropdown-item
+              ></el-dropdown-menu
+            ></template
+          ></el-dropdown
+        ><img src="@/assets/img/bosch.26cf9c8e.svg" alt="Bosch" />
+      </div>
+    </header>
+
+    <main class="results-content">
       <section class="hero-panel">
         <div>
           <div class="eyebrow">
@@ -405,7 +425,7 @@
           />
         </div>
       </section>
-    </el-main>
+    </main>
 
     <el-drawer
       v-model="detailVisible"
@@ -785,41 +805,7 @@
         </el-tabs>
       </div>
     </el-drawer>
-  </el-container>
-
-
-
-  <!-- <div class="results-page" v-loading="loading"> -->
-  <!-- </div> -->
-
-
-
-
-    <!-- <header class="app-header">
-      <div class="brand">
-        <b>{{ $t("public.faivs") }}</b> > 
-        <b>{{ $t("results.title") }}</b>
-      </div>
-      <div class="header-actions">
-        <el-button :icon="Refresh" circle @click="loadAll" /><el-dropdown
-          trigger="click"
-          @command="langChange"
-          ><span class="language"
-            >{{ currentLanguage }}<el-icon><ArrowDown /></el-icon></span
-          ><template #dropdown
-            ><el-dropdown-menu
-              ><el-dropdown-item command="en">English</el-dropdown-item
-              ><el-dropdown-item command="zh"
-                >Chinese</el-dropdown-item
-              ></el-dropdown-menu
-            ></template
-          ></el-dropdown
-        ><img src="@/assets/img/bosch.26cf9c8e.svg" alt="Bosch" />
-      </div>
-    </header> -->
-
-    
-  <!-- </div> -->
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -1231,38 +1217,46 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
 </script>
 
 <style scoped lang="scss">
-.el-container {
+.results-page {
   min-height: 100vh;
+  background: #f3f6f9;
+  color: #1f2d3d;
 }
-.el-header{
+.app-header {
+  height: 50px;
+  padding: 0 28px;
+  background: #fff;
+  border-bottom: 1px solid #dfe5eb;
   display: flex;
   align-items: center;
-  border-bottom: 1px solid #c5c8cb;
-  .header-left {
-    display: flex;
-    align-items: center;
-    width: 40%;
-    font-size: 20px;
-    font-family: var(--fontFamilyBold);
-  }
-  .header-right {
-    width: 70%;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    flex-direction: row-reverse;
-    color: var(--text-color);
-    .el-dropdown {
-      font-size: 18px;
-      margin-right: 20px;
-      white-space: nowrap;
-      .el-icon--right {
-        vertical-align: bottom;
-      }
-    }
-  }
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  box-shadow: 0 2px 12px rgba(14, 36, 56, 0.05);
+}
+.brand,
+.header-actions,
+.language {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand {
+  font-size: 16px;
 }
 
+.crumb {
+  color: #a7b1bc;
+}
+.header-actions img {
+  height: 26px;
+  margin-left: 8px;
+}
+.language {
+  cursor: pointer;
+  font-size: 18px;
+}
 .results-content {
   width: min(1740px, calc(100% - 44px));
   margin: 0 auto;
@@ -1271,33 +1265,20 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
 .hero-panel {
   min-height: 154px;
   padding: 30px 36px;
+  border-radius: 4px;
   color: #fff;
-  &:before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      120deg,
-      rgba(16, 37, 54, 0.9),
-      rgba(21, 62, 89, 0.9) 58%,
-      rgba(7, 95, 134, 0.9)
-    );
-    z-index: 0;
-  }
-  background-image: url("@/assets/img/faivs.jpg");
-  background-size: inherit;
-  background-position: center;
+  background: radial-gradient(
+      circle at 80% 20%,
+      rgba(0, 168, 224, 0.26),
+      transparent 25%
+    ),
+    linear-gradient(120deg, #102536, #153e59 58%, #075f86);
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   box-shadow: 0 15px 35px rgba(9, 45, 68, 0.2);
   position: relative;
   overflow: hidden;
-
-  > * {
-    position: relative;
-    z-index: 1;
-  }
 }
 .hero-panel:after {
   content: "";
@@ -1308,7 +1289,6 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   border-radius: 50%;
   right: -80px;
   top: -220px;
-  z-index: 0;
 }
 .eyebrow,
 .section-kicker {

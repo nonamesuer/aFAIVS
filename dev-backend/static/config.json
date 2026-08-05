@@ -152,6 +152,6 @@
         }
     },
     "accountLogin": {
-        "enabled": true
+        "enabled": false
     }
 }

@@ -409,6 +409,7 @@ class SOPStateMachine:
             for step in self.steps
             if step.expected_object
         }
+        self.region_labels = {region.casefold() for step in self.steps for region in (step.from_region, step.to_region) if region}
 
     def _display_region_name(self, region_key: str) -> str:
         return self.region_display_names.get(region_key, region_key)
@@ -1626,9 +1627,12 @@ class SOPStateMachine:
         if not regions:
             return ""
         expected_label = step.expected_object.casefold()
-        for label in self._future_expected_objects():
-            if label.casefold() == expected_label:
-                continue
+        labels = {label.casefold(): label for label in self._future_expected_objects() if label.casefold() != expected_label and label.casefold() not in self.region_labels}
+        for box in boxes:
+            normalized_label = box.label.casefold()
+            if normalized_label and normalized_label != expected_label and normalized_label not in self.region_labels and box.class_id != -1:
+                labels.setdefault(normalized_label, box.label)
+        for label in labels.values():
             current_count = count_boxes_inside_regions(find_boxes(boxes, label), regions)
             baseline_count = self._completed_object_count_in_region(label, step.to_region)
             if current_count > baseline_count:
@@ -1636,8 +1640,6 @@ class SOPStateMachine:
                     f"NG: Expected {step.expected_object}, but {label} "
                     f"entered {step.to_region_name}"
                 )
-            # if count_boxes_inside_regions(find_boxes(boxes, label), regions) > 0:
-            #     return f"NG: Expected {step.expected_object}, but {label} entered {step.to_region}"
         return ""
     def _completed_object_count_in_region(self, label: str, region: str) -> int:
         expected_label = label.casefold()

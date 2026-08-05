@@ -34,6 +34,7 @@ export default {
     createUser: requestWithPath("/auth/users", "POST"),
     updateUser: (employeeId, data) => axios.put(`${base_url}/auth/users/${encodeURIComponent(employeeId)}`,data),
     deleteUser: (employeeId) => axios.delete(`${base_url}/auth/users/${encodeURIComponent(employeeId)}`),
+    openBrowser:requestWithPath("/open/browser", "GET"),
     setLoginEnabled: requestWithPath("/auth/settings", "PUT"),
     //检测相关
     startDetection: requestWithPath("/detection/start_detection", "GET"),

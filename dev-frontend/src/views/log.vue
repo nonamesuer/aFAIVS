@@ -1,5 +1,4 @@
 <template>
-  <Loading v-show="myLoading" />
   <el-container>
     <el-header height="50px">
       <div class="header-left">
@@ -18,8 +17,7 @@
           style="cursor: pointer"
         >
           <span class="el-dropdown-link">
-            {{ currentLanguage
-            }}<el-icon class="el-icon--right"><arrow-down /></el-icon>
+            {{ currentLanguage }}<el-icon class="el-icon--right"><arrow-down /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
@@ -165,7 +163,6 @@
 import { ref, computed, onBeforeMount, onMounted } from "vue";
 import { useAppStore } from "@/stores/store";
 import { useI18n } from "vue-i18n";
-import Loading from "./Loading.vue";
 import { ElMessage } from "element-plus";
 import dayjs from "dayjs";
 import api from "@/api/index";
@@ -187,7 +184,6 @@ const langChange = (lang: string) => {
   currentLanguage.value = appStore.locale == "zh" ? "Chinese" : "English";
 };
 
-const myLoading = ref(false);
 const logs = ref([]);
 const filteredLogs = ref([]);
 const logLevel = ref("all");
@@ -202,7 +198,7 @@ const downloading = ref(false);
 // 获取日志数据
 
 const fetchLogs = async () => {
-  myLoading.value = true;
+  appStore.setLoading(true);
   api.getLog().then((res) => {
       const resData = res.data;
       if (!resData) return MesAlertWTitle("error",t("message.error"),t("message.messagetext.failedget"),resData.msg );
@@ -212,7 +208,7 @@ const fetchLogs = async () => {
       filterLogs();
     })
     .catch((error) => {MesAlertWTitle("error",t("message.error"),t("message.messagetext.failed_public_body"),error.message);})
-    .finally(() => {myLoading.value = false;});
+    .finally(() => {appStore.setLoading(false);});
 };
 
 // 过滤日志

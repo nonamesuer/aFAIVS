@@ -2,11 +2,14 @@ import json
 import os
 import time
 import ctypes
+import socket
+import webbrowser
 from copy import deepcopy
 from pygrabber.dshow_graph import FilterGraph
 from module._manual_regions import DEFAULT_MANUAL_REGIONS_CONFIG
 graph = FilterGraph()
 WEBSOCKET_CLIENTS = set()
+URL = "http://127.0.0.1:20253"
 CAP_STATUS = 0 #0：未启动，1:正常，2:重连中，3:重连失败
 DETECTOR_STATUS = 0 #0：未启动，1:正常，2:重连中，3:重连失败
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -272,3 +275,19 @@ async def send_websocket_json(message):
     """发送消息到所有WebSocket客户端"""
     for client in WEBSOCKET_CLIENTS:
         await client.send_json(message)
+
+def open_browser():
+    """打开浏览器"""
+    webbrowser.open(URL)
+    return {"message": "Browser opened."}
+def is_port_in_use(port, host="0.0.0.0"):
+    global URL
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
+        try:
+            hostname = socket.gethostname()
+            local_ip = socket.gethostbyname(hostname)
+            URL = f"http://{local_ip}:20252"
+            return False
+        except OSError:
+            return True

@@ -86,7 +86,7 @@
                     },
                     "toRegion": "CY",
                     "objectDetection": {
-                        "source": true,
+                        "source": false,
                         "transit": true,
                         "target": true
                     },
@@ -94,7 +94,11 @@
                     "handMargin": 5,
                     "handPoints": {
                         "l": [],
-                        "r": []
+                        "r": [
+                            4,
+                            8,
+                            12
+                        ]
                     },
                     "resultFeedback": {
                         "http": {
@@ -121,6 +125,6 @@
         ],
         "create_time": "2026-07-24 16:16:26",
         "enabled": true,
-        "modify_time": "2026-08-04 10:11:24"
+        "modify_time": "2026-08-04 11:33:46"
     }
 }

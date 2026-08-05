@@ -1,6 +1,6 @@
 export default{
     public:{
-        faivs:"FAIVS-A",
+        faivs:"aFAIVS",
         developed:"Developed by Bosch Rexroth(PkP/TEF1)",
     },
     menu:{
@@ -538,6 +538,9 @@ export default{
         processtimeout:"Process timeout",
         waitingforregion:"Waiting for region",
         waitingfor:"Waiting for object",
+        timeout:"Timeout",
+        ng:"NG",
+        
     },
     camera:{
         settingstitle:"Camera and picture parameter settings",

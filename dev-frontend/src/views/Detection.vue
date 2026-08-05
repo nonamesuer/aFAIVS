@@ -7,7 +7,7 @@
                         <div class="camera-item-top" :class="{ 'is-connected': stream.connected }"/>
                         <div class="camera-item-header flex-center">
                             <div class="header-left flex-center">
-                                <div class="text-auto-hidden">{{ cameraName }}</div>
+                                <div class="text-auto-hidden">{{ cameraName || $t('displaytext.noconfigcamera') }}</div>
                                 <el-divider direction="vertical" />
                                 <template v-if="runtime.externalReference">
                                     <div class="text-auto-hidden">SN: {{ runtime.externalReference }}</div>
@@ -53,10 +53,7 @@
                             </div>
 
                             <div v-if="currentSop" class="header-right" :style="{color: sopStateMeta.color}">
-                                <el-icon
-                                    class="header-right-icon"
-                                    :class="{ 'is-loading': sopStateMeta.spinning }"
-                                >
+                                <el-icon class="header-right-icon" :class="{ 'is-loading': sopStateMeta.spinning }">
                                     <component :is="sopStateMeta.icon" />
                                 </el-icon>
                                 <span class="header-right-label">{{ sopStateMeta.label }}</span>
@@ -65,10 +62,7 @@
 
                         <div class="camera-item-body">
                             <div v-if="!stream.connected" class="reconnecting-message">
-                                {{
-                                    stream.errorMessage ||
-                                    t('message.messagetext.webrtcStreamError')
-                                }}
+                                {{ stream.errorMessage || t('message.messagetext.webrtcStreamError') }}
                             </div>
 
                             <el-alert
@@ -334,34 +328,21 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount,onMounted,reactive,ref, watch} from 'vue'
-import {
-    VideoPause,
-    VideoPlay,
-    RefreshLeft,
-    Stopwatch,
-    DArrowRight,
-    Clock,
-    Loading,
-    CircleCheckFilled,
-    CircleCloseFilled,
-    WarningFilled,
-} from '@element-plus/icons-vue'
-import { useI18n } from 'vue-i18n'
-import api from '@/api/index'
-import { MesAlertWTitle,MesConfirmWTitle } from '@/assets/js/secondpk'
-import { useAppStore } from '@/stores/store'
-import { ElMessage } from 'element-plus'
-
-const appStore = useAppStore()
-const { t, locale } = useI18n()
-
-const MAX_EVENT_COUNT = 50
-const MAX_ALERT_COUNT = 30
-const RECONNECT_DELAY_MS = 3000
-const TIMEOUT_TICK_MS = 1000
-const EXTERNAL_STATUS_POLL_MS = 1000
-const AUDIO_PLAYBACK_EVENT_STORAGE_KEY = 'afaivs_audio_playback_events'
+import { computed, nextTick, onBeforeUnmount,onMounted,reactive,ref, watch} from 'vue';
+import { VideoPause, VideoPlay, RefreshLeft,Stopwatch,DArrowRight,Clock,Loading,CircleCheckFilled,CircleCloseFilled, WarningFilled} from '@element-plus/icons-vue';
+import { useI18n } from 'vue-i18n';
+import api from '@/api/index';
+import { MesAlertWTitle,MesConfirmWTitle } from '@/assets/js/secondpk';
+import { useAppStore } from '@/stores/store';
+import { ElMessage } from 'element-plus';
+const appStore = useAppStore();
+const { t, locale } = useI18n();
+const MAX_EVENT_COUNT = 50;
+const MAX_ALERT_COUNT = 30;
+const RECONNECT_DELAY_MS = 3000;
+const TIMEOUT_TICK_MS = 1000;
+const EXTERNAL_STATUS_POLL_MS = 1000;
+const AUDIO_PLAYBACK_EVENT_STORAGE_KEY = 'afaivs_audio_playback_events';
 
 const createEmptyDetectionResult = () => ({
     step: null,
@@ -374,7 +355,7 @@ const createEmptyDetectionResult = () => ({
     updated_at: 0,
     sop: null,
     feedback: { events: [] },
-})
+});
 
 const runtime = reactive({
     initialized: false,
@@ -395,85 +376,75 @@ const runtime = reactive({
     externalMode: false,
     externalReference: null,
     externalStart: null,
-})
+});
 
 const stream = reactive({
     connected: false,
     transport: 'webrtc',
     errorMessage: t('message.messagetext.closedDetection'),
-})
+});
 
-const cameraName = ref(t('displaytext.noconfigcamera'))
-const sopConfiguration = ref({})
-const detectionResult = ref(createEmptyDetectionResult())
-const processSteps = ref([])
-const alerts = ref([])
-const events = ref([])
-const criticalAlerts = ref([])
+const cameraName = ref("");
+const sopConfiguration = ref({});
+const detectionResult = ref(createEmptyDetectionResult());
+const processSteps = ref([]);
+const alerts = ref([]);
+const events = ref([]);
+const criticalAlerts = ref([]);
 
-const streamVideoRef = ref(null)
-const streamImageRef = ref(null)
-const footerHintRef = ref(null)
-const footerHintTextRef = ref(null)
-const footerHintOverflow = ref(false)
-const timeoutNow = ref(Date.now())
-const startingNextPart = ref(false)
+const streamVideoRef = ref(null);
+const streamImageRef = ref(null);
+const footerHintRef = ref(null);
+const footerHintTextRef = ref(null);
+const footerHintOverflow = ref(false);
+const timeoutNow = ref(Date.now());
+const startingNextPart = ref(false);
 
-const mjpegUrl = ref(`${api.mjpegBaseUrl}?ts=${Date.now()}`)
+const mjpegUrl = ref(`${api.mjpegBaseUrl}?ts=${Date.now()}`);
 
-let peerConnection = null
-let resultSocket = null
-let reconnectTimer = null
-let resultReconnectTimer = null
-let criticalAlertTimer = null
-let timeoutTicker = null
-let externalStatusTimer = null
-let manuallyStopped = false
-let webRtcStarting = false
-let webRtcStartToken = 0
-let lastSopEventKey = ''
-let lastCriticalAlertKey = ''
-const handledFeedbackEventIds = new Set()
-const handledAudioPlaybackEventIds = new Set((() => {try {const value = JSON.parse(sessionStorage.getItem(AUDIO_PLAYBACK_EVENT_STORAGE_KEY) || '[]');return Array.isArray(value) ? value.slice(-100) : []} catch {return []}})())
-const audioResourceUrlCache = new Map()
-let lastTriggerCycleAt = null
-let scannerBuffer = ''
-let scannerResetTimer = null
-let lastExternalRequestId = null
-let feedbackAudioQueue = []
+let peerConnection = null;
+let resultSocket = null;
+let reconnectTimer = null;
+let resultReconnectTimer = null;
+let criticalAlertTimer = null;
+let timeoutTicker = null;
+let externalStatusTimer = null;
+let manuallyStopped = false;
+let webRtcStarting = false;
+let webRtcStartToken = 0;
+let lastSopEventKey = '';
+let lastCriticalAlertKey = '';
+const handledFeedbackEventIds = new Set();
+const handledAudioPlaybackEventIds = new Set((() => {try {const value = JSON.parse(sessionStorage.getItem(AUDIO_PLAYBACK_EVENT_STORAGE_KEY) || '[]');return Array.isArray(value) ? value.slice(-100) : []} catch {return []}})());
+const audioResourceUrlCache = new Map();
+let lastTriggerCycleAt = null;
+let scannerBuffer = '';
+let scannerResetTimer = null;
+let lastExternalRequestId = null;
+let feedbackAudioQueue = [];
 let feedbackAudioProcessing = false
-let feedbackAudioGeneration = 0
-let currentFeedbackAudio = null
-let cancelCurrentFeedbackAudio = null
-let audioPlaybackUnlocked = false
+let feedbackAudioGeneration = 0;
+let currentFeedbackAudio = null;
+let cancelCurrentFeedbackAudio = null;
+let audioPlaybackUnlocked = false;
 
-const okCount = computed(() => Number(detectionResult.value.ok_count || 0))
-const ngCount = computed(() => Number(detectionResult.value.ng_count || 0))
-const currentSop = computed(() => detectionResult.value.sop || null)
-const currentRuntimeStep = computed(() => currentSop.value?.current_step || null)
+const okCount = computed(() => Number(detectionResult.value.ok_count || 0));
+const ngCount = computed(() => Number(detectionResult.value.ng_count || 0));
+const currentSop = computed(() => detectionResult.value.sop || null);
+const currentRuntimeStep = computed(() => currentSop.value?.current_step || null);
 const sopStateMeta = computed(() => {
-    const state = String(currentSop.value?.state || '').toLowerCase()
+    const state = String(currentSop.value?.state || '').toLowerCase();
     return {
         idle: {label: t('displaytext.idle'),icon: Clock, color: 'var(--bs-info-color)',spinning: false},
         completed: {label: t('displaytext.completed'),icon: CircleCheckFilled,color: 'var(--bs-success-color)',spinning: false},
         running: {label: t('displaytext.running'),icon: Loading,color: 'var(--bs-step-color)',spinning: true},
         failed: {label: t('displaytext.failed'),icon: CircleCloseFilled,color: 'var(--bs-danger-color)',spinning: false},
         paused: {label: t('displaytext.paused'),icon: WarningFilled,color: 'var(--bs-warning-color)',spinning: false},
-    }[state] || {label: currentSop.value?.state || t('displaytext.unknown'),icon: Clock,color: 'var(--bs-primary-color)',spinning: false}
+    }[state] || {label: currentSop.value?.state || t('displaytext.unknown'),icon: Clock,color: 'var(--bs-primary-color)',spinning: false};
 })
-const showNextButton = computed(
-    () =>
-        !startingNextPart.value &&
-        runtime.active &&
-        !runtime.triggerConfigured &&
-        currentSop.value?.state === 'completed',
-)
-const unconfirmedAlerts = computed(() =>
-    alerts.value.filter((alert) => !alert.confirmed),
-)
-const alertDisplayCount = computed(() =>
-    Math.max(ngCount.value, unconfirmedAlerts.value.length),
-)
+const showNextButton = computed(() =>!startingNextPart.value &&runtime.active &&!runtime.triggerConfigured && currentSop.value?.state === 'completed');
+const unconfirmedAlerts = computed(() =>alerts.value.filter((alert) => !alert.confirmed));
+const alertDisplayCount = computed(() =>Math.max(ngCount.value, unconfirmedAlerts.value.length));
 
 const waitingTriggerText = computed(() => {
     const methodLabels = {
@@ -481,349 +452,209 @@ const waitingTriggerText = computed(() => {
         usb: t('displaytext.usbtriggername'),
         modbus: t('displaytext.modbustriggername'),
         external_api: t('displaytext.externalapitriggername'),
-    }
-    const labels = runtime.triggerMethods
-        .map((method) => methodLabels[method])
-        .filter(Boolean)
-
-    if (!labels.length) {
-        return t('displaytext.waitingexternaltrigger')
-    }
-
-    const methods = new Intl.ListFormat(locale.value, {
-        style: 'short',
-        type: 'disjunction',
-    }).format(labels)
-    return t('displaytext.waitingtrigger', { methods })
-})
+    };
+    const labels = runtime.triggerMethods.map((method) => methodLabels[method]).filter(Boolean);
+    if (!labels.length) return t('displaytext.waitingexternaltrigger');
+    const methods = new Intl.ListFormat(locale.value, {style: 'short',type: 'disjunction'}).format(labels);
+    return t('displaytext.waitingtrigger', { methods });
+});
 
 const runtimeStatus = computed(() => {
     if (runtime.waitingForTrigger) return { label: waitingTriggerText.value, tagType: 'warning' };
     if (runtime.paused) return { label: t('displaytext.paused'), tagType: 'warning' };
     if (runtime.running) return { label: t('displaytext.running'), tagType: 'success' };
     return { label: t('displaytext.nostarted'), tagType: 'info' };
-})
+});
 
 const currentStepIndex = computed(() => {
-    if (!runtime.active || !processSteps.value.length) {
-        return -1
-    }
-
-    const indexFromSop = Number(currentSop.value?.progress?.current_index)
-    if (Number.isFinite(indexFromSop)) {
-        return clamp(indexFromSop, 0, processSteps.value.length - 1)
-    }
-
-    return processSteps.value.findIndex((step) => step.status === 'process')
-})
+    if (!runtime.active || !processSteps.value.length) return -1;
+    const indexFromSop = Number(currentSop.value?.progress?.current_index);
+    if (Number.isFinite(indexFromSop)) return clamp(indexFromSop, 0, processSteps.value.length - 1);
+    return processSteps.value.findIndex((step) => step.status === 'process');
+});
 
 const currentStep = computed(() => {
-    if (currentStepIndex.value < 0) {
-        return null
-    }
-    return processSteps.value[currentStepIndex.value] || null
-})
+    if (currentStepIndex.value < 0) return null;
+    return processSteps.value[currentStepIndex.value] || null;
+});
 
-const currentStepProgress = computed(() =>
-    calculatePercentage(currentStep.value?.current, currentStep.value?.target),
-)
+const currentStepProgress = computed(() => calculatePercentage(currentStep.value?.current, currentStep.value?.target),);
 
 const overallProgress = computed(() => {
-    const progress = currentSop.value?.progress
-    if (Number(progress?.total) > 0) {
-        return calculatePercentage(progress.done, progress.total)
-    }
-
-    const total = processSteps.value.length
-    if (!total) {
-        return 0
-    }
-
-    const completedCount = processSteps.value.filter(
-        (step) => step.status === 'success',
-    ).length
-
-    const activeRatio = currentStep.value
-        ? clamp(
-              Number(currentStep.value.current || 0) /
-                  Math.max(1, Number(currentStep.value.target || 1)),
-              0,
-              1,
-          )
-        : 0
-
-    return roundPercentage(((completedCount + activeRatio) / total) * 100)
-})
+    const progress = currentSop.value?.progress;
+    if (Number(progress?.total) > 0) return calculatePercentage(progress.done, progress.total);
+    const total = processSteps.value.length;
+    if (!total) return 0;
+    const completedCount = processSteps.value.filter((step) => step.status === 'success').length;
+    const activeRatio = currentStep.value ? clamp(Number(currentStep.value.current || 0) / Math.max(1, Number(currentStep.value.target || 1)),0,1,) : 0;
+    return roundPercentage(((completedCount + activeRatio) / total) * 100);
+});
 
 const timeoutInfo = computed(() => {
-    const sop = currentSop.value
-    const step = currentRuntimeStep.value
-    const total = normalizePositiveNumber(step?.timeout)
-
-    if (
-        !runtime.active ||
-        !sop ||
-        !step ||
-        !total ||
-        sop.state === 'completed' ||
-        !['active', 'failed'].includes(step.state)
-    ) {
-        return {
-            visible: false,
-            total: 0,
-            elapsed: 0,
-            remaining: 0,
-            percentage: 0,
-        }
-    }
-
-    const serverElapsed = Math.max(0, Number(step.elapsed || 0))
-    const shouldAdvance =
-        sop.state === 'running' &&
-        runtime.running &&
-        !runtime.paused &&
-        step.state === 'active'
-
-    let elapsed = serverElapsed
+    const sop = currentSop.value;
+    const step = currentRuntimeStep.value;
+    const total = normalizePositiveNumber(step?.timeout);
+    if ( !runtime.active || !sop || !step || !total || sop.state === 'completed' || !['active', 'failed'].includes(step.state)) {
+        return {visible: false,total: 0,elapsed: 0,remaining: 0,percentage: 0};
+    };
+    const serverElapsed = Math.max(0, Number(step.elapsed || 0));
+    const shouldAdvance = sop.state === 'running' && runtime.running && !runtime.paused && step.state === 'active';
+    let elapsed = serverElapsed;
     if (shouldAdvance) {
-        const updatedAtMs = Number(sop.updated_at || 0) * 1000
+        const updatedAtMs = Number(sop.updated_at || 0) * 1000;
         if (updatedAtMs > 0) {
-            elapsed += Math.max(0, (timeoutNow.value - updatedAtMs) / 1000)
-        }
-    }
+            elapsed += Math.max(0, (timeoutNow.value - updatedAtMs) / 1000);
+        };
+    };
+    elapsed = clamp(elapsed, 0, total);
+    return {visible: true,total,elapsed,remaining: Math.max(0, total - elapsed),percentage: calculatePercentage(elapsed, total)};
+});
 
-    elapsed = clamp(elapsed, 0, total)
-
-    return {
-        visible: true,
-        total,
-        elapsed,
-        remaining: Math.max(0, total - elapsed),
-        percentage: calculatePercentage(elapsed, total),
-    }
-})
-
-function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, Number(value) || 0))
-}
-
-function roundPercentage(value) {
-    return Number(clamp(value, 0, 100).toFixed(1))
-}
-
+function clamp(value, min, max) {return Math.min(max, Math.max(min, Number(value) || 0))};
+function roundPercentage(value) {return Number(clamp(value, 0, 100).toFixed(1))};
 function calculatePercentage(current, total) {
-    const safeTotal = Number(total || 0)
-    if (safeTotal <= 0) {
-        return 0
-    }
-    return roundPercentage((Number(current || 0) / safeTotal) * 100)
-}
+    const safeTotal = Number(total || 0);
+    if (safeTotal <= 0) return 0;
+    return roundPercentage((Number(current || 0) / safeTotal) * 100);
+};
 
 function normalizePositiveNumber(value) {
-    const number = Number(value || 0)
-    return Number.isFinite(number) && number > 0 ? number : 0
-}
+    const number = Number(value || 0);
+    return Number.isFinite(number) && number > 0 ? number : 0;
+};
 
 function formatTimeoutDuration(seconds) {
-    const safeSeconds = Math.max(0, Math.ceil(Number(seconds || 0)))
-    if (safeSeconds < 60) {
-        return `${safeSeconds}s`
-    }
-
-    const minutes = Math.floor(safeSeconds / 60)
-    const remainingSeconds = safeSeconds % 60
-    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`
-}
-
-function formatTimeoutProgress() {
-    return `${formatTimeoutDuration(timeoutInfo.value.remaining)} / ${formatTimeoutDuration(timeoutInfo.value.total)}`
-}
-
+    const safeSeconds = Math.max(0, Math.ceil(Number(seconds || 0)));
+    if (safeSeconds < 60) return `${safeSeconds}s`;
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainingSeconds = safeSeconds % 60;
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+};
+function formatTimeoutProgress() {return `${formatTimeoutDuration(timeoutInfo.value.remaining)} / ${formatTimeoutDuration(timeoutInfo.value.total)}`};
 function setStreamState(connected, errorMessage = '', onlyMessage = false) {
     if (!onlyMessage) {
-        stream.connected = Boolean(connected)
+        stream.connected = Boolean(connected);
     }
-    stream.errorMessage = errorMessage
-}
+    stream.errorMessage = errorMessage;
+};
 
 function applyRuntimeStatus(payload = {}) {
-    const nextTriggeredAt = Number(payload.triggered_at || 0)
+    const nextTriggeredAt = Number(payload.triggered_at || 0);
     if (nextTriggeredAt > 0 && nextTriggeredAt !== lastTriggerCycleAt) {
         if (lastTriggerCycleAt !== null) {
             // 触发模式下的新信号等价于手动点击“下一件”：清除上一件的页面事件。
-            clearDetectionHistory()
-        }
-        lastTriggerCycleAt = nextTriggeredAt
-    }
+            clearDetectionHistory();
+        };
+        lastTriggerCycleAt = nextTriggeredAt;
+    };
 
-    runtime.initialized = Boolean(payload.initialized)
-    runtime.running = Boolean(payload.running)
-    runtime.paused = Boolean(payload.paused)
-    runtime.active = Boolean(payload.active)
-    runtime.triggerConfigured = Boolean(payload.trigger_configured)
-    runtime.waitingForTrigger = Boolean(payload.waiting_for_trigger)
-    runtime.detecting = Boolean(payload.detecting)
-    runtime.triggerMethods = Array.isArray(payload.trigger_methods)
-        ? payload.trigger_methods
-        : []
-    runtime.triggerSource = payload.trigger_source || null
-    runtime.triggeredAt = payload.triggered_at || null
-    runtime.runtimeId = payload.runtime_id || null
-    runtime.cameraName = payload.camera_name || null
-    runtime.sopName = payload.sop_name || null
-    runtime.projectName = payload.project_name || null
-    runtime.modelName = payload.model_name || null
-    runtime.externalMode = Boolean(payload.external_mode)
-    runtime.externalReference = payload.external_reference || null
-    runtime.externalStart = payload.external_start || null
-}
+    runtime.initialized = Boolean(payload.initialized);
+    runtime.running = Boolean(payload.running);
+    runtime.paused = Boolean(payload.paused);
+    runtime.active = Boolean(payload.active);
+    runtime.triggerConfigured = Boolean(payload.trigger_configured);
+    runtime.waitingForTrigger = Boolean(payload.waiting_for_trigger);
+    runtime.detecting = Boolean(payload.detecting);
+    runtime.triggerMethods = Array.isArray(payload.trigger_methods) ? payload.trigger_methods : [];
+    runtime.triggerSource = payload.trigger_source || null;
+    runtime.triggeredAt = payload.triggered_at || null;
+    runtime.runtimeId = payload.runtime_id || null;
+    runtime.cameraName = payload.camera_name || null;
+    runtime.sopName = payload.sop_name || null;
+    runtime.projectName = payload.project_name || null;
+    runtime.modelName = payload.model_name || null;
+    runtime.externalMode = Boolean(payload.external_mode);
+    runtime.externalReference = payload.external_reference || null;
+    runtime.externalStart = payload.external_start || null;
+};
 
 function clearScannerBuffer() {
-    scannerBuffer = ''
+    scannerBuffer = '';
     if (scannerResetTimer) {
-        window.clearTimeout(scannerResetTimer)
-        scannerResetTimer = null
-    }
-}
+        window.clearTimeout(scannerResetTimer);
+        scannerResetTimer = null;
+    };
+};
 
 function submitScannerValue(value) {
     if (!resultSocket || resultSocket.readyState !== WebSocket.OPEN) {
-        setStreamState(
-            null,
-            t('message.messagetext.usbTriggerChannelUnavailable'),
-            true,
-        )
-        return
+        setStreamState( null,t('message.messagetext.usbTriggerChannelUnavailable'),true,);
+        return;
     }
-
-    resultSocket.send(JSON.stringify({
-        type: 'usb_trigger',
-        value,
-    }))
-}
+    resultSocket.send(JSON.stringify({type: 'usb_trigger',value,}));
+};
 
 function handleScannerKeydown(event) {
-    if (
-        !runtime.waitingForTrigger ||
-        !runtime.triggerMethods.includes('usb') ||
-        event.ctrlKey ||
-        event.altKey ||
-        event.metaKey ||
-        event.repeat
-    ) {
-        return
-    }
-
+    if ( !runtime.waitingForTrigger || !runtime.triggerMethods.includes('usb') || event.ctrlKey || event.altKey || event.metaKey || event.repeat) return;
     // USB 扫码枪以键盘方式输入；等待触发期间阻止字符和回车误操作页面按钮。
-    event.preventDefault()
-
+    event.preventDefault();
     if (event.key === 'Enter') {
-        const value = scannerBuffer
-        clearScannerBuffer()
-        if (value) submitScannerValue(value)
-        return
+        const value = scannerBuffer;
+        clearScannerBuffer();
+        if (value) submitScannerValue(value);
+        return;
     }
-
-    if (event.key.length !== 1) return
-    scannerBuffer += event.key
-    if (scannerResetTimer) window.clearTimeout(scannerResetTimer)
-    scannerResetTimer = window.setTimeout(clearScannerBuffer, 500)
-}
+    if (event.key.length !== 1) return;
+    scannerBuffer += event.key;
+    if (scannerResetTimer) window.clearTimeout(scannerResetTimer);
+    scannerResetTimer = window.setTimeout(clearScannerBuffer, 500);
+};
 
 function handleScannerContextLost() {
     if (document.hidden || !document.hasFocus()) {
-        clearScannerBuffer()
+        clearScannerBuffer();
     }
-}
+};
 
-function getTagType(level) {
-    return {
-        error: 'danger',
-        warning: 'warning',
-        info: 'info',
-        success: 'success',
-    }[level] || 'info'
-}
+function getTagType(level) {return {error: 'danger',warning: 'warning',info: 'info',success: 'success',}[level] || 'info'};
 //每个步骤的状态
-function getStepStatusLabel(status) {
-    return {
-        success: t('displaytext.done'),
-        process: t('displaytext.inprogress'),
-        error: t('displaytext.blocked'),
-        wait: t('displaytext.notstarted'),
-    }[status] || t('displaytext.notstarted')
-}
-
+function getStepStatusLabel(status) {return {success: t('displaytext.done'),process: t('displaytext.inprogress'),error: t('displaytext.blocked'),wait: t('displaytext.notstarted')}[status] || t('displaytext.notstarted')};
 function getStepDescription(step = {}) {
-    const base = `${t('displaytext.status')}: ${getStepStatusLabel(step.status)} | ${t('displaytext.target')}: ${step.target}`
-    return step.reason ? `${base} | ${step.reason}` : base
-}
+    const base = `${t('displaytext.status')}: ${getStepStatusLabel(step.status)} | ${t('displaytext.target')}: ${step.target}`;
+    return step.reason ? `${base} | ${step.reason}` : base;
+};
 
 function getNowTime() {
-    return new Date().toLocaleTimeString('zh-CN', { hour12: false })
-}
+    return new Date().toLocaleTimeString('zh-CN', { hour12: false });
+};
 
 function getSopReasonText(reason = '') {
-    if (!reason) {
-        return t('displaytext.waitresult')
-    }
-
-    const wrongObjectMatch = reason.match(
-        /^NG: Expected (.+), but (.+) entered (.+)$/,
-    )
-    if (wrongObjectMatch) {
-        return t('message.messagetext.wrongObject', {
-            expected: wrongObjectMatch[1],
-            actual: wrongObjectMatch[2],
-            target: wrongObjectMatch[3],
-        })
-    }
+    if (!reason) return t('displaytext.waitresult');
+    const wrongObjectMatch = reason.match(/^NG: Expected (.+), but (.+) entered (.+)$/,);
+    if (wrongObjectMatch) return t('message.messagetext.wrongObject', {expected: wrongObjectMatch[1],actual: wrongObjectMatch[2],target: wrongObjectMatch[3],});
 
     const replacements = [
         ['NG: ', `${t('displaytext.failed')}: `],
         ['Step timeout: ', `${t('displaytext.processtimeout')}: `],
         ['Waiting for region ', `${t('displaytext.waitingforregion')}`],
         ['Waiting for ', `${t('displaytext.waitingfor')}`],
-    ]
-
+    ];
     for (const [prefix, replacement] of replacements) {
         if (reason.startsWith(prefix)) {
-            return reason.replace(prefix, replacement)
-        }
-    }
+            return reason.replace(prefix, replacement);
+        };
+    };
 
     if (reason.startsWith('Move ') && reason.includes(' into ')) {
         const [objectName, regionName] = reason.replace('Move ', '').split(' into ');
-        return t('message.messagetext.moveInto', {
-            object: objectName,
-            region: regionName,
-        })
-    }
+        return t('message.messagetext.moveInto', {object: objectName,region: regionName});
+    };
 
     if (reason.includes(' entered ')) {
-        const [objectName, regionName] = reason.split(' entered ')
-        return t('message.messagetext.enteredRegion', {
-            object: objectName,
-            region: regionName,
-        })
-    }
-
+        const [objectName, regionName] = reason.split(' entered ');
+        return t('message.messagetext.enteredRegion', {object: objectName,region: regionName});
+    };
     if (reason === 'All steps completed') {
-        return t('message.messagetext.completedall')
+        return t('message.messagetext.completedall');
     }
-
-    return reason
-}
+    return reason;
+};
 
 function getSopAlertCode(reason = '') {
-    if (reason.startsWith('Step timeout: ')) {
-        return 'SOP_TIMEOUT'
-    }
-    if (reason.startsWith('NG: ')) {
-        return 'SOP_NG'
-    }
-    return 'SOP_ERROR'
-}
+    if (reason.startsWith('Step timeout: ')) return t('displaytext.timeout');
+    if (reason.startsWith('NG: ')) return t('displaytext.ng');
+    return t('message.error');
+};
 
 function normalizeStep(step = {}, index = 0, runtimeStep = false) {
     return {
@@ -836,60 +667,38 @@ function normalizeStep(step = {}, index = 0, runtimeStep = false) {
         hint: step.hint || '',
         reason: runtimeStep ? getSopReasonText(step.last_reason || '') : '',
     }
-}
+};
 
 function mapSopStepStatus(state) {
-    return {
-        done: 'success',
-        active: 'process',
-        failed: 'error',
-    }[state] || 'wait'
-}
+    return {done: 'success',active: 'process',failed: 'error'}[state] || 'wait';
+};
 
 function resolveSopConfig(data = {}) {
-    if (Array.isArray(data.steps)) {
-        return data
-    }
+    if (Array.isArray(data.steps)) return data;
+    const entry = Object.entries(data).find(([, item]) => item && Array.isArray(item.steps));
+    if (!entry) return {};
+    const [sopName, config] = entry;
+    return {...config,sopName: config.sopName || sopName};
+};
 
-    const entry = Object.entries(data).find(
-        ([, item]) => item && Array.isArray(item.steps),
-    )
-    if (!entry) return {}
-    const [sopName, config] = entry
-    return {
-        ...config,
-        sopName: config.sopName || sopName,
-    }
-}
-
-function buildProcessSteps(steps = [], runtimeStep = false) {
-    return steps.map((step, index) =>
-        normalizeStep(step, index, runtimeStep),
-    )
-}
+function buildProcessSteps(steps = [], runtimeStep = false) {return steps.map((step, index) => normalizeStep(step, index, runtimeStep))};
 
 function resetProcessSteps() {
-    detectionResult.value = createEmptyDetectionResult()
-    processSteps.value = buildProcessSteps(sopConfiguration.value.steps || [])
-    lastSopEventKey = ''
-    lastCriticalAlertKey = ''
-}
+    detectionResult.value = createEmptyDetectionResult();
+    processSteps.value = buildProcessSteps(sopConfiguration.value.steps || []);
+    lastSopEventKey = '';
+    lastCriticalAlertKey = '';
+};
 
 function syncProcessStepsFromSop(sop = {}) {
-    const steps = Array.isArray(sop.steps) ? sop.steps : []
+    const steps = Array.isArray(sop.steps) ? sop.steps : [];
     if (!steps.length) return;
-    const failedReason = sop.state === 'failed' ? getSopReasonText(sop.reason || '') : ''
+    const failedReason = sop.state === 'failed' ? getSopReasonText(sop.reason || '') : '';
     processSteps.value = buildProcessSteps(steps, true).map((step, index) => {
-        const source = steps[index]
-        return {
-            ...step,
-            reason:
-                source.state === 'failed'
-                    ? failedReason
-                    : getSopReasonText(source.last_reason || ''),
-        }
-    })
-}
+        const source = steps[index];
+        return {...step,reason:source.state === 'failed' ? failedReason : getSopReasonText(source.last_reason || '')};
+    });
+};
 
 function buildEventKey(sop, step, rawReason) {
     return [
@@ -901,626 +710,437 @@ function buildEventKey(sop, step, rawReason) {
         step?.awaiting_cycle_reset || false,
         rawReason,
         sop.progress?.done || 0,
-    ].join('|')
-}
+    ].join('|');
+};
 
 function appendSopEvent(sop = {}) {
-    const step = sop.current_step
-    const isFailed = sop.state === 'failed' || step?.state === 'failed'
-    const rawReason = isFailed
-        ? sop.reason || step?.last_reason || ''
-        : step?.last_reason || sop.reason || ''
-
-    if (!rawReason) return
-
-    const eventKey = buildEventKey(sop, step, rawReason)
-    if (eventKey === lastSopEventKey) return
-    lastSopEventKey = eventKey
+    const step = sop.current_step;
+    const isFailed = sop.state === 'failed' || step?.state === 'failed';
+    const rawReason = isFailed ? sop.reason || step?.last_reason || '' : step?.last_reason || sop.reason || '';
+    if (!rawReason) return;
+    const eventKey = buildEventKey(sop, step, rawReason);
+    if (eventKey === lastSopEventKey) return;
+    lastSopEventKey = eventKey;
     events.value = [
         {
             id: `${Date.now()}-${Math.random()}`,
             time: getNowTime(),
-            level: isFailed
-                ? 'error'
-                : sop.state === 'completed' || step?.state === 'done'
-                  ? 'success'
-                  : 'info',
+            level: isFailed ? 'error' : sop.state === 'completed' || step?.state === 'done' ? 'success' : 'info',
             step: step?.name || 'SOP',
             text: getSopReasonText(rawReason),
         },
         ...events.value,
-    ].slice(0, MAX_EVENT_COUNT)
-}
+    ].slice(0, MAX_EVENT_COUNT);
+};
 
 function clearCriticalAlert() {
-    criticalAlerts.value = []
-    clearTimer('critical')
-}
+    criticalAlerts.value = [];
+    clearTimer('critical');
+};
 
 function showCriticalAlert(alert, duration = 5000) {
-    criticalAlerts.value = [alert]
-    clearTimer('critical')
+    criticalAlerts.value = [alert];
+    clearTimer('critical');
 
     criticalAlertTimer = window.setTimeout(() => {
-        criticalAlerts.value = []
-        criticalAlertTimer = null
-    }, duration)
-}
+        criticalAlerts.value = [];
+        criticalAlertTimer = null;
+    }, duration);
+};
 
 function syncSopAlert(sop = {}) {
-    const step = sop.current_step
-    const isFailed = sop.state === 'failed' || step?.state === 'failed'
-
+    const step = sop.current_step;
+    const isFailed = sop.state === 'failed' || step?.state === 'failed';
     if (!isFailed) {
-        lastCriticalAlertKey = ''
-        return
-    }
+        lastCriticalAlertKey = '';
+        return;
+    };
 
-    const rawReason =
-        sop.reason || step?.last_reason || t('message.messagetext.unknownreason')
-    const code = getSopAlertCode(rawReason)
-    const alertKey = `${step?.id || 'sop'}|${code}|${rawReason}`
-
-    if (alertKey === lastCriticalAlertKey) {
-        return
-    }
-
-    lastCriticalAlertKey = alertKey
-
+    const rawReason = sop.reason || step?.last_reason || t('message.messagetext.unknownreason');
+    const code = getSopAlertCode(rawReason);
+    const alertKey = `${step?.id || 'sop'}|${code}|${rawReason}`;
+    if (alertKey === lastCriticalAlertKey) return;
+    lastCriticalAlertKey = alertKey;
     const alert = {
         id: `sop-${Date.now()}-${Math.random()}`,
         level: 'error',
         code,
         message: getSopReasonText(rawReason),
         confirmed: false,
-    }
+    };
 
-    alerts.value = [alert, ...alerts.value].slice(0, MAX_ALERT_COUNT)
-    showCriticalAlert(alert)
-}
+    alerts.value = [alert, ...alerts.value].slice(0, MAX_ALERT_COUNT);
+    showCriticalAlert(alert);
+};
 
 function applySopState(sop) {
-    if (!sop || typeof sop !== 'object') {
-        return
-    }
-
-    syncProcessStepsFromSop(sop)
-    appendSopEvent(sop)
-    syncSopAlert(sop)
-}
+    if (!sop || typeof sop !== 'object') return;
+    syncProcessStepsFromSop(sop);
+    appendSopEvent(sop);
+    syncSopAlert(sop);
+};
 
 function getFeedbackEventText(feedbackEvent = {}) {
-    const channel = {modbus:t('displaytext.modbusfeedbackname'),audio:t('displaytext.audiofeedbackname'),http:t('displaytext.httpfeedbackname')}[feedbackEvent.channel] || feedbackEvent.channel || ''
+    const channel = {modbus: t('displaytext.modbusfeedbackname'), audio: t('displaytext.audiofeedbackname'), http: t('displaytext.httpfeedbackname')}[feedbackEvent.channel] || feedbackEvent.channel || '';
     const eventType = {
         operation_error: t('displaytext.feedbackoperationerror'),
         step_success: t('displaytext.feedbackstepsuccess'),
         sop_completed: t('displaytext.feedbacksopcompleted'),
         // Keep displaying feedback events produced by an older backend.
         operation_completed: t('displaytext.feedbackstepsuccess'),
-    }[feedbackEvent.eventType] || feedbackEvent.eventType || ''
+    }[feedbackEvent.eventType] || feedbackEvent.eventType || '';
     const status = {
         pending: t('displaytext.feedbackpending'),
         success: t('displaytext.feedbacksuccess'),
         failed: t('displaytext.feedbackfailed'),
         play: t('displaytext.feedbackplay'),
-    }[feedbackEvent.status] || feedbackEvent.status || ''
-    const target = feedbackEvent.target ? `[${feedbackEvent.target}]` : ''
-    const detail = feedbackEvent.message ? `：${feedbackEvent.message}` : ''
-
-    return t('displaytext.feedbackeventmessage', {
-        channel,
-        event: eventType,
-        status,
-        target,
-        detail,
-    })
-}
+    }[feedbackEvent.status] || feedbackEvent.status || '';
+    const target = feedbackEvent.target ? `[${feedbackEvent.target}]` : '';
+    const detail = feedbackEvent.message ? `：${feedbackEvent.message}` : '';
+    return t('displaytext.feedbackeventmessage', {channel,event: eventType,status,target,detail,});
+};
 
 async function unlockAudioPlayback() {
-    if (audioPlaybackUnlocked) return
-    try {const audio = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');audio.muted = true;await audio.play();audio.pause();audioPlaybackUnlocked = true} catch {}
-}
+    if (audioPlaybackUnlocked) return;
+    try {const audio = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=');audio.muted = true;await audio.play();audio.pause();audioPlaybackUnlocked = true} catch {};
+};
 
 async function getAudioResourceUrl(audioId) {
-    if (audioResourceUrlCache.has(audioId)) return audioResourceUrlCache.get(audioId)
-    const response = await api.getAudioResourceFile(audioId);const url = URL.createObjectURL(response.data);audioResourceUrlCache.set(audioId,url);return url
-}
+    if (audioResourceUrlCache.has(audioId)) return audioResourceUrlCache.get(audioId);
+    const response = await api.getAudioResourceFile(audioId);const url = URL.createObjectURL(response.data);audioResourceUrlCache.set(audioId,url);return url;
+};
 
 function updateAudioPlaybackEvent(feedbackEvent,status,message) {
-    const eventId = String(feedbackEvent.id || '');const index = events.value.findIndex(item => item.id === `feedback-event-${eventId}`);const updated = {...feedbackEvent,status,message}
-    if (index >= 0) events.value[index] = {...events.value[index],level:status === 'success' ? 'success' : 'error',text:getFeedbackEventText(updated)}
-    if (status !== 'failed') return
-    const alert = {id:`audio-alert-${eventId}`,level:'error',code:'AUDIO_PLAYBACK_FAILED',message:getFeedbackEventText(updated),confirmed:false};alerts.value = [alert,...alerts.value].slice(0,MAX_ALERT_COUNT);showCriticalAlert(alert,8000)
-}
+    const eventId = String(feedbackEvent.id || '');const index = events.value.findIndex(item => item.id === `feedback-event-${eventId}`);const updated = {...feedbackEvent,status,message};
+    if (index >= 0) events.value[index] = {...events.value[index],level:status === 'success' ? 'success' : 'error',text:getFeedbackEventText(updated)};
+    if (status !== 'failed') return;
+    const alert = {id:`audio-alert-${eventId}`,level:'error',code:'AUDIO_PLAYBACK_FAILED',message:getFeedbackEventText(updated),confirmed:false};alerts.value = [alert,...alerts.value].slice(0,MAX_ALERT_COUNT);showCriticalAlert(alert,8000);
+};
 
 function playAudioQueueItem(item) {
     return new Promise(async resolve => {
         try {
-            const url = await getAudioResourceUrl(item.audioId);const audio = new Audio(url);currentFeedbackAudio = audio;audio.volume = Math.min(1,Math.max(0,Number(item.volume ?? 80) / 100));let finished = false
-            const finish = (result) => {if (finished) return;finished = true;audio.onended = null;audio.onerror = null;cancelCurrentFeedbackAudio = null;if (currentFeedbackAudio === audio) currentFeedbackAudio = null;resolve(result)}
-            cancelCurrentFeedbackAudio = () => {audio.pause();finish({cancelled:true})};audio.onended = () => finish({success:true});audio.onerror = () => finish({error:new Error(t('config.audio_resources.preview_failed'))});await audio.play()
-        } catch (error) {cancelCurrentFeedbackAudio = null;currentFeedbackAudio = null;resolve({error})}
-    })
-}
+            const url = await getAudioResourceUrl(item.audioId);const audio = new Audio(url);currentFeedbackAudio = audio;audio.volume = Math.min(1,Math.max(0,Number(item.volume ?? 80) / 100));let finished = false;
+            const finish = (result) => {if (finished) return;finished = true;audio.onended = null;audio.onerror = null;cancelCurrentFeedbackAudio = null;if (currentFeedbackAudio === audio) currentFeedbackAudio = null;resolve(result)};
+            cancelCurrentFeedbackAudio = () => {audio.pause();finish({cancelled:true})};audio.onended = () => finish({success:true});audio.onerror = () => finish({error:new Error(t('config.audio_resources.preview_failed'))});await audio.play();
+        } catch (error) {cancelCurrentFeedbackAudio = null;currentFeedbackAudio = null;resolve({error});};
+    });
+};
 
 async function processFeedbackAudioQueue() {
-    if (feedbackAudioProcessing) return
-    feedbackAudioProcessing = true;const generation = feedbackAudioGeneration
-    while (generation === feedbackAudioGeneration && feedbackAudioQueue.length) {const item = feedbackAudioQueue.shift();const result = await playAudioQueueItem(item);if (result?.cancelled || generation !== feedbackAudioGeneration) continue;if (result?.success) updateAudioPlaybackEvent(item,'success',t('displaytext.audioplaybacksuccess'));else updateAudioPlaybackEvent(item,'failed',result?.error?.response?.data?.detail || result?.error?.message || t('displaytext.audioplaybackfailed'))}
-    if (generation === feedbackAudioGeneration) feedbackAudioProcessing = false
-}
+    if (feedbackAudioProcessing) return;
+    feedbackAudioProcessing = true;const generation = feedbackAudioGeneration;
+    while (generation === feedbackAudioGeneration && feedbackAudioQueue.length) {const item = feedbackAudioQueue.shift();const result = await playAudioQueueItem(item);if (result?.cancelled || generation !== feedbackAudioGeneration) continue;if (result?.success) updateAudioPlaybackEvent(item,'success',t('displaytext.audioplaybacksuccess'));else updateAudioPlaybackEvent(item,'failed',result?.error?.response?.data?.detail || result?.error?.message || t('displaytext.audioplaybackfailed'))};
+    if (generation === feedbackAudioGeneration) feedbackAudioProcessing = false;
+};
 
 function enqueueFeedbackAudio(feedbackEvent) {
-    const eventId = String(feedbackEvent.id || '');if (!eventId || handledAudioPlaybackEventIds.has(eventId)) return;handledAudioPlaybackEventIds.add(eventId);if (handledAudioPlaybackEventIds.size > 100) handledAudioPlaybackEventIds.delete(handledAudioPlaybackEventIds.values().next().value);try {sessionStorage.setItem(AUDIO_PLAYBACK_EVENT_STORAGE_KEY,JSON.stringify(Array.from(handledAudioPlaybackEventIds)))} catch {}
-    const audioId = String(feedbackEvent.audioId || '').trim();if (!audioId) return updateAudioPlaybackEvent(feedbackEvent,'failed',t('config.sop_step_config.audio_resource_invalid'))
-    feedbackAudioQueue.push({...feedbackEvent,audioId});processFeedbackAudioQueue()
-}
+    const eventId = String(feedbackEvent.id || '');if (!eventId || handledAudioPlaybackEventIds.has(eventId)) return;handledAudioPlaybackEventIds.add(eventId);if (handledAudioPlaybackEventIds.size > 100) handledAudioPlaybackEventIds.delete(handledAudioPlaybackEventIds.values().next().value);try {sessionStorage.setItem(AUDIO_PLAYBACK_EVENT_STORAGE_KEY,JSON.stringify(Array.from(handledAudioPlaybackEventIds)))} catch {};
+    const audioId = String(feedbackEvent.audioId || '').trim();if (!audioId) return updateAudioPlaybackEvent(feedbackEvent,'failed',t('config.sop_step_config.audio_resource_invalid'));
+    feedbackAudioQueue.push({...feedbackEvent,audioId});processFeedbackAudioQueue();
+};
 
 function resetFeedbackAudioPlayback(releaseCache = false) {
-    feedbackAudioGeneration += 1;feedbackAudioQueue = [];cancelCurrentFeedbackAudio?.();cancelCurrentFeedbackAudio = null;currentFeedbackAudio = null;feedbackAudioProcessing = false
-    if (releaseCache) {for (const url of audioResourceUrlCache.values()) URL.revokeObjectURL(url);audioResourceUrlCache.clear()}
-}
+    feedbackAudioGeneration += 1;feedbackAudioQueue = [];cancelCurrentFeedbackAudio?.();cancelCurrentFeedbackAudio = null;currentFeedbackAudio = null;feedbackAudioProcessing = false;
+    if (releaseCache) {for (const url of audioResourceUrlCache.values()) URL.revokeObjectURL(url);audioResourceUrlCache.clear()};
+};
 
 function syncFeedbackEvents(feedback = {}) {
-    const feedbackEvents = Array.isArray(feedback.events)
-        ? feedback.events
-        : []
-
+    const feedbackEvents = Array.isArray(feedback.events) ? feedback.events : [];
     for (const feedbackEvent of feedbackEvents) {
-        const eventId = String(feedbackEvent?.id || '')
-        if (!eventId || handledFeedbackEventIds.has(eventId)) {
-            continue
-        }
-        handledFeedbackEventIds.add(eventId)
-
-        const failed = feedbackEvent.status === 'failed'
-        const text = getFeedbackEventText(feedbackEvent)
+        const eventId = String(feedbackEvent?.id || '');
+        if (!eventId || handledFeedbackEventIds.has(eventId)) { continue;};
+        handledFeedbackEventIds.add(eventId);
+        const failed = feedbackEvent.status === 'failed';
+        const text = getFeedbackEventText(feedbackEvent);
         events.value = [
             {
                 id: `feedback-event-${eventId}`,
                 time: getNowTime(),
-                level: failed
-                    ? 'error'
-                    : feedbackEvent.status === 'success'
-                      ? 'success'
-                      : 'info',
+                level: failed ? 'error' : feedbackEvent.status === 'success' ? 'success' : 'info',
                 step: feedbackEvent.stepName || 'SOP',
                 text,
             },
             ...events.value,
-        ].slice(0, MAX_EVENT_COUNT)
-
-        if (feedbackEvent.channel === 'audio' && feedbackEvent.status === 'play') enqueueFeedbackAudio(feedbackEvent)
-
-        if (!failed) {
-            continue
-        }
-
+        ].slice(0, MAX_EVENT_COUNT);
+        if (feedbackEvent.channel === 'audio' && feedbackEvent.status === 'play') enqueueFeedbackAudio(feedbackEvent);
+        if (!failed) {continue;};
         const alert = {
             id: `feedback-alert-${eventId}`,
             level: 'error',
             code: `${String(feedbackEvent.channel || 'feedback').toUpperCase()}_FEEDBACK_FAILED`,
             message: text,
             confirmed: false,
-        }
-        alerts.value = [alert, ...alerts.value].slice(0, MAX_ALERT_COUNT)
-        showCriticalAlert(alert, 8000)
-    }
+        };
+        alerts.value = [alert, ...alerts.value].slice(0, MAX_ALERT_COUNT);
+        showCriticalAlert(alert, 8000);
+    };
 
     if (handledFeedbackEventIds.size > 200) {
-        const newestIds = Array.from(handledFeedbackEventIds).slice(-100)
-        handledFeedbackEventIds.clear()
-        newestIds.forEach((eventId) => handledFeedbackEventIds.add(eventId))
-    }
+        const newestIds = Array.from(handledFeedbackEventIds).slice(-100);
+        handledFeedbackEventIds.clear();
+        newestIds.forEach((eventId) => handledFeedbackEventIds.add(eventId));
+    };
 }
 
 function applyDetectionResult(payload = {}) {
-    const previous = detectionResult.value
+    const previous = detectionResult.value;
 
     detectionResult.value = {
         step: payload.step ?? previous.step,
         gesture: payload.gesture ?? previous.gesture,
         bbox: Array.isArray(payload.bbox) ? payload.bbox : [],
-        detections: Array.isArray(payload.detections)
-            ? payload.detections
-            : [],
+        detections: Array.isArray(payload.detections) ? payload.detections : [],
         score: Number(payload.score ?? previous.score),
         ok_count: Number(payload.ok_count ?? previous.ok_count),
         ng_count: Number(payload.ng_count ?? previous.ng_count),
         updated_at: Number(payload.updated_at ?? Date.now() / 1000),
         sop: payload.sop ?? previous.sop,
         feedback: payload.feedback ?? previous.feedback,
-    }
-
-    applySopState(detectionResult.value.sop)
-    syncFeedbackEvents(detectionResult.value.feedback)
-}
+    };
+    applySopState(detectionResult.value.sop);
+    syncFeedbackEvents(detectionResult.value.feedback);
+};
 
 async function updateFooterHintOverflow() {
-    footerHintOverflow.value = false
-    await nextTick()
+    footerHintOverflow.value = false;
+    await nextTick();
+    const container = footerHintRef.value;
+    const firstText = footerHintTextRef.value?.firstElementChild;
+    footerHintOverflow.value = Boolean(container && firstText && firstText.scrollHeight > container.clientHeight + 1);
+};
 
-    const container = footerHintRef.value
-    const firstText = footerHintTextRef.value?.firstElementChild
-
-    footerHintOverflow.value = Boolean(
-        container &&
-            firstText &&
-            firstText.scrollHeight > container.clientHeight + 1,
-    )
-}
-
-async function getSopConfiguration({
-    showLoading = true,
-    showError = true,
-} = {}) {
-    if (showLoading) appStore.setLoading(true)
-
+async function getSopConfiguration({showLoading = true,} = {}) {
+    if (showLoading) appStore.setLoading(true);
     try {
-        const { data: response } = await api.getSopConfigration()
+        const { data: response } = await api.getSopConfigration();
         if (!response.status) {
             if (showError) {
-                MesAlertWTitle(
-                    'error',
-                    t('message.error'),
-                    t('message.messagetext.failed_get_config'),
-                    response.msg,
-                    t('button.ok'),
-                )
+                MesAlertWTitle('error',t('message.error'),t('message.messagetext.failed_get_config'),response.msg,t('button.ok'),);
             }
-            return
+            return;
         }
-
         sopConfiguration.value = resolveSopConfig(response.data || {});
-        cameraName.value =
-            response.enableCamera || t('displaytext.noconfigcamera')
-        processSteps.value = buildProcessSteps(
-            sopConfiguration.value.steps || [],
-        )
+        cameraName.value = response.enableCamera || "";
+        processSteps.value = buildProcessSteps(sopConfiguration.value.steps || [],);
     } catch (error) {
         if (showError) {
-            showApiError(
-                t('message.messagetext.failed_get_config'),
-                error,
-            )
+            showApiError(t('message.messagetext.failed_get_config'),error);
         }
     } finally {
-        if (showLoading) appStore.setLoading(false)
-    }
-}
+        if (showLoading) appStore.setLoading(false);
+    };
+};
 
 function buildIceServers() {
-    const urls = String(
-        import.meta.env.VITE_WEBRTC_ICE_URLS || '',
-    )
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean)
-
-    if (!urls.length) {
-        return [{ urls: ['stun:stun.l.google.com:19302'] }]
-    }
-
-    const username = String(
-        import.meta.env.VITE_WEBRTC_ICE_USERNAME || '',
-    ).trim()
-    const credential = String(
-        import.meta.env.VITE_WEBRTC_ICE_CREDENTIAL || '',
-    ).trim()
-
-    return username && credential
-        ? [{ urls, username, credential }]
-        : [{ urls }]
-}
+    const urls = String(import.meta.env.VITE_WEBRTC_ICE_URLS || '').split(',').map((item) => item.trim()).filter(Boolean);
+    if (!urls.length) return [{ urls: ['stun:stun.l.google.com:19302'] }];
+    const username = String(import.meta.env.VITE_WEBRTC_ICE_USERNAME || '').trim();
+    const credential = String(import.meta.env.VITE_WEBRTC_ICE_CREDENTIAL || '').trim();
+    return username && credential ? [{ urls, username, credential }] : [{ urls }];
+};
 
 function clearTimer(type) {
     const timerMap = {
         reconnect: [reconnectTimer, (value) => (reconnectTimer = value)],
-        result: [
-            resultReconnectTimer,
-            (value) => (resultReconnectTimer = value),
-        ],
-        critical: [
-            criticalAlertTimer,
-            (value) => (criticalAlertTimer = value),
-        ],
-    }
+        result: [ resultReconnectTimer,(value) => (resultReconnectTimer = value)],
+        critical: [criticalAlertTimer,(value) => (criticalAlertTimer = value)],
+    };
 
-    const [timer, setter] = timerMap[type] || []
+    const [timer, setter] = timerMap[type] || [];
     if (timer) {
-        clearTimeout(timer)
-        setter(null)
+        clearTimeout(timer);
+        setter(null);
     }
-}
+};
 
 function closePeerConnection() {
-    if (!peerConnection) {
-        return
-    }
-
+    if (!peerConnection) return;
     try {
-        peerConnection.ontrack = null
-        peerConnection.onconnectionstatechange = null
-        peerConnection.oniceconnectionstatechange = null
-        peerConnection.close()
+        peerConnection.ontrack = null;
+        peerConnection.onconnectionstatechange = null;
+        peerConnection.oniceconnectionstatechange = null;
+        peerConnection.close();
     } catch (error) {
-        MesAlertWTitle(
-            'warning',
-            t('message.warning'),
-            t('message.messagetext.webrtcCloseFailed'),
-            error.message || String(error),
-            t('button.ok'),
-        )
+        MesAlertWTitle('warning',t('message.warning'),t('message.messagetext.webrtcCloseFailed'),error.message || String(error),t('button.ok'));
     } finally {
-        peerConnection = null
-    }
-}
+        peerConnection = null;
+    };
+};
 
 function stopServerStream() {
     if (streamVideoRef.value) {
-        streamVideoRef.value.srcObject = null
-    }
+        streamVideoRef.value.srcObject = null;
+    };
     if (streamImageRef.value) {
-        streamImageRef.value.src = ''
-    }
-}
+        streamImageRef.value.src = '';
+    };
+};
 
 function closeResultSocket() {
-    clearTimer('result')
-
-    if (!resultSocket) {
-        return
-    }
-
+    clearTimer('result');
+    if (!resultSocket) return;
     try {
-        resultSocket.onmessage = null
-        resultSocket.onclose = null
-        resultSocket.onerror = null
-        resultSocket.close()
+        resultSocket.onmessage = null;
+        resultSocket.onclose = null;
+        resultSocket.onerror = null;
+        resultSocket.close();
     } catch (error) {
-        MesAlertWTitle(
-            'warning',
-            t('message.warning'),
-            t('message.messagetext.resultSocketCloseFailed'),
-            error.message || String(error),
-            t('button.ok'),
-        )
+        MesAlertWTitle('warning',t('message.warning'),t('message.messagetext.resultSocketCloseFailed'),error.message || String(error),t('button.ok'));
     } finally {
-        resultSocket = null
-    }
-}
+        resultSocket = null;
+    };
+};
 
 function scheduleResultSocketReconnect() {
-    if (
-        manuallyStopped ||
-        !runtime.active ||
-        resultReconnectTimer
-    ) {
-        return
-    }
-
+    if (manuallyStopped || !runtime.active || resultReconnectTimer) return;
     resultReconnectTimer = window.setTimeout(() => {
-        resultReconnectTimer = null
-        connectResultSocket()
-    }, RECONNECT_DELAY_MS)
-}
+        resultReconnectTimer = null;
+        connectResultSocket();
+    }, RECONNECT_DELAY_MS);
+};
 
 function handleCameraStatus(payload = {}) {
-    const status = payload.status
-
+    const status = payload.status;
     if (status === 'reconnecting') {
         if (stream.transport === 'mjpeg') {
-            mjpegUrl.value = ''
-        }
-        setStreamState(false, payload.message)
-        return
-    }
+            mjpegUrl.value = '';
+        };
+        setStreamState(false, payload.message);
+        return;
+    };
 
     if (status === 'reconnected') {
         if (stream.transport === 'mjpeg') {
-            mjpegUrl.value = `${api.mjpegBaseUrl}?ts=${Date.now()}`
-        }
-        setStreamState(true)
-        return
-    }
+            mjpegUrl.value = `${api.mjpegBaseUrl}?ts=${Date.now()}`;
+        };
+        setStreamState(true);
+        return;
+    };
 
     if (status === 'disconnected') {
-        stopClientStreams(payload.message)
-    }
+        stopClientStreams(payload.message);
+    };
 }
-
 function connectResultSocket() {
-    closeResultSocket()
-
-    if (!runtime.active) {
-        return
-    }
-
+    closeResultSocket();
+    if (!runtime.active) return;
     try {
-        resultSocket = new WebSocket(api.resultWsUrl)
-
+        resultSocket = new WebSocket(api.resultWsUrl);
         resultSocket.onmessage = ({ data }) => {
             try {
-                const payload = JSON.parse(data)
+                const payload = JSON.parse(data);
                 if (payload.ws_result) {
-                    applyDetectionResult(payload.ws_result)
+                    applyDetectionResult(payload.ws_result);
                     if (payload.runtime_status) {
-                        applyRuntimeStatus(payload.runtime_status)
-                    }
+                        applyRuntimeStatus(payload.runtime_status);
+                    };
                 } else if (payload.camera_status) {
-                    handleCameraStatus(payload.camera_status)
-                }
+                    handleCameraStatus(payload.camera_status);
+                };
             } catch (error) {
-                ElMessage.warning(t('message.messagetext.resultParseError') + (error.message || String(error)))
-            }
-        }
+                ElMessage.warning(t('message.messagetext.resultParseError') + (error.message || String(error)));
+            };
+        };
 
         resultSocket.onclose = (event) => {
-            resultSocket = null
-
+            resultSocket = null;
             if (event.code === 1000) {
-                stopStream()
-                setStreamState(
-                    null,
-                    t('message.messagetext.closedDetection'),
-                    true,
-                )
-                return
-            }
-
+                stopStream();
+                setStreamState(null,t('message.messagetext.closedDetection'),true);
+                return;
+            };
             if (!manuallyStopped && runtime.running) {
-                scheduleResultSocketReconnect()
-            }
-        }
-
-        resultSocket.onerror = scheduleResultSocketReconnect
+                scheduleResultSocketReconnect();
+            };
+        };
+        resultSocket.onerror = scheduleResultSocketReconnect;
     } catch (error) {
-        ElMessage.warning(t('message.messagetext.resultSocketConnectError') + (error.message || String(error)))
-        scheduleResultSocketReconnect()
-    }
-}
+        ElMessage.warning(t('message.messagetext.resultSocketConnectError') + (error.message || String(error)));
+        scheduleResultSocketReconnect();
+    };
+};
 
 function startMjpegStream() {
-    closePeerConnection()
-    clearTimer('reconnect')
-    stream.transport = 'mjpeg'
-    setStreamState(
-        false,
-        t('message.messagetext.mipegconnnecting'),
-    )
-    mjpegUrl.value = `${api.mjpegBaseUrl}?ts=${Date.now()}`
-}
+    closePeerConnection();
+    clearTimer('reconnect');
+    stream.transport = 'mjpeg';
+    setStreamState(false,t('message.messagetext.mipegconnnecting'));
+    mjpegUrl.value = `${api.mjpegBaseUrl}?ts=${Date.now()}`;
+};
 
 function scheduleWebRtcReconnect() {
-    if (
-        manuallyStopped ||
-        !runtime.running ||
-        reconnectTimer
-    ) {
-        return
-    }
-
-    const token = webRtcStartToken
+    if (manuallyStopped || !runtime.running || reconnectTimer)return;
+    const token = webRtcStartToken;
     reconnectTimer = window.setTimeout(() => {
-        reconnectTimer = null
-
-        if (
-            manuallyStopped ||
-            !runtime.running ||
-            token !== webRtcStartToken
-        ) {
-            return
-        }
-
-        startWebRtcStream()
-    }, RECONNECT_DELAY_MS)
-}
-
+        reconnectTimer = null;
+        if ( manuallyStopped || !runtime.running || token !== webRtcStartToken ) return;
+        startWebRtcStream();
+    }, RECONNECT_DELAY_MS);
+};
 function handleWebRtcError() {
-    setStreamState(
-        false,
-        t('message.messagetext.webrtcStreamError'),
-    )
-    stopServerStream()
-    scheduleWebRtcReconnect()
-}
+    setStreamState(false,t('message.messagetext.webrtcStreamError'));
+    stopServerStream();
+    scheduleWebRtcReconnect();
+};
 
 function waitForIceGatheringComplete(connection) {
-    if (connection.iceGatheringState === 'complete') {
-        return Promise.resolve()
-    }
-
+    if (connection.iceGatheringState === 'complete') return Promise.resolve();
     return new Promise((resolve) => {
         const handler = () => {
             if (connection.iceGatheringState === 'complete') {
-                connection.removeEventListener(
-                    'icegatheringstatechange',
-                    handler,
-                )
-                resolve()
-            }
-        }
+                connection.removeEventListener('icegatheringstatechange',handler);
+                resolve();
+            };
+        };
+        connection.addEventListener('icegatheringstatechange',handler);
+    });
+};
 
-        connection.addEventListener(
-            'icegatheringstatechange',
-            handler,
-        )
-    })
-}
-
-function isCurrentWebRtcAttempt(token) {
-    return (
-        !manuallyStopped &&
-        runtime.active &&
-        token === webRtcStartToken &&
-        peerConnection
-    )
-}
+function isCurrentWebRtcAttempt(token) {return ( !manuallyStopped && runtime.active && token === webRtcStartToken && peerConnection)};
 
 async function startWebRtcStream() {
-    if (webRtcStarting || !runtime.running) {
-        return
-    }
-
-    webRtcStarting = true
-    const token = ++webRtcStartToken
-
-    clearTimer('reconnect')
-    stream.transport = 'webrtc'
-    setStreamState(
-        false,
-        t('message.messagetext.webrtcconnnecting'),
-    )
-
+    if (webRtcStarting || !runtime.running) return;
+    webRtcStarting = true;
+    const token = ++webRtcStartToken;
+    clearTimer('reconnect');
+    stream.transport = 'webrtc';
+    setStreamState(false,t('message.messagetext.webrtcconnnecting'));
     try {
-        closePeerConnection()
-        peerConnection = new RTCPeerConnection({
-            iceServers: buildIceServers(),
-        })
-
-        peerConnection.addTransceiver('video', {
-            direction: 'recvonly',
-        })
-
+        closePeerConnection();
+        peerConnection = new RTCPeerConnection({iceServers: buildIceServers()});
+        peerConnection.addTransceiver('video', {direction: 'recvonly'});
         peerConnection.ontrack = ({ streams }) => {
-            const [remoteStream] = streams
+            const [remoteStream] = streams;
             if (streamVideoRef.value && remoteStream) {
-                streamVideoRef.value.srcObject = remoteStream
+                streamVideoRef.value.srcObject = remoteStream;
                 streamVideoRef.value.onloadedmetadata = () => {
-                    setStreamState(true)
-                    clearTimer('reconnect')
-                }
-            }
-        }
+                    setStreamState(true);
+                    clearTimer('reconnect');
+                };
+            };
+        };
 
         peerConnection.onconnectionstatechange = () => {
-            const state = peerConnection?.connectionState
+            const state = peerConnection?.connectionState;
             if (state === 'connected') {
-                setStreamState(true)
-                clearTimer('reconnect')
-            } else if (
-                ['failed', 'closed', 'disconnected'].includes(state)
-            ) {
-                handleWebRtcError()
-            }
-        }
+                setStreamState(true);
+                clearTimer('reconnect');
+            } else if (['failed', 'closed', 'disconnected'].includes(state)) {
+                handleWebRtcError();
+            };
+        };
 
         peerConnection.oniceconnectionstatechange = () => {
             if (peerConnection?.iceConnectionState === 'failed') {
-                setStreamState(
-                    null,
-                    t('message.messagetext.webrtcStreamError'),
-                    true,
-                )
-            }
-        }
-
-        const offer = await peerConnection.createOffer()
-        if (!isCurrentWebRtcAttempt(token)) return
-
-        await peerConnection.setLocalDescription(offer)
-        await waitForIceGatheringComplete(peerConnection)
-        if (!isCurrentWebRtcAttempt(token)) return
+                setStreamState(null,t('message.messagetext.webrtcStreamError'),true);
+            };
+        };
+        const offer = await peerConnection.createOffer();
+        if (!isCurrentWebRtcAttempt(token)) return;
+        await peerConnection.setLocalDescription(offer);
+        await waitForIceGatheringComplete(peerConnection);
+        if (!isCurrentWebRtcAttempt(token)) return;
 
         const response = await fetch(api.webRTcOfferUrl, {
             method: 'POST',
@@ -1529,311 +1149,196 @@ async function startWebRtcStream() {
                 sdp: peerConnection.localDescription?.sdp,
                 type: peerConnection.localDescription?.type,
             }),
-        })
+        });
 
         if (!response.ok) {
-            throw new Error(
-                t('message.messagetext.webrtcSignalingFailed', {
-                    status: response.status,
-                }),
-            )
+            throw new Error(t('message.messagetext.webrtcSignalingFailed', {status: response.status}));
         }
-
-        if (!isCurrentWebRtcAttempt(token)) return
-
-        const answer = await response.json()
-        if (!isCurrentWebRtcAttempt(token)) return
-
-        await peerConnection.setRemoteDescription(
-            new RTCSessionDescription(answer),
-        )
+        if (!isCurrentWebRtcAttempt(token)) return;
+        const answer = await response.json();
+        if (!isCurrentWebRtcAttempt(token)) return;
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
     } catch (error) {
         if (isCurrentWebRtcAttempt(token)) {
-            MesAlertWTitle(
-                'error',
-                t('message.error'),
-                t('message.messagetext.webrtcStreamError1'),
-                error.message || String(error),
-                t('button.ok'),
-            )
-            handleWebRtcError()
-        }
+            MesAlertWTitle('error',t('message.error'),t('message.messagetext.webrtcStreamError1'),error.message || String(error),t('button.ok'));
+            handleWebRtcError();
+        };
     } finally {
         if (token === webRtcStartToken) {
-            webRtcStarting = false
-        }
-    }
-}
+            webRtcStarting = false;
+        };
+    };
+};
 
 function startClientStreams() {
-    manuallyStopped = false
-    clearTimer('reconnect')
-    clearTimer('result')
-
-    const isFirefox = /firefox/i.test(
-        window.navigator.userAgent,
-    )
-    const preferMjpeg =
-        String(
-            import.meta.env.VITE_WEBRTC_PREFER_MJPEG_FIREFOX ||
-                'true',
-        ).toLowerCase() === 'true'
-
+    manuallyStopped = false;
+    clearTimer('reconnect');
+    clearTimer('result');
+    const isFirefox = /firefox/i.test(window.navigator.userAgent);
+    const preferMjpeg = String(import.meta.env.VITE_WEBRTC_PREFER_MJPEG_FIREFOX || 'true').toLowerCase() === 'true';
     if (isFirefox && preferMjpeg) {
-        startMjpegStream()
+        startMjpegStream();
     } else {
-        startWebRtcStream()
-    }
-
-    connectResultSocket()
-}
+        startWebRtcStream();
+    };
+    connectResultSocket();
+};
 
 function stopStream() {
-    manuallyStopped = true
-    webRtcStartToken += 1
-    webRtcStarting = false
-    clearTimer('reconnect')
-    closePeerConnection()
-    stopServerStream()
-    setStreamState(false)
-}
+    manuallyStopped = true;
+    webRtcStartToken += 1;
+    webRtcStarting = false;
+    clearTimer('reconnect');
+    closePeerConnection();
+    stopServerStream();
+    setStreamState(false);
+};
 
-function stopClientStreams(
-    message = t('message.messagetext.stopedDetection'),
-) {
-    stopStream()
-    closeResultSocket()
-    setStreamState(null, message, true)
-}
+function stopClientStreams(message = t('message.messagetext.stopedDetection')) {
+    stopStream();
+    closeResultSocket();
+    setStreamState(null, message, true);
+};
 
 function showApiError(title, error) {
-    const message =
-        error?.message ||
-        t('message.messagetext.backendServerIssue')
+    const message = error?.message || t('message.messagetext.backendServerIssue');
+    setStreamState(false, message);
+    MesAlertWTitle('error',t('message.error'),title,message,t('button.ok'));
+};
 
-    setStreamState(false, message)
-    MesAlertWTitle(
-        'error',
-        t('message.error'),
-        title,
-        message,
-        t('button.ok'),
-    )
-}
-
-async function runDetectionAction({
-    request,
-    title,
-    fallbackMessage,
-    onSuccess,
-}) {
-    appStore.setLoading(true)
-
+async function runDetectionAction({request,title,fallbackMessage,onSuccess}) {
+    appStore.setLoading(true);
     try {
-        const { data: response } = await request()
+        const { data: response } = await request();
         if (!response.status) {
-            const message = response.msg || fallbackMessage
-            setStreamState(false, message)
-            MesAlertWTitle('error',t('message.error'),title,message,t('button.ok'),)
-            return false
-        }
-
-        applyRuntimeStatus(response.data || {})
-        await onSuccess?.(response)
-        return true
+            const message = response.msg || fallbackMessage;
+            setStreamState(false, message);
+            MesAlertWTitle('error',t('message.error'),title,message,t('button.ok'));
+            return false;
+        };
+        applyRuntimeStatus(response.data || {});
+        await onSuccess?.(response);
+        return true;
     } catch (error) {
-        showApiError(title, error)
-        return false
+        showApiError(title, error);
+        return false;
     } finally {
-        appStore.setLoading(false)
-    }
-}
+        appStore.setLoading(false);
+    };
+};
 
 async function refreshDetectionStatus() {
-    appStore.setLoading(true)
+    appStore.setLoading(true);
     try {
-        const { data: response } = await api.statusDetection()
-        applyRuntimeStatus(response)
-        handleExternalStartFeedback(response)
+        const { data: response } = await api.statusDetection();
+        applyRuntimeStatus(response);
+        handleExternalStartFeedback(response);
         if (runtime.externalMode && runtime.active) {
-            await getSopConfiguration({
-                showLoading: false,
-                showError: false,
-            })
-            resetProcessSteps()
+            await getSopConfiguration({showLoading: false,showError: false});
+            resetProcessSteps();
         }
         if (runtime.running || runtime.active) {
-            startClientStreams()
+            startClientStreams();
         } else {
-            setStreamState(false,t('message.messagetext.closedDetection'))
-        }
+            setStreamState(false,t('message.messagetext.closedDetection'));
+        };
     } catch (error) {
-        showApiError(
-            t('message.messagetext.backendServerIssue'),
-            error,
-        )
+        showApiError(t('message.messagetext.backendServerIssue'),error);
     } finally {
-        appStore.setLoading(false)
-    }
-}
+        appStore.setLoading(false);
+    };
+};
 
 function handleExternalStartFeedback(status = {}) {
-    const external = status.external_start
-    if (!external || !external.request_id) return
-    if (external.request_id === lastExternalRequestId) return
-
-    lastExternalRequestId = external.request_id
+    const external = status.external_start;
+    if (!external || !external.request_id) return;
+    if (external.request_id === lastExternalRequestId) return;
+    lastExternalRequestId = external.request_id;
     if (external.state === 'failed') {
-        MesAlertWTitle(
-            'error',
-            t('message.error'),
-            t('message.messagetext.externalStartFailed'),
-            external.messageText
-                || external.message
-                || t('message.messagetext.externalStartFailed'),
-            t('button.ok'),
-        )
-        return
-    }
-}
+        return MesAlertWTitle('error',t('message.error'),t('message.messagetext.externalStartFailed'),external.messageText || external.message || t('message.messagetext.externalStartFailed'),t('button.ok')); 
+    };
+};
 
 async function pollDetectionStatus() {
     try {
-        const previousRuntimeId = runtime.runtimeId
-        const wasActive = runtime.active
-        const previousCamera = runtime.cameraName
-        const previousSop = runtime.sopName
-        const { data: status } = await api.statusDetection()
-
-        applyRuntimeStatus(status || {})
-        handleExternalStartFeedback(status || {})
-
-        const externalRuntimeChanged =
-            runtime.externalMode &&
-            runtime.active &&
-            (
-                previousRuntimeId !== runtime.runtimeId ||
-                previousCamera !== runtime.cameraName ||
-                previousSop !== runtime.sopName
-            )
-
+        const previousRuntimeId = runtime.runtimeId;
+        const wasActive = runtime.active;
+        const previousCamera = runtime.cameraName;
+        const previousSop = runtime.sopName;
+        const { data: status } = await api.statusDetection();
+        applyRuntimeStatus(status || {});
+        handleExternalStartFeedback(status || {});
+        const externalRuntimeChanged = runtime.externalMode && runtime.active && (previousRuntimeId !== runtime.runtimeId ||  previousCamera !== runtime.cameraName || previousSop !== runtime.sopName);
         if (externalRuntimeChanged) {
-            await getSopConfiguration({
-                showLoading: false,
-                showError: false,
-            })
-            resetProcessSteps()
-        }
-
+            await getSopConfiguration({showLoading: false,showError: false,});
+            resetProcessSteps();
+        };
         if (runtime.active && (!wasActive || externalRuntimeChanged)) {
-            startClientStreams()
+            startClientStreams();
         } else if (!runtime.active && wasActive) {
-            stopClientStreams(
-                t('message.messagetext.closedDetection'),
-            )
-        }
+            stopClientStreams(t('message.messagetext.closedDetection'));
+        };
     } catch (error) {
-        console.warn('轮询检测运行时状态失败:', error)
-    }
-}
+        console.warn('轮询检测运行时状态失败:', error);
+    };
+};
 
 function clearDetectionHistory() {
-    resetFeedbackAudioPlayback()
-    events.value = []
-    alerts.value = []
-    clearCriticalAlert()
-    lastSopEventKey = ''
-    lastCriticalAlertKey = ''
-}
+    resetFeedbackAudioPlayback();
+    events.value = [];
+    alerts.value = [];
+    clearCriticalAlert();
+    lastSopEventKey = '';
+    lastCriticalAlertKey = '';
+};
 function resetStoppedUiState() {
-    lastTriggerCycleAt = null
-    handledFeedbackEventIds.clear()
-    detectionResult.value = createEmptyDetectionResult()
-
-    processSteps.value = buildProcessSteps(
-        sopConfiguration.value.steps || [],
-    )
-
-    clearDetectionHistory()
-
-    timeoutNow.value = Date.now()
-    footerHintOverflow.value = false
-
-    stream.transport = 'webrtc'
-    mjpegUrl.value = `${api.mjpegBaseUrl}?ts=${Date.now()}`
-
-    setStreamState(
-        false,
-        t('message.messagetext.stopedDetection'),
-    )
-}
+    lastTriggerCycleAt = null;
+    handledFeedbackEventIds.clear();
+    detectionResult.value = createEmptyDetectionResult();
+    processSteps.value = buildProcessSteps(sopConfiguration.value.steps || []);
+    clearDetectionHistory();
+    timeoutNow.value = Date.now();
+    footerHintOverflow.value = false;
+    stream.transport = 'webrtc';
+    mjpegUrl.value = `${api.mjpegBaseUrl}?ts=${Date.now()}`;
+    setStreamState(false,t('message.messagetext.stopedDetection'));
+};
 
 function applyResetDetectionResult(response, clearHistory = false) {
-    resetProcessSteps()
+    resetProcessSteps();
     if (clearHistory) {
-        clearDetectionHistory()
-    }
+        clearDetectionHistory();
+    };
 
-    const result = response.data?.result
+    const result = response.data?.result;
     if (result) {
-        applyDetectionResult(result)
+        applyDetectionResult(result);
     } else {
-        detectionResult.value = {
-            ...createEmptyDetectionResult(),
-            step: 1,
-        }
+        detectionResult.value = {...createEmptyDetectionResult(),step: 1};
+        processSteps.value = buildProcessSteps(sopConfiguration.value.steps || []).map((step, index) => ({...step,current: 0,reason: '',status: index === 0 ? 'process' : 'wait'}));
+    };
 
-        processSteps.value = buildProcessSteps(
-            sopConfiguration.value.steps || [],
-        ).map((step, index) => ({
-            ...step,
-            current: 0,
-            reason: '',
-            status: index === 0 ? 'process' : 'wait',
-        }))
-    }
-
-    timeoutNow.value = Date.now()
+    timeoutNow.value = Date.now();
     if (runtime.running && !stream.connected) {
-        startClientStreams()
-    }
+        startClientStreams();
+    };
     if (runtime.paused) {
-        setStreamState(
-            null,
-            t('message.messagetext.successResetDetection'),
-            true,
-        )
-    }
-}
+        setStreamState(null,t('message.messagetext.successResetDetection'),true);
+    };
+};
 
 async function handleStartDetection() {
-    await unlockAudioPlayback()
-    if (
-        !cameraName.value ||
-        cameraName.value === t('displaytext.noconfigcamera')
-    ) {
-        MesAlertWTitle(
-            'warning',
-            t('message.warning'),
-            t('message.messagetext.failedstart'),
-            t('message.messagetext.pleaseConfigureCamera'),
-            t('button.ok'),
-        )
-        return
-    }
+    await unlockAudioPlayback();
+    if ( !cameraName.value || cameraName.value === t('displaytext.noconfigcamera')) {
+        return MesAlertWTitle('warning',t('message.warning'),t('message.messagetext.failedstart'),t('message.messagetext.pleaseConfigureCamera'),t('button.ok'));
+    };
 
     await runDetectionAction({
-        request: () =>
-            api.startDetection({
-                camera_name: cameraName.value,
-                sop_name: sopConfiguration.value.sopName || sopConfiguration.value.model,
-            }),
+        request: () => api.startDetection({camera_name: cameraName.value,sop_name: sopConfiguration.value.sopName || sopConfiguration.value.model}),
         title: t('message.messagetext.failedstart'),
-        fallbackMessage: t(
-            'message.messagetext.faildStartDetection',
-        ),
+        fallbackMessage: t('message.messagetext.faildStartDetection'),
         onSuccess: () => {
-            detectionResult.value.step = 1
+            detectionResult.value.step = 1;
             processSteps.value = processSteps.value.map(
                 (step, index) => ({
                     ...step,
@@ -1841,192 +1346,131 @@ async function handleStartDetection() {
                     reason: '',
                     status: !runtime.waitingForTrigger && index === 0 ? 'process' : 'wait',
                 }),
-            )
-            startClientStreams()
+            );
+            startClientStreams();
         },
-    })
-}
+    });
+};
 
 async function handlePauseDetection() {
     await runDetectionAction({
         request: api.pauseDetection,
-        title: t(
-            'message.messagetext.faildPauseDetection',
-        ),
-        fallbackMessage: t(
-            'message.messagetext.faildPauseDetection',
-        ),
+        title: t('message.messagetext.faildPauseDetection'),
+        fallbackMessage: t('message.messagetext.faildPauseDetection'),
         onSuccess: () => {
-            setStreamState(
-                null,
-                t(
-                    'message.messagetext.successPauseDetection',
-                ),
-                true,
-            )
+            setStreamState(null,t('message.messagetext.successPauseDetection'),true)
         },
-    })
-}
+    });
+};
 
 async function handleResumeDetection() {
     await runDetectionAction({
         request: api.resumeDetection,
-        title: t(
-            'message.messagetext.faildResumeDetection',
-        ),
-        fallbackMessage: t(
-            'message.messagetext.faildResumeDetection',
-        ),
+        title: t('message.messagetext.faildResumeDetection'),
+        fallbackMessage: t('message.messagetext.faildResumeDetection'),
         onSuccess: () => {
             if (!stream.connected) {
-                startClientStreams()
+                startClientStreams();
             }
-            setStreamState(true)
+            setStreamState(true);
         },
-    })
-}
+    });
+};
 
 async function handleResetDetection() {
-    let clearHistory = false
+    let clearHistory = false;
     const result = await MesConfirmWTitle("warning",t('message.warning'), t('message.messagetext.confirmResetDetection'), t('message.messagetext.confirmResetDetectionDesc'), t('button.resetandclear'), t('button.onlyreset')).then(()=>{
-        clearHistory = true
+        clearHistory = true;
     }).catch(()=>{
-        clearHistory = false
+        clearHistory = false;
     }).finally(async () => {
         await runDetectionAction({
             request: api.resetDetection,
             title: t('message.messagetext.failedResetDetection'),
             fallbackMessage: t('message.messagetext.failedResetDetection'),
-            onSuccess: (response) =>
-                applyResetDetectionResult(response, clearHistory),
-        })
-    })
-}
+            onSuccess: (response) =>applyResetDetectionResult(response, clearHistory),
+        });
+    });
+};
 
 async function handleNextDetection() {
-    if (!showNextButton.value || startingNextPart.value) {
-        return
-    }
-
-    startingNextPart.value = true
+    if (!showNextButton.value || startingNextPart.value) return;
+    startingNextPart.value = true;
     try {
         await runDetectionAction({
             request: api.resetDetection,
             title: t('message.messagetext.failedResetDetection'),
             fallbackMessage: t('message.messagetext.failedResetDetection'),
-            onSuccess: (response) =>
-                applyResetDetectionResult(response,true),
-        })
+            onSuccess: (response) =>applyResetDetectionResult(response,true),
+        });
     } finally {
-        startingNextPart.value = false
-    }
-}
+        startingNextPart.value = false;
+    };
+};
     
 async function handleStopDetection() {
-        await runDetectionAction({
+    await runDetectionAction({
         request: api.stopDetection,
-
         title: t('message.messagetext.failedstop'),
         fallbackMessage: t('message.messagetext.cannotstop'),
-
         onSuccess: () => {
-            /*
-             * 后端已经停止：
-             * - 检测线程
-             * - 手部检测线程
-             * - 摄像头
-             * - WebRTC
-             */
-
-            /*
-             * 前端停止：
-             * - WebRTC PeerConnection
-             * - MJPEG
-             * - 结果 WebSocket
-             * - 自动重连定时器
-             */
-            stopClientStreams(
-                t('message.messagetext.stopedDetection'),
-            )
-
-            /*
-             * 即使后端返回状态异常，也强制把前端恢复到
-             * “未开始”状态。
-             */
-            applyRuntimeStatus({
-                initialized: false,
-                running: false,
-                paused: false,
-                active: false,
-            })
-
-            /*
-             * 清空工序、事件、告警、OK/NG 和当前结果。
-             */
-            resetStoppedUiState()
+            //  后端已经停止：检测线程,手部检测线程,摄像头,WebRTC
+            //  前端停止：WebRTC PeerConnection,MJPEG,结果 WebSocket,自动重连定时器
+            stopClientStreams(t('message.messagetext.stopedDetection') );
+            // 即使后端返回状态异常，也强制把前端恢复到“未开始”状态
+            applyRuntimeStatus({initialized: false,running: false, paused: false,active: false});
+            // 清空工序、事件、告警、OK/NG 和当前结果。
+            resetStoppedUiState();
         },
-    })
-}
+    });
+};
 
 onMounted(async () => {
-    await getSopConfiguration()
-    await updateFooterHintOverflow()
-
-    window.addEventListener(
-        'resize',
-        updateFooterHintOverflow,
-    )
-    window.addEventListener('keydown', handleScannerKeydown, true)
-    window.addEventListener('pointerdown',unlockAudioPlayback,true)
-    window.addEventListener('keydown',unlockAudioPlayback,true)
-    window.addEventListener('blur', handleScannerContextLost)
-    document.addEventListener('visibilitychange', handleScannerContextLost)
-
-    timeoutTicker = window.setInterval(() => {
-        timeoutNow.value = Date.now()
-    }, TIMEOUT_TICK_MS)
-
-    await refreshDetectionStatus()
+    await getSopConfiguration();
+    await updateFooterHintOverflow();
+    window.addEventListener('resize',updateFooterHintOverflow);
+    window.addEventListener('keydown', handleScannerKeydown, true);
+    window.addEventListener('pointerdown',unlockAudioPlayback,true);
+    window.addEventListener('keydown',unlockAudioPlayback,true);
+    window.addEventListener('blur', handleScannerContextLost);
+    document.addEventListener('visibilitychange', handleScannerContextLost);
+    timeoutTicker = window.setInterval(() => {timeoutNow.value = Date.now()}, TIMEOUT_TICK_MS);
+    await refreshDetectionStatus();
     externalStatusTimer = window.setInterval(
         pollDetectionStatus,
         EXTERNAL_STATUS_POLL_MS,
-    )
-})
+    );
+});
 
 onBeforeUnmount(() => {
-    window.removeEventListener(
-        'resize',
-        updateFooterHintOverflow,
-    )
-    window.removeEventListener('keydown', handleScannerKeydown, true)
-    window.removeEventListener('pointerdown',unlockAudioPlayback,true)
-    window.removeEventListener('keydown',unlockAudioPlayback,true)
-    window.removeEventListener('blur', handleScannerContextLost)
-    document.removeEventListener('visibilitychange', handleScannerContextLost)
-    clearScannerBuffer()
+    window.removeEventListener('resize',updateFooterHintOverflow);
+    window.removeEventListener('keydown', handleScannerKeydown, true);
+    window.removeEventListener('pointerdown',unlockAudioPlayback,true);
+    window.removeEventListener('keydown',unlockAudioPlayback,true);
+    window.removeEventListener('blur', handleScannerContextLost);
+    document.removeEventListener('visibilitychange', handleScannerContextLost);
+    clearScannerBuffer();
 
-    clearCriticalAlert()
-    clearTimer('reconnect')
-    clearTimer('result')
-
+    clearCriticalAlert();
+    clearTimer('reconnect');
+    clearTimer('result');
     if (timeoutTicker) {
-        clearInterval(timeoutTicker)
-        timeoutTicker = null
-    }
+        clearInterval(timeoutTicker);
+        timeoutTicker = null;
+    };
     if (externalStatusTimer) {
-        clearInterval(externalStatusTimer)
-        externalStatusTimer = null
-    }
-
-    stopStream()
-    closeResultSocket()
-    resetFeedbackAudioPlayback(true)
-})
+        clearInterval(externalStatusTimer);
+        externalStatusTimer = null;
+    };
+    stopStream();
+    closeResultSocket();
+    resetFeedbackAudioPlayback(true);
+});
 
 watch(
     () => [currentStep.value?.name, currentStep.value?.hint],
     updateFooterHintOverflow,
-)
+);
 </script>
 
 <style scoped lang="scss">

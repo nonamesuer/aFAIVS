@@ -539,6 +539,8 @@ export default{
         processtimeout:"工序超时",
         waitingforregion:"等待区域",
         waitingfor:"等待目标",
+        timeout:"超时",
+        ng:"异常",
 
     },
     camera:{
