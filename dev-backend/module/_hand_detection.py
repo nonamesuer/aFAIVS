@@ -3,6 +3,8 @@ import time
 import logging
 import cv2
 import threading
+import os
+import importlib.resources
 import mediapipe as mp
 from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python.vision import (
@@ -46,6 +48,15 @@ class HandTracker:
         min_tracking_confidence: float = 0.2,
         mirrored: bool = True,
     ):
+        if not os.path.isfile(MEDIAPIPE_MODEL_PATH):
+            raise FileNotFoundError(f"MediaPipe model not found: {MEDIAPIPE_MODEL_PATH}")
+        try:
+            mediapipe_c_path = importlib.resources.files("mediapipe.tasks.c")
+        except ModuleNotFoundError as exc:
+            raise RuntimeError("MediaPipe Tasks C library not found. Please ensure you have installed the correct version of mediapipe.") from exc
+        mediapipe_model_path = mediapipe_c_path / "libmediapipe.dll"
+        if not mediapipe_model_path.is_file():
+            raise RuntimeError(f"MediaPipe C library not found: {mediapipe_model_path}. Please ensure you have installed the correct version of mediapipe.please put libmediapipe.dll to mediapipe/tasks/c")
         base_options = BaseOptions(model_asset_path=MEDIAPIPE_MODEL_PATH)
         options = HandLandmarkerOptions(
             base_options=base_options,
@@ -55,7 +66,12 @@ class HandTracker:
             min_hand_presence_confidence=min_hand_presence_confidence,
             min_tracking_confidence=min_tracking_confidence,
         )
-        self._landmarker = HandLandmarker.create_from_options(options)
+        try:
+            self._landmarker = HandLandmarker.create_from_options(options)
+        except Exception as e:
+            logger.exception("Failed to create HandLandmarker. Please ensure you have installed the correct version of mediapipe and that the model file exists. model=%s, dll=%s", MEDIAPIPE_MODEL_PATH, mediapipe_model_path)
+            raise RuntimeError("Failed to create HandLandmarker. Please ensure you have installed the correct version of mediapipe and that the model file exists.") from e
+        # self._landmarker = HandLandmarker.create_from_options(options)
         self._mirrored = mirrored
         self._start_time = time.monotonic()
         self._last_timestamp_ms = -1
