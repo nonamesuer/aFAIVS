@@ -293,6 +293,10 @@
         </div>
       </section>
     </el-main>
+    <el-footer>
+      <i style="margin-right: 8px">©</i
+      ><span>{{ $t("public.developed") }}(v-{{ appStore.version }})</span>
+    </el-footer>
 
     <el-drawer v-model="detailVisible" size="88%" class="result-drawer"  destroy-on-close @closed="clearMediaUrls">
       <template #header>
@@ -652,40 +656,6 @@
       </div>
     </el-drawer>
   </el-container>
-
-
-
-  <!-- <div class="results-page" v-loading="loading"> -->
-  <!-- </div> -->
-
-
-
-
-    <!-- <header class="app-header">
-      <div class="brand">
-        <b>{{ $t("public.faivs") }}</b> > 
-        <b>{{ $t("results.title") }}</b>
-      </div>
-      <div class="header-actions">
-        <el-button :icon="Refresh" circle @click="loadAll" /><el-dropdown
-          trigger="click"
-          @command="langChange"
-          ><span class="language"
-            >{{ currentLanguage }}<el-icon><ArrowDown /></el-icon></span
-          ><template #dropdown
-            ><el-dropdown-menu
-              ><el-dropdown-item command="en">English</el-dropdown-item
-              ><el-dropdown-item command="zh"
-                >Chinese</el-dropdown-item
-              ></el-dropdown-menu
-            ></template
-          ></el-dropdown
-        ><img src="@/assets/img/bosch.26cf9c8e.svg" alt="Bosch" />
-      </div>
-    </header> -->
-
-    
-  <!-- </div> -->
 </template>
 
 <script setup lang="ts">
@@ -1099,7 +1069,7 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
 
 <style scoped lang="scss">
 .el-container {
-  height: 100vh;
+  height: calc(100vh - 8px);
 }
 .el-header{
   display: flex;
@@ -1130,8 +1100,14 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   }
 }
 .el-main{
-  height: calc(100% - 100px);
+  height: calc(100% - 140px);
   overflow-y: auto;
+}
+.el-footer {
+  height: 40px;
+  border-top: 1px solid #c5c8cb;
+  display: flex;
+  align-items: center;
 }
 .results-content {
   width: min(1740px, calc(100% - 44px));
