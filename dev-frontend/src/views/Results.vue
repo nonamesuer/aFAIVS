@@ -1,5 +1,5 @@
 <template>
-  <el-container>
+  <el-container >
     <el-header height="50px">
       <div class="header-left">
         <b>{{ $t("public.faivs") }}</b> > 
@@ -294,15 +294,9 @@
       </section>
     </el-main>
 
-    <el-drawer
-      v-model="detailVisible"
-      size="88%"
-      class="result-drawer"
-      destroy-on-close
-      @closed="clearMediaUrls"
-    >
-      <template #header
-        ><div class="drawer-header">
+    <el-drawer v-model="detailVisible" size="88%" class="result-drawer"  destroy-on-close @closed="clearMediaUrls">
+      <template #header>
+        <div class="drawer-header">
           <div>
             <span>{{ $t("results.detail_title") }}</span>
             <h2>
@@ -310,35 +304,20 @@
             </h2>
           </div>
           <div class="drawer-status">
-            <el-tag
-              :type="executionType(detail.run?.executionStatus)"
-              effect="dark"
-              size="large"
-              >{{
-                $t(
-                  `results.execution.${knownExecution(
-                    detail.run?.executionStatus
-                  )}`
-                )
-              }}</el-tag
-            ><span>{{ formatTime(detail.run?.startedAtMs) }}</span>
+            <el-tag :type="executionType(detail.run?.executionStatus)" effect="dark" size="large">{{ $t(`results.execution.${knownExecution( detail.run?.executionStatus )}`) }}</el-tag>
+            <span>{{ formatTime(detail.run?.startedAtMs) }}</span>
           </div>
-        </div></template
-      >
+        </div>
+      </template>
       <div v-loading="detailLoading" class="drawer-body">
         <div class="detail-hero">
           <div class="detail-score">
-            <el-progress
-              type="dashboard"
-              :percentage="detailPassRate"
-              :width="118"
-              :stroke-width="10"
-              :color="detail.run?.ngCount ? '#e26b3a' : '#00a878'"
-              ><template #default
-                ><strong>{{ detailPassRate }}%</strong
-                ><span>{{ $t("results.step_completion") }}</span></template
-              ></el-progress
-            >
+            <el-progress type="dashboard" :percentage="detailPassRate" :width="118" :stroke-width="10" :color="detail.run?.ngCount ? '#e26b3a' : '#00a878'">
+              <template #default>
+                <strong>{{ detailPassRate }}%</strong>
+                <span>{{ $t("results.step_completion") }}</span>
+              </template>
+            </el-progress>
           </div>
           <div class="detail-identity">
             <span>{{ $t("results.sop") }}</span>
@@ -1120,7 +1099,7 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
 
 <style scoped lang="scss">
 .el-container {
-  min-height: 100vh;
+  height: 100vh;
 }
 .el-header{
   display: flex;
@@ -1150,7 +1129,10 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
     }
   }
 }
-
+.el-main{
+  height: calc(100% - 100px);
+  overflow-y: auto;
+}
 .results-content {
   width: min(1740px, calc(100% - 44px));
   margin: 0 auto;
@@ -1576,10 +1558,10 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   display: grid;
   grid-template-columns: 140px 1.6fr repeat(3, 1fr);
   align-items: center;
-  border: 1px solid #dfe6eb;
+  border: 1px solid #000;
   border-top: 4px solid #007bc0;
   padding: 18px 22px;
-  background: linear-gradient(100deg, #f5fbfe, #fff 60%);
+  // background: linear-gradient(100deg, #f5fbfe, #fff 60%);
 }
 .detail-score :deep(.el-progress__text) {
   display: flex;
@@ -1590,7 +1572,7 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
 }
 .detail-score span {
   font-size: 10px;
-  color: #778590;
+  // color: #778590;
 }
 .detail-identity {
   padding: 0 24px;
@@ -1631,7 +1613,8 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   gap: 16px;
 }
 .detail-panel {
-  border: 1px solid #e1e6eb;
+  // border: 1px solid #e1e6eb;
+  border: 1px solid #000;
   padding: 19px;
 }
 .detail-panel h3 {

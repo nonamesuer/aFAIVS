@@ -49,6 +49,10 @@
     "CY_test1": {
         "model": "CY1",
         "confidence": 0.5,
+        "readyCheck": {
+            "enabled": true,
+            "timeout": 10
+        },
         "sopCompletionFeedback": {
             "modbus": {
                 "enabled": false,
@@ -82,18 +86,14 @@
                     "toRegion": "CY",
                     "objectDetection": {
                         "source": true,
-                        "transit": false,
+                        "transit": true,
                         "target": true
                     },
                     "missTolerance": 5,
                     "handMargin": 5,
                     "handPoints": {
                         "l": [],
-                        "r": [
-                            4,
-                            8,
-                            12
-                        ]
+                        "r": []
                     },
                     "resultFeedback": {
                         "http": {
@@ -120,6 +120,6 @@
         ],
         "create_time": "2026-07-24 16:16:26",
         "enabled": true,
-        "modify_time": "2026-08-05 16:25:32"
+        "modify_time": "2026-08-06 13:32:31"
     }
 }

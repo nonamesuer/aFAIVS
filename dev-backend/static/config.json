@@ -91,7 +91,7 @@
         "saveNgAnnotatedImage": true,
         "saveStepSuccess": true,
         "saveRunCompleted": true,
-        "saveNgVideo": true,
+        "saveNgVideo": false,
         "ngVideoBeforeSeconds": 8,
         "ngVideoAfterSeconds": 5,
         "ngVideoFps": 10,
