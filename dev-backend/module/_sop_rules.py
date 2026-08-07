@@ -7,6 +7,7 @@ from module._manual_regions import (
     region_reference_key,
     region_reference_name,
 )
+from module._vision_fusion import normalize_vision_fusion
 
 OBJECT_PHASES = ("source", "transit", "target")
 HAND_SIDES = ("l", "r")

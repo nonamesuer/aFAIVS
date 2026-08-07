@@ -8,6 +8,10 @@ export interface ObjectDetectionConfig {
   target: boolean
 }
 
+export interface VisionFusionConfig {enabled:boolean;lowConfidence:number;classMargin:number;wrongObjectConfirmMs:number;missingGraceMs:number;targetConfirmMs:number;releaseConfirmMs:number;trackMaxDistance:number;trackMaxMissingMs:number;identityLock:boolean}
+export const DEFAULT_VISION_FUSION:VisionFusionConfig = {enabled:true,lowConfidence:0.15,classMargin:0.08,wrongObjectConfirmMs:600,missingGraceMs:1000,targetConfirmMs:350,releaseConfirmMs:250,trackMaxDistance:120,trackMaxMissingMs:1200,identityLock:true}
+export const normalizeVisionFusion = (value:any = {}):VisionFusionConfig => {const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};const result = {...DEFAULT_VISION_FUSION,enabled:raw.enabled !== false,identityLock:raw.identityLock !== false};for (const key of ['lowConfidence','classMargin'] as const)result[key] = Math.min(1,Math.max(0,Number.isFinite(Number(raw[key])) ? Number(raw[key]) : result[key]));for (const key of ['wrongObjectConfirmMs','missingGraceMs','targetConfirmMs','releaseConfirmMs','trackMaxDistance','trackMaxMissingMs'] as const)result[key] = Math.max(0,Number.isFinite(Number(raw[key])) ? Math.round(Number(raw[key])) : result[key]);return result}
+
 export interface SopValidationResult {
   valid: boolean
   code: string
@@ -245,6 +249,7 @@ export const normalizeVisionStepForSave = (step: any): any => {
   cloned.timeout = Math.max(0, Number(cloned.timeout || 0))
   cloned.context = cloned.context || {}
   cloned.context.objectDetection = normalizeObjectDetection(cloned.context)
+  cloned.context.visionFusion = normalizeVisionFusion(cloned.context.visionFusion)
   cloned.context.fromRegion = normalizeRegionReferenceForSave(
     cloned.context.fromRegion
   )

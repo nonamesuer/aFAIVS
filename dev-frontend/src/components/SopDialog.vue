@@ -264,6 +264,28 @@
                   </el-col>
                 </el-row>
 
+                <el-collapse class="vision-fusion-config">
+                  <el-collapse-item name="vision-fusion">
+                    <template #title><div class="vision-fusion-title"><span>{{ $t('config.form.visionFusion') }}</span><el-tag :type="currentStep.context.visionFusion.enabled ? 'success' : 'info'" size="small">{{ currentStep.context.visionFusion.enabled ? $t('displaytext.enabled') : $t('displaytext.disabled') }}</el-tag></div></template>
+                    <el-alert :title="$t('description.config.visionFusion')" type="info" :closable="false" show-icon />
+                    <el-row :gutter="10" class="vision-fusion-row">
+                      <el-col :span="8"><el-form-item :label="$t('config.form.enableVisionFusion')"><el-switch v-model="currentStep.context.visionFusion.enabled" /></el-form-item></el-col>
+                      <el-col :span="8"><el-form-item :label="$t('config.form.identityLock')"><el-switch v-model="currentStep.context.visionFusion.identityLock" :disabled="!currentStep.context.visionFusion.enabled" /></el-form-item></el-col>
+                      <el-col :span="8"><el-form-item :label="$t('config.form.lowConfidence')"><el-input-number v-model.number="currentStep.context.visionFusion.lowConfidence" :min="0.01" :max="Math.max(0.01,Number(modelCameraForm.confidence || 50)/100)" :step="0.01" :precision="2" :disabled="!currentStep.context.visionFusion.enabled" /></el-form-item></el-col>
+                    </el-row>
+                    <el-row :gutter="10">
+                      <el-col :span="8"><el-form-item :label="$t('config.form.classMargin')"><el-input-number v-model.number="currentStep.context.visionFusion.classMargin" :min="0" :max="1" :step="0.01" :precision="2" :disabled="!currentStep.context.visionFusion.enabled" /></el-form-item></el-col>
+                      <el-col :span="8"><el-form-item :label="$t('config.form.wrongConfirmMs')"><el-input-number v-model.number="currentStep.context.visionFusion.wrongObjectConfirmMs" :min="0" :max="10000" :step="50" :disabled="!currentStep.context.visionFusion.enabled" /></el-form-item></el-col>
+                      <el-col :span="8"><el-form-item :label="$t('config.form.missingGraceMs')"><el-input-number v-model.number="currentStep.context.visionFusion.missingGraceMs" :min="0" :max="10000" :step="50" :disabled="!currentStep.context.visionFusion.enabled" /></el-form-item></el-col>
+                    </el-row>
+                    <el-row :gutter="10">
+                      <el-col :span="8"><el-form-item :label="$t('config.form.targetConfirmMs')"><el-input-number v-model.number="currentStep.context.visionFusion.targetConfirmMs" :min="0" :max="5000" :step="50" :disabled="!currentStep.context.visionFusion.enabled" /></el-form-item></el-col>
+                      <el-col :span="8"><el-form-item :label="$t('config.form.releaseConfirmMs')"><el-input-number v-model.number="currentStep.context.visionFusion.releaseConfirmMs" :min="0" :max="5000" :step="50" :disabled="!currentStep.context.visionFusion.enabled" /></el-form-item></el-col>
+                      <el-col :span="8"><el-form-item :label="$t('config.form.trackDistance')"><el-input-number v-model.number="currentStep.context.visionFusion.trackMaxDistance" :min="10" :max="1000" :step="10" :disabled="!currentStep.context.visionFusion.enabled" /></el-form-item></el-col>
+                    </el-row>
+                  </el-collapse-item>
+                </el-collapse>
+
                 <div v-if="currentHands.length" class="hands-point-container">
                   <b>{{ $t('displaytext.handkeypoints') }}</b>
                   <div v-for="side in currentHands" :key="side" class="hands-point-wrapper">
@@ -573,6 +595,7 @@ import SopCompletionFeedbackDialog from './SopCompletionFeedbackDialog.vue';
 import {
   isManualRegionReference,
   normalizeObjectDetection,
+  normalizeVisionFusion,
   normalizeVisionStepForSave,
   regionReferenceKey,
   validateVisionStep,
@@ -722,6 +745,7 @@ watch(
     stepsLocal.value = JSON.parse(JSON.stringify(newSteps || []))
     for (const step of stepsLocal.value) {
       step.context ||= {}
+      step.context.visionFusion = normalizeVisionFusion(step.context.visionFusion)
       step.context.resultFeedback = normalizeStepFeedback(step.context.resultFeedback)
     }
     const allMarked = stepsLocal.value.length > 0
@@ -1098,6 +1122,7 @@ const handleAddNewStep = async () => {
       fromRegion: '',
       toRegion: '',
       objectDetection: { source: true, transit: false, target: true },
+      visionFusion: normalizeVisionFusion(),
       missTolerance: 20,
       handMargin: 10,
       handPoints: { l: [], r: [] },
@@ -1689,4 +1714,5 @@ const hideExecutionPreview = () => {
     transform: translateX(-3px) rotate(-1deg);
   }
 }
+.vision-fusion-config{margin:4px 0 16px;border:1px solid var(--el-border-color-lighter);border-radius:8px;padding:0 12px}.vision-fusion-title{display:flex;align-items:center;gap:10px;font-weight:600}.vision-fusion-row{margin-top:14px}
 </style>

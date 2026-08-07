@@ -13,6 +13,7 @@ from module._base import get_main_config,DEFAULT_BOX_STYLE_CONFIG,DEFAULT_HAND_S
 from module._camera import CameraManager
 from module._onnx_detection import ONNXDetection
 from module._sop_state_machine import SOPStateMachine
+from module._vision_fusion import LightweightObjectTracker
 from module._hand_detection import HandTracker, HandDetectorWorker
 from module._trigger import TriggerController
 from module._sop_result_store import SOPResultStore
@@ -364,7 +365,10 @@ class DetectorWorker:
         self._last_sop_state = self.result["sop"].get("state")
         self._tick = 0
         self.label_class = JsonFile(os.path.join(self.model_path, "cache.json")).read_json_file().get("labeling", {})
-        self.detector = ONNXDetection(onnx_model=os.path.join(self.model_path, self.model_name), classes=self.label_class)
+        fusion_config = self.sop_machine.detector_fusion_config
+        detector_confidence = self.sop_machine.confidence if self.sop_machine.confidence > 0 else 0.5
+        self.vision_tracker = LightweightObjectTracker(detector_confidence,fusion_config)
+        self.detector = ONNXDetection(onnx_model=os.path.join(self.model_path,self.model_name),classes=self.label_class,confidence=detector_confidence,other_params={"lowConfidence":fusion_config["lowConfidence"],"topK":3})
         self.detector.load_model()
 
     def _validate_manual_regions_for_active_camera(self) -> None:
@@ -426,6 +430,7 @@ class DetectorWorker:
         self.paused = False
         self.waiting_for_trigger = wait_for_trigger
         self.sop_machine = self._create_sop_machine()
+        self.vision_tracker = LightweightObjectTracker(self.sop_machine.confidence if self.sop_machine.confidence > 0 else 0.5,self.sop_machine.detector_fusion_config)
         self._validate_manual_regions_for_active_camera()
         manual_regions = self._current_manual_region_detections()
         #结果触发器
@@ -502,7 +507,8 @@ class DetectorWorker:
         detection: dict,
         hands=None,
     ) -> None:
-        label_box_datas = detection.get("datas", [])
+        label_box_datas = self.vision_tracker.update(detection.get("datas", []))
+        display_detections = [item for item in label_box_datas if item.get("classification_state") == "confirmed" and item.get("high_confidence") is True]
         completed_now = False
         media_events: list[dict] = []
         with self.state_lock:
@@ -520,7 +526,8 @@ class DetectorWorker:
             with self.result_lock:
                 self.result["step"] = 1 if self.result.get("step", 1) == 1 else 2
                 self.result["gesture"] = "gesture"
-                self.result["detections"] = label_box_datas
+                self.result["detections"] = display_detections
+                self.result["visionCandidates"] = label_box_datas
                 self.result["manualRegions"] = visible_manual_regions
                 self.result["hands"] = hands or {}
                 self.result["hand_action_points"] = (self.sop_machine.current_hand_action_points(hands) if hands else [])

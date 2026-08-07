@@ -403,6 +403,7 @@ export default{
             expectedMdetectStage:"Expected Material Detection Stage",
             compulsory:"Compulsory",
             allowlostframequantity:"Allow Lost Frame Quantity",
+            visionFusion:"Visual Evidence Fusion",enableVisionFusion:"Enable Evidence Fusion",identityLock:"Lock Material Identity After Pickup",lowConfidence:"Low-confidence Candidate Threshold",classMargin:"Minimum Class Margin",wrongConfirmMs:"Wrong-object Confirmation (ms)",missingGraceMs:"Occlusion Grace (ms)",targetConfirmMs:"Target Confirmation (ms)",releaseConfirmMs:"Release Confirmation (ms)",trackDistance:"Track Association Distance (px)",
 
 
             type_vision:"Pure Object Detection(P)",
@@ -499,11 +500,13 @@ export default{
         },
         config:{
             expectedM_required:"Enabling this will detect both hand keypoints and expected materials. If the expected material is not detected, hand keypoints will be used as a substitute for the expected material (if the expected material target is small, it is recommended not to check this option).",
-            allowlostframequantity:"The allowed lost frame quantity refers to the number of consecutive frames that can be lost during detection. If the number of consecutive lost frames exceeds this value, the current step is considered to have failed and will revert to the previous step. This parameter can effectively prevent the current step from failing due to fast movements or occlusion of the expected material causing frame loss.",
+            allowlostframequantity:"Legacy frame-based loss tolerance. Occlusion grace time takes priority when visual evidence fusion is enabled.",
+            visionFusion:"Combines low-confidence candidates, class margin, object tracks, region changes, and hand motion. Brief occlusion or similar-class fluctuation becomes uncertain evidence instead of an immediate error.",
             handmargin:"Expands the effective detection range of the 'hand action point hit detection box', reducing missed detections caused by hand keypoint jitter and target box deviation.",
         }
     },
     displaytext:{
+        enabled:"Enabled",disabled:"Disabled",visionEvidence:"Vision Evidence",visionEvidenceState:{waiting:"Waiting for evidence",observing:"Collecting evidence",confirmed:"Material confirmed",ambiguous:"Class ambiguous",missing:"Not detected",missing_grace:"Occlusion grace",identity_locked:"Identity locked",wrong_candidate:"Confirming wrong material",confirming_target:"Confirming target",confirming_release:"Confirming release",legacy:"Legacy frame logic"},
         waitingtrigger:"Waiting for a trigger from {methods}",
         waitingexternaltrigger:"Waiting for an external trigger",
         httptriggername:"HTTP API",
@@ -621,6 +624,7 @@ export default{
     sopReasonValue:{item:"item"},
     sopReasonPhase:{waiting:"waiting",acquiring:"acquiring",transit:"transit",target:"target",release:"release"},
     sopReason:{
+        MISSING_EVIDENCE_GRACE:"{detail}; holding {phase} during occlusion grace ({elapsed}/{grace}ms)",MISSING_EVIDENCE_EXCEEDED:"{detail}; occlusion grace {grace}ms exceeded",
         SOP_STEPS_EMPTY:"SOP has no configured process steps",INVALID_STEP_CONFIG:"Invalid step configuration: {message}",WAITING_REQUIRED_REGIONS_AND_OBJECTS:"Waiting for required regions and objects",WAITING_REQUIRED_ITEMS:"Waiting for the following conditions: {items}",REQUIRED_ITEMS_READY:"Required regions and objects are ready",SOP_PAUSED:"SOP paused",SOP_RESUMED:"SOP resumed",SOP_STARTED:"SOP started",ALL_STEPS_COMPLETED:"All steps completed",BLOCKING_CONDITION_CLEARED:"Blocking condition cleared; restarting the current operation",READY_CHECK_TIMEOUT:"Ready check timed out; still waiting for: {items}",
         WAITING_OBJECT_IN_REGION:"Waiting for {object} in {region}",OBJECT_READY_WAITING_LEAVE:"{object} is ready in {source}; waiting for one item to leave",SOURCE_INVENTORY_UPDATED:"{source} inventory baseline updated to {count}",OBJECT_TEMPORARILY_OCCLUDED:"One {object} left {source} but is temporarily occluded",WAITING_OBJECT_LEAVE_REGION:"Waiting for one {object} to leave {region}",OBJECT_ENTERED_TARGET:"A new {object} entered {target}",TRACKING_OBJECT_TO_TARGET:"Tracking {object} from {source} to {target}",OBJECT_LOST_DURING_TRANSIT:"{object} was lost during transit",WAITING_OBJECT_ENTER_TARGET:"Waiting for {object} to enter {target}",WAITING_OBJECT:"Waiting for {object}",
         WAITING_HAND_IN_REGION:"Waiting for hand in {region}",HAND_ENTERED_WAITING_OBJECT:"Hand entered {source}; waiting to engage {object}",HAND_READY_IN_REGION:"Hand is ready in {region}",HAND_LOST_WHILE_ACQUIRING:"Hand landmarks were lost while acquiring the object",MOVE_HAND_CLOSE_TO_OBJECT_IN_REGION:"Move hand close to {object} in {region}",PICK_OBJECT_FROM_REGION:"Pick {object} from {source}",HAND_LEFT_WITHOUT_OBJECT:"Hand left {source} without engaging {object}",HAND_LOST_DURING_TRANSIT:"Hand landmarks were lost during transit",HAND_RETURNED_PICK_AGAIN:"Hand returned to {source}; pick again",HAND_OR_OBJECT_ENTERED_TARGET:"Hand or {object} entered {target}",MOVING_TO_TARGET:"Moving to {target}",

@@ -15,6 +15,8 @@ class ONNXDetection:
         self.other_params = other_params or {}
         self.font = cv2.FONT_HERSHEY_SIMPLEX
         self.model_type = model_type  
+        self.low_confidence = max(0.01,min(float(self.other_params.get("lowConfidence",confidence)),float(confidence)))
+        self.top_k = max(2,int(self.other_params.get("topK",3)))
         
     def load_model(self):
         self.classes = {k: list(reversed(ImageColor.getrgb(v))) for k, v in self.classes.items()}
@@ -78,51 +80,42 @@ class ONNXDetection:
             class_scores_start = 4
             class_scores_end = 4 + self.class_num
             if x.size>0:
-                max_scores = np.amax(x[..., class_scores_start:class_scores_end], axis=-1)
-                valid_mask = max_scores > self.confidence
+                class_scores = x[..., class_scores_start:class_scores_end]
+                max_scores = np.amax(class_scores, axis=-1)
+                valid_mask = max_scores > self.low_confidence
                 x = x[valid_mask]
                 if len(x) == 0:return return_default
-                max_class_scores = np.amax(x[..., class_scores_start:class_scores_end], axis=-1, keepdims=True)
-                class_ids = np.argmax(x[..., class_scores_start:class_scores_end], axis=-1, keepdims=True)
-                # 构建结果数组
-                result = np.concatenate([
-                    x[..., :4],  # 边界框坐标
-                    max_class_scores,  # 最大类别置信度
-                    class_ids,  # 类别ID
-                    x[..., class_scores_end:]  # 掩膜部分（如果有）
-                ], axis=-1)
-                if len(result) > 0:
-                    boxes = result[:, :4].tolist()
-                    scores = result[:, 4].flatten().tolist()
-                    indices = cv2.dnn.NMSBoxes(boxes, scores, self.confidence, self.iouthres)
+                filtered_scores = class_scores[valid_mask];class_ids = np.argmax(filtered_scores,axis=-1);scores = np.amax(filtered_scores,axis=-1)
+                if len(x) > 0:
+                    boxes = x[:,:4].copy();boxes[:,0] -= boxes[:,2]/2;boxes[:,1] -= boxes[:,3]/2
+                    indices = cv2.dnn.NMSBoxes(boxes.tolist(),scores.tolist(),self.low_confidence,self.iouthres)
                     if len(indices) > 0:
-                        x = result[indices.flatten()]
+                        selected = indices.flatten();selected_boxes = x[selected,:4].copy();selected_scores = filtered_scores[selected];selected_class_ids = class_ids[selected]
                         # 边界框格式转换：从 cxcywh -> xyxy
-                        x[..., [0, 1]] -= x[..., [2, 3]] / 2
-                        x[..., [2, 3]] += x[..., [0, 1]]
-                        x[..., :4] -= [dw, dh, dw, dh]
-                        x[..., :4] /= min(ratio)
+                        selected_boxes[..., [0, 1]] -= selected_boxes[..., [2, 3]] / 2
+                        selected_boxes[..., [2, 3]] += selected_boxes[..., [0, 1]]
+                        selected_boxes -= [dw, dh, dw, dh]
+                        selected_boxes /= min(ratio)
                         # 限制边界框在图像边界内
-                        x[..., [0, 2]] = x[:, [0, 2]].clip(0, self.img_width)
-                        x[..., [1, 3]] = x[:, [1, 3]].clip(0, self.img_height)
-                        return self.draw_detect(input_image, x[..., :6])
+                        selected_boxes[..., [0, 2]] = selected_boxes[:, [0, 2]].clip(0, self.img_width)
+                        selected_boxes[..., [1, 3]] = selected_boxes[:, [1, 3]].clip(0, self.img_height)
+                        return self.draw_detect(input_image,selected_boxes,selected_scores,selected_class_ids)
                 return return_default
             else:
                 return return_default
-    def draw_detect(self, input_image,boxes):
+    def draw_detect(self,input_image,boxes,class_scores,class_ids):
         count_labels = {}
         score_result = []
         label_box_datas={"type":"rectangle","datas":[]}
         if len(boxes) >0:
-            for box in boxes:
-                x1, y1, x2, y2, conf, class_id = box
-                class_id = int(class_id)
+            for box,scores,class_id in zip(boxes,class_scores,class_ids):
+                x1,y1,x2,y2 = box;class_id = int(class_id);conf = float(scores[class_id])
                 class_name = self.class_name[class_id]
-                score = "{:.2f}".format(conf)
-                label_box_datas["datas"].append({"label": class_name, "points": [[x1, y1],[ x2, y2]], "score": score,"class_id":class_id})
+                top_indices = np.argsort(scores)[::-1][:self.top_k]
+                top_k = [{"label":self.class_name[int(index)],"score":round(float(scores[index]),4)} for index in top_indices]
+                label_box_datas["datas"].append({"label":class_name,"points":[[float(x1),float(y1)],[float(x2),float(y2)]],"score":round(conf,4),"class_id":class_id,"top_k":top_k,"high_confidence":conf >= self.confidence})
         return (input_image,count_labels,score_result,label_box_datas)
     def predict(self,input_image):
         img_data, ratio, (pad_w, pad_h) = self.preprocess_img(input_image)
         outputs = self.session.run(None, {self.model_inputs[0].name: img_data})
         return self.postprocess(input_image,outputs, ratio, pad_w, pad_h, 0)
-

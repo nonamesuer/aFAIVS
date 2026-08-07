@@ -403,6 +403,7 @@ export default {
             expectedMdetectStage: "期望物料检测阶段",
             compulsory: "强制",
             allowlostframequantity: "允许丢帧数量",
+            visionFusion:"视觉证据融合",enableVisionFusion:"启用证据融合",identityLock:"拿取后锁定物料身份",lowConfidence:"低置信候选阈值",classMargin:"类别最小分差",wrongConfirmMs:"错料确认时间(ms)",missingGraceMs:"遮挡宽限时间(ms)",targetConfirmMs:"目标确认时间(ms)",releaseConfirmMs:"释放确认时间(ms)",trackDistance:"目标关联距离(px)",
 
 
             type_vision: "纯目标检测(P)",
@@ -500,11 +501,13 @@ export default {
         },
         config: {
             expectedM_required: "启用后将同时检测手部关键点和期望物料，反之如果检测不到期望物料将使用手部关键点替代期望物料（如果期望物料目标小建议不要勾选）",
-            allowlostframequantity: "允许丢帧数量是指在检测过程中，允许连续丢失的帧数。如果连续丢失的帧数超过该值，则认为检测当前步骤失败，将退回到上一步。此参数可以很好的避免由于动作太快或者期望物料被遮挡导致丢帧而导致当前步骤失效。",
+            allowlostframequantity: "允许丢帧数量是兼容旧配置的按帧容忍参数；启用视觉证据融合后优先使用遮挡宽限时间。",
+            visionFusion:"将低置信候选、类别分差、目标轨迹、区域变化和手部动作作为证据共同判断。短时遮挡或相似类别抖动会进入不确定状态，不会立即判错。",
             handmargin: "扩大“手部动作点命中检测框”的有效判定范围，降低手部关键点抖动、目标框偏差造成的漏判",
         }
     },
     displaytext: {
+        enabled:"已启用",disabled:"已停用",visionEvidence:"视觉证据",visionEvidenceState:{waiting:"等待证据",observing:"采集证据",confirmed:"物料已确认",ambiguous:"类别存在歧义",missing:"暂未检测到",missing_grace:"遮挡宽限中",identity_locked:"身份已锁定",wrong_candidate:"错料确认中",confirming_target:"目标区域确认中",confirming_release:"释放动作确认中",legacy:"传统帧判断"},
         waitingtrigger: "等待 {methods} 触发信号",
         waitingexternaltrigger: "等待外部触发信号",
         httptriggername: "HTTP API",
@@ -621,6 +624,7 @@ export default {
     sopReasonValue:{item:"物料"},
     sopReasonPhase:{waiting:"等待",acquiring:"拿取",transit:"移动",target:"目标",release:"释放"},
     sopReason:{
+        MISSING_EVIDENCE_GRACE:"{detail}；遮挡宽限中（{elapsed}/{grace}ms），保持在{phase}阶段",MISSING_EVIDENCE_EXCEEDED:"{detail}；已超过遮挡宽限时间 {grace}ms",
         SOP_STEPS_EMPTY:"SOP没有配置工序步骤",INVALID_STEP_CONFIG:"工序配置无效：{message}",WAITING_REQUIRED_REGIONS_AND_OBJECTS:"等待所需区域和物料就绪",WAITING_REQUIRED_ITEMS:"等待以下条件就绪：{items}",REQUIRED_ITEMS_READY:"所需区域和物料已就绪",SOP_PAUSED:"SOP已暂停",SOP_RESUMED:"SOP已恢复",SOP_STARTED:"SOP已开始",ALL_STEPS_COMPLETED:"全部工序已完成",BLOCKING_CONDITION_CLEARED:"异常条件已解除，重新开始当前操作",READY_CHECK_TIMEOUT:"准备检查超时，仍缺少：{items}",
         WAITING_OBJECT_IN_REGION:"等待 {object} 出现在 {region}",OBJECT_READY_WAITING_LEAVE:"{source} 中的 {object} 已就绪，等待一个物料离开",SOURCE_INVENTORY_UPDATED:"{source} 的库存基线已更新为 {count}",OBJECT_TEMPORARILY_OCCLUDED:"一个 {object} 已离开 {source}，但暂时被遮挡",WAITING_OBJECT_LEAVE_REGION:"等待一个 {object} 离开 {region}",OBJECT_ENTERED_TARGET:"新的 {object} 已进入 {target}",TRACKING_OBJECT_TO_TARGET:"正在跟踪 {object} 从 {source} 移动到 {target}",OBJECT_LOST_DURING_TRANSIT:"移动过程中丢失 {object}",WAITING_OBJECT_ENTER_TARGET:"等待 {object} 进入 {target}",WAITING_OBJECT:"等待 {object}",
         WAITING_HAND_IN_REGION:"等待手部进入 {region}",HAND_ENTERED_WAITING_OBJECT:"手部已进入 {source}，等待接触 {object}",HAND_READY_IN_REGION:"手部已在 {region} 就绪",HAND_LOST_WHILE_ACQUIRING:"拿取物料时丢失手部关键点",MOVE_HAND_CLOSE_TO_OBJECT_IN_REGION:"请将手靠近 {region} 中的 {object}",PICK_OBJECT_FROM_REGION:"请从 {source} 拿取 {object}",HAND_LEFT_WITHOUT_OBJECT:"手部离开 {source} 时未接触 {object}",HAND_LOST_DURING_TRANSIT:"移动过程中丢失手部关键点",HAND_RETURNED_PICK_AGAIN:"手部返回 {source}，请重新拿取",HAND_OR_OBJECT_ENTERED_TARGET:"手部或 {object} 已进入 {target}",MOVING_TO_TARGET:"正在移动到 {target}",

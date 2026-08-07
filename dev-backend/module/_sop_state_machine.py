@@ -9,6 +9,7 @@ from typing import Any
 from module._sop_rules import (
     has_hand_tracking,
     normalize_object_detection,
+    normalize_vision_fusion,
     normalized_hand_points,
     validate_vision_step,
 )
@@ -63,6 +64,13 @@ class DetectionBox:
     points: list[Any]
     score: float = 0.0
     class_id: int | None = None
+    raw_label: str = ""
+    top_k: list[dict[str, Any]] = field(default_factory=list)
+    class_margin: float = 1.0
+    classification_state: str = "confirmed"
+    track_id: int | None = None
+    high_confidence: bool = True
+    predicted: bool = False
 
     @property
     def xyxy(self) -> tuple[float, float, float, float] | None:
@@ -121,6 +129,10 @@ class StepObservation:
     hand_engaged_source_objects: dict[str, list[str]]
     # 手当前在整个画面中接触的所有已知物料
     hand_engaged_materials: list[str]
+    expected_track_ids: list[int]
+    source_track_ids: list[int]
+    target_track_ids: list[int]
+    engaged_expected_track_id: int | None
 
 
 @dataclass
@@ -175,6 +187,17 @@ class SOPStepRuntime:
     # 错误原因
     wrong_pick_reason: SOPReason = EMPTY_REASON
     wrong_pick_clear_count: int = 0
+    vision_evidence_state: str = "waiting"
+    identity_locked: bool = False
+    locked_object_label: str | None = None
+    locked_track_id: int | None = None
+    wrong_candidate_label: str | None = None
+    wrong_candidate_since: float | None = None
+    completion_started_at: float | None = None
+    missing_started_at: dict[str,float] = field(default_factory=dict)
+    last_class_margin: float | None = None
+    wrong_pick_candidate_key: str | None = None
+    wrong_pick_candidate_since: float | None = None
 
     @classmethod
     def from_config(cls, data: dict[str, Any]) -> "SOPStepRuntime":
@@ -228,6 +251,12 @@ class SOPStepRuntime:
     @property
     def object_detection_config(self) -> dict[str, bool]:
         return normalize_object_detection(self.context)
+
+    @property
+    def vision_fusion_config(self) -> dict[str, Any]:return normalize_vision_fusion(self.context.get("visionFusion"))
+
+    @property
+    def vision_fusion_enabled(self) -> bool:return bool(self.vision_fusion_config["enabled"])
 
     @property
     def require_object_at_source(self) -> bool:
@@ -296,6 +325,13 @@ class SOPStepRuntime:
         self.wrong_pick_latched = False
         self.wrong_pick_reason = EMPTY_REASON
         self.wrong_pick_clear_count = 0
+        self.vision_evidence_state = "waiting";self.identity_locked = False;self.locked_object_label = None;self.locked_track_id = None;self.wrong_candidate_label = None;self.wrong_candidate_since = None;self.completion_started_at = None;self.missing_started_at = {};self.last_class_margin = None;self.wrong_pick_candidate_key = None;self.wrong_pick_candidate_since = None
+
+    def shift_evidence_timestamps(self,seconds:float) -> None:
+        for key in ("wrong_candidate_since","wrong_pick_candidate_since","completion_started_at"):
+            value = getattr(self,key)
+            if value is not None:setattr(self,key,value+seconds)
+        self.missing_started_at = {key:value+seconds for key,value in self.missing_started_at.items()}
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -329,6 +365,7 @@ class SOPStepRuntime:
             "wrong_pick_latched": self.wrong_pick_latched,
             "wrong_pick_reason": str(self.wrong_pick_reason),
             "wrong_pick_clear_count": self.wrong_pick_clear_count,
+            "vision_evidence":{"state":self.vision_evidence_state,"identity_locked":self.identity_locked,"locked_object":self.locked_object_label,"locked_track_id":self.locked_track_id,"class_margin":self.last_class_margin,"wrong_candidate":self.wrong_candidate_label},
             "cycle": {
                 "current": min(self.matched_count + 1, self.target),
                 "completed": self.matched_count,
@@ -451,6 +488,14 @@ class SOPStateMachine:
         counts = [len(step.hand_points_config) for step in self.steps if step.hand_gate_enabled]
         return max(counts) if counts else 0
 
+    @property
+    def detector_fusion_config(self) -> dict[str, Any]:
+        configs = [step.vision_fusion_config for step in self.steps if step.vision_fusion_enabled]
+        if not configs:return normalize_vision_fusion({"enabled":False,"lowConfidence":self.confidence})
+        result = dict(configs[0]);result["lowConfidence"] = min(min(config["lowConfidence"] for config in configs),self.confidence if self.confidence > 0 else 0.5);result["classMargin"] = min(config["classMargin"] for config in configs);result["trackMaxDistance"] = max(config["trackMaxDistance"] for config in configs);result["trackMaxMissingMs"] = max(config["trackMaxMissingMs"] for config in configs);return result
+
+    def _step_detection_floor(self,step:SOPStepRuntime) -> float:return min(step.vision_fusion_config["lowConfidence"],self.confidence if self.confidence > 0 else 0.5) if step.vision_fusion_enabled else self.confidence
+
     def start(self) -> None:
         if not self.steps:
             self.state = SOPRunState.FAILED
@@ -532,6 +577,7 @@ class SOPStateMachine:
             if step.started_at is not None:
                 step.started_at += paused_duration
             step.paused_at = None
+            step.shift_evidence_timestamps(paused_duration)
         if self.ready_started_at is not None:
             self.ready_started_at += paused_duration
         if self.started_at is not None:
@@ -567,7 +613,8 @@ class SOPStateMachine:
             self.last_reason = validation_reason
             return self.snapshot(matched=False, reason=validation_reason)
 
-        boxes = normalize_detections(detections, min_score=self.confidence)
+        boxes = normalize_detections(detections,min_score=self._step_detection_floor(step))
+        self._update_evidence_state(step,boxes)
 
         ng_matched, ng_reason = self._match_ng_when(step, boxes)
         default_ng_reason = self._match_default_wrong_object(step, boxes)
@@ -640,10 +687,11 @@ class SOPStateMachine:
         step.last_reason = reason
         if completed_once:
             step.stable_count += 1
-            if step.stable_count >= self.stable_frames:
+            if self._completion_confirmed(step):
                 self._confirm_cycle_completed(step, reason, observation)
         else:
             step.stable_count = 0
+            step.completion_started_at = None
         return self.snapshot(matched=completed_once, reason=reason)
 
     def snapshot(self, matched: bool = False, reason: str | SOPReason = EMPTY_REASON) -> dict[str, Any]:
@@ -673,7 +721,7 @@ class SOPStateMachine:
         if step is None:
             self._complete_all(sop_reason("ALL_STEPS_COMPLETED","All steps completed"))
             return self.snapshot(matched=False, reason=self.last_reason)
-        boxes = normalize_detections(detections, min_score=self.confidence)
+        boxes = normalize_detections(detections,min_score=self._step_detection_floor(step))
         ready, missing = self._check_step_ready(step, boxes)
         if not ready:
             if self.ready_started_at and time.time() - self.ready_started_at > self.ready_check_timeout:
@@ -700,7 +748,7 @@ class SOPStateMachine:
                 )
                 if region:
                     required.add(region)
-        detected = {box.label.strip().lower() for box in boxes}
+        detected = {box.label.strip().lower() for box in boxes if box.class_id == -1 or self._box_confirmed_for_step(step,box)}
         missing = [
             self._display_region_name(label)
             for label in required
@@ -727,7 +775,7 @@ class SOPStateMachine:
         boxes: list[DetectionBox],
         hands: dict[str, list[tuple[float, float]]] | None,
     ) -> StepObservation:
-        expected_boxes = find_boxes(boxes, step.expected_object) if step.expected_object else []
+        expected_boxes = self._effective_expected_boxes(step,boxes)
         source_regions = find_boxes(boxes, step.from_region) if step.from_region else []
         target_regions = find_boxes(boxes, step.to_region)
         hand_points = self._hand_action_points(step, hands)
@@ -827,6 +875,11 @@ class SOPStateMachine:
                     region_name
                 ] = engaged_objects
 
+        source_expected = [box for box in expected_boxes if box.center is not None and point_in_any_region(box.center,source_regions)]
+        target_expected = [box for box in expected_boxes if box.center is not None and point_in_any_region(box.center,target_regions)]
+        engaged_expected = next((box for box in expected_boxes if self._points_engage_boxes(hand_points,[box],hand_margin)),None)
+        if expected_boxes:step.missing_started_at.pop("object",None)
+        if hand_points:step.missing_started_at.pop("hand",None)
         return StepObservation(
             expected_boxes=expected_boxes,
             source_region_boxes=source_regions,
@@ -846,6 +899,10 @@ class SOPStateMachine:
             hand_source_regions=hand_source_regions,
             hand_engaged_source_objects=(hand_engaged_source_objects),
             hand_engaged_materials=hand_engaged_materials,
+            expected_track_ids=[box.track_id for box in expected_boxes if box.track_id is not None],
+            source_track_ids=[box.track_id for box in source_expected if box.track_id is not None],
+            target_track_ids=[box.track_id for box in target_expected if box.track_id is not None],
+            engaged_expected_track_id=engaged_expected.track_id if engaged_expected else None,
         )
 
     def _initialize_cycle(self, step: SOPStepRuntime, obs: StepObservation) -> None:
@@ -862,6 +919,43 @@ class SOPStateMachine:
         step.transit_seen = False
         step.target_entry_seen = False
         step.release_seen = False
+        step.completion_started_at = None
+        if step.vision_evidence_state != "wrong_candidate":step.vision_evidence_state = "observing"
+
+    def _effective_expected_boxes(self,step:SOPStepRuntime,boxes:list[DetectionBox]) -> list[DetectionBox]:
+        expected = [box for box in find_boxes(boxes,step.expected_object,confirmed_only=False) if self._box_confirmed_for_step(step,box)] if step.expected_object else []
+        if step.identity_locked and step.locked_track_id is not None:
+            expected.extend(box for box in boxes if box.track_id == step.locked_track_id and box.class_id != -1 and not box.predicted)
+        unique:dict[tuple[Any,...],DetectionBox] = {}
+        for box in expected:unique[(box.track_id,*((box.xyxy or (0,0,0,0))))] = box
+        return list(unique.values())
+
+    @staticmethod
+    def _box_confirmed_for_step(step:SOPStepRuntime,box:DetectionBox) -> bool:return box.high_confidence and not box.predicted and box.classification_state == "confirmed" and (not step.vision_fusion_enabled or box.class_margin >= step.vision_fusion_config["classMargin"])
+
+    def _lock_identity(self,step:SOPStepRuntime,obs:StepObservation,preferred_track_id:int | None = None) -> None:
+        if not step.vision_fusion_enabled or not step.vision_fusion_config["identityLock"] or step.identity_locked:return
+        track_id = preferred_track_id or obs.engaged_expected_track_id or next(iter(obs.source_track_ids),None) or next(iter(obs.expected_track_ids),None)
+        if track_id is None:return
+        step.identity_locked = True;step.locked_track_id = track_id;step.locked_object_label = step.expected_object;step.vision_evidence_state = "identity_locked"
+
+    def _update_evidence_state(self,step:SOPStepRuntime,boxes:list[DetectionBox]) -> None:
+        if not step.vision_fusion_enabled:step.vision_evidence_state = "legacy";return
+        candidates = [box for box in boxes if box.class_id != -1 and (box.label.casefold() == step.expected_object.casefold() or any(str(item.get("label","")).casefold() == step.expected_object.casefold() for item in box.top_k))]
+        if step.identity_locked and any(box.track_id == step.locked_track_id for box in boxes):step.vision_evidence_state = "identity_locked";return
+        if any(box.classification_state == "confirmed" and box.label.casefold() == step.expected_object.casefold() for box in candidates):step.vision_evidence_state = "confirmed"
+        elif candidates:step.vision_evidence_state = "ambiguous"
+        else:step.vision_evidence_state = "missing"
+        margins = [box.class_margin for box in candidates]
+        step.last_class_margin = round(max(margins),4) if margins else None
+
+    def _completion_confirmed(self,step:SOPStepRuntime) -> bool:
+        if not step.vision_fusion_enabled:return step.stable_count >= self.stable_frames
+        now = time.time()
+        if step.completion_started_at is None:step.completion_started_at = now
+        required_ms = step.vision_fusion_config["releaseConfirmMs"] if step.release_seen else step.vision_fusion_config["targetConfirmMs"]
+        step.vision_evidence_state = "confirming_release" if step.release_seen else "confirming_target"
+        return (now-step.completion_started_at)*1000 >= required_ms
 
     def _match_step(
         self, step: SOPStepRuntime, boxes: list[DetectionBox], obs: StepObservation
@@ -901,6 +995,7 @@ class SOPStateMachine:
             if fast_departure or target_delta:
                 step.source_departure_seen = True
                 step.transit_seen = True
+                self._lock_identity(step,obs,next(iter(obs.target_track_ids),None) or next(iter(obs.expected_track_ids),None))
                 step.set_phase(SOPCyclePhase.TRANSIT)
             elif obs.source_count <= 0:
                 return False,sop_reason("WAITING_OBJECT_IN_REGION",f"Waiting for {label} in {source}",object=label,region=source)
@@ -924,6 +1019,7 @@ class SOPStateMachine:
                 step.source_departure_seen = True
                 step.transit_seen = True
                 step.object_miss_count = 0
+                self._lock_identity(step,obs,next((track_id for track_id in obs.expected_track_ids if track_id not in obs.source_track_ids),None))
                 step.set_phase(SOPCyclePhase.TRANSIT)
             elif source_decreased:
                 return self._loss_or_restart(
@@ -975,12 +1071,14 @@ class SOPStateMachine:
                 return False,sop_reason("HAND_ENTERED_WAITING_OBJECT",f"Hand entered {source}; waiting to engage {label}",source=source,object=label)
             if obs.hand_on_object:
                 step.hand_grip_state = "gripping"
+                self._lock_identity(step,obs,obs.engaged_expected_track_id)
             return False,sop_reason("HAND_READY_IN_REGION",f"Hand ready in {source}",region=source)
 
         if step.phase == SOPCyclePhase.ACQUIRING:
             if obs.hand_on_object:
                 step.hand_grip_state = "gripping"
                 step.hand_miss_count = 0
+                self._lock_identity(step,obs,obs.engaged_expected_track_id)
             if not obs.hand_visible:
                 return self._loss_or_restart(step,"hand",sop_reason("HAND_LOST_WHILE_ACQUIRING","Hand lost while acquiring object"))
             if obs.hand_in_source:
@@ -1015,14 +1113,17 @@ class SOPStateMachine:
                 step.target_entry_seen = True
                 step.set_phase(SOPCyclePhase.TARGET)
                 if not step.require_object_at_target:
-                    return True,sop_reason("HAND_OR_OBJECT_ENTERED_TARGET",f"Hand or {label or 'item'} entered {target}",object=label or "item",target=target)
+                    if not step.vision_fusion_enabled:return True,sop_reason("HAND_OR_OBJECT_ENTERED_TARGET",f"Hand or {label or 'item'} entered {target}",object=label or "item",target=target)
+                    step.set_phase(SOPCyclePhase.RELEASE)
+                    return False,sop_reason("WAITING_HAND_RELEASE_OBJECT",f"Waiting for hand to release {label or 'item'} or leave {target}",object=label or "item",target=target)
             else:
                 return False,sop_reason("MOVING_TO_TARGET",f"Moving to {target}",target=target)
 
         if step.phase == SOPCyclePhase.TARGET:
             if not step.require_object_at_target:
-                return True,sop_reason("HAND_OR_OBJECT_ENTERED_TARGET",f"Hand or {label or 'item'} entered {target}",object=label or "item",target=target)
-            if target_delta:
+                if not step.vision_fusion_enabled:return True,sop_reason("HAND_OR_OBJECT_ENTERED_TARGET",f"Hand or {label or 'item'} entered {target}",object=label or "item",target=target)
+                step.set_phase(SOPCyclePhase.RELEASE)
+            elif target_delta:
                 step.target_entry_seen = True
                 step.object_miss_count = 0
                 step.set_phase(SOPCyclePhase.RELEASE)
@@ -1033,7 +1134,7 @@ class SOPStateMachine:
             if not step.target_entry_seen:
                 step.set_phase(SOPCyclePhase.TARGET)
                 return False,sop_reason("WAITING_OBJECT_IN_REGION",f"Waiting for {label} in {target}",object=label,region=target)
-            if not obs.hand_on_object or not obs.hand_in_target:
+            if (not step.require_object_at_target and not obs.hand_in_target) or (step.require_object_at_target and (not obs.hand_on_object or not obs.hand_in_target)):
                 step.release_seen = True
                 step.hand_grip_state = "released"
                 return True,sop_reason("OBJECT_PLACED_HAND_RELEASED",f"{label} placed in {target} and hand released",object=label,target=target)
@@ -1071,6 +1172,7 @@ class SOPStateMachine:
             if self._object_motion_detected(step, obs):
                 step.transit_seen = True
                 step.object_miss_count = 0
+                self._lock_identity(step,obs,next(iter(obs.expected_track_ids),None))
                 return False,sop_reason("TRACKING_MOVING_OBJECT",f"Tracking moving {label} to {target}",object=label,target=target)
             if target_delta and not step.transit_seen:
                 return False,sop_reason("TRANSIT_EVIDENCE_REQUIRED",f"{label} reached {target}, but transit evidence is still required",object=label,target=target)
@@ -1104,6 +1206,7 @@ class SOPStateMachine:
                 if not obs.hand_on_object:
                     return False,sop_reason("MOVE_HAND_CLOSE_TO_OBJECT",f"Move hand close to {label}",object=label)
                 step.hand_grip_state = "gripping"
+                self._lock_identity(step,obs,obs.engaged_expected_track_id)
             elif step.require_object_in_transit and label:
                 if not obs.hand_on_object:
                     return False,sop_reason("WAITING_HAND_CARRY_OBJECT",f"Waiting for hand to carry {label}",object=label)
@@ -1130,14 +1233,17 @@ class SOPStateMachine:
                 step.target_entry_seen = True
                 step.set_phase(SOPCyclePhase.TARGET)
                 if not step.require_object_at_target:
-                    return True,sop_reason("HAND_OR_OBJECT_ENTERED_TARGET",f"Hand or {label or 'item'} entered {target}",object=label or "item",target=target)
+                    if not step.vision_fusion_enabled:return True,sop_reason("HAND_OR_OBJECT_ENTERED_TARGET",f"Hand or {label or 'item'} entered {target}",object=label or "item",target=target)
+                    step.set_phase(SOPCyclePhase.RELEASE)
+                    return False,sop_reason("WAITING_HAND_RELEASE_OBJECT",f"Waiting for hand to release {label or 'item'} or leave {target}",object=label or "item",target=target)
                 return False,sop_reason("HAND_REACHED_VERIFYING_OBJECT",f"Hand reached {target}; verifying {label}",target=target,object=label)
             return False,sop_reason("MOVING_TO_TARGET",f"Moving hand to {target}",target=target)
 
         if step.phase == SOPCyclePhase.TARGET:
             if not step.require_object_at_target:
-                return True,sop_reason("HAND_ENTERED_TARGET",f"Hand entered {target}",target=target)
-            if target_delta:
+                if not step.vision_fusion_enabled:return True,sop_reason("HAND_ENTERED_TARGET",f"Hand entered {target}",target=target)
+                step.set_phase(SOPCyclePhase.RELEASE)
+            elif target_delta:
                 step.target_entry_seen = True
                 step.object_miss_count = 0
                 step.set_phase(SOPCyclePhase.RELEASE)
@@ -1145,7 +1251,7 @@ class SOPStateMachine:
                 return self._loss_or_restart(step,"object",sop_reason("WAITING_NEW_OBJECT_IN_TARGET",f"Waiting for a new {label} in {target}",object=label,target=target))
 
         if step.phase == SOPCyclePhase.RELEASE:
-            if not obs.hand_on_object or not obs.hand_in_target:
+            if (not step.require_object_at_target and not obs.hand_in_target) or (step.require_object_at_target and (not obs.hand_on_object or not obs.hand_in_target)):
                 step.release_seen = True
                 step.hand_grip_state = "released"
                 return True,sop_reason("OBJECT_PLACED_HAND_RELEASED",f"{label} placed in {target} and hand released",object=label,target=target)
@@ -1260,6 +1366,12 @@ class SOPStateMachine:
         return False,sop_reason("RESTARTING_CURRENT_CYCLE",f"{reason}; restarting current cycle",**nested_reason_params(reason))
 
     def _loss_or_restart(self, step: SOPStepRuntime, actor: str, reason: str | SOPReason) -> tuple[bool, str]:
+        if step.vision_fusion_enabled:
+            now = time.time();started_at = step.missing_started_at.setdefault(actor,now);elapsed_ms = int((now-started_at)*1000);grace_ms = step.vision_fusion_config["missingGraceMs"]
+            step.vision_evidence_state = "missing_grace"
+            if elapsed_ms <= grace_ms:return False,sop_reason("MISSING_EVIDENCE_GRACE",f"{reason}; holding {step.phase.value} during occlusion grace {elapsed_ms}/{grace_ms}ms",**nested_reason_params(reason),elapsed=elapsed_ms,grace=grace_ms,phase=step.phase.value)
+            exceeded = sop_reason("MISSING_EVIDENCE_EXCEEDED",f"{reason}; occlusion grace {grace_ms}ms exceeded",**nested_reason_params(reason),grace=grace_ms)
+            return self._restart_cycle(step,exceeded)
         if actor == "hand":
             step.hand_miss_count += 1
             count = step.hand_miss_count
@@ -1301,6 +1413,13 @@ class SOPStateMachine:
                     result.append(region)
 
         return result
+    def _wrong_pick_candidate_confirmed(self,step:SOPStepRuntime,key:str) -> bool:
+        if not step.vision_fusion_enabled:return True
+        now = time.time()
+        if step.wrong_pick_candidate_key != key:step.wrong_pick_candidate_key = key;step.wrong_pick_candidate_since = now
+        step.vision_evidence_state = "wrong_candidate";required_ms = step.vision_fusion_config["wrongObjectConfirmMs"]
+        return (now-(step.wrong_pick_candidate_since or now))*1000 >= required_ms
+
     def _check_wrong_pick(
         self,
         step: SOPStepRuntime,
@@ -1365,6 +1484,7 @@ class SOPStateMachine:
 
                 actual_source = self._display_region_name(region_name)
                 reason = sop_reason("WRONG_PICK_SOURCE",f"NG: Wrong pickup source: expected {step.from_region_name}, but operator picked {actual_object} from {actual_source}",expectedSource=step.from_region_name,actualObject=actual_object,actualSource=actual_source)
+                if not self._wrong_pick_candidate_confirmed(step,f"source:{region_name}:{actual_object}"):return EMPTY_REASON
 
                 step.pickup_origin_region = (
                     region_name
@@ -1396,6 +1516,7 @@ class SOPStateMachine:
 
                         source_name = self._display_region_name(region_name)
                         reason = sop_reason("WRONG_MATERIAL_PICKUP",f"NG: Wrong material pickup: expected {step.expected_object}, but operator picked {actual_object} from {source_name}",expected=step.expected_object,actual=actual_object,source=source_name)
+                        if not self._wrong_pick_candidate_confirmed(step,f"material:{region_name}:{actual_object}"):return EMPTY_REASON
 
                         step.pickup_origin_region = (
                             region_name
@@ -1425,6 +1546,7 @@ class SOPStateMachine:
                     objects[0]
                 )
 
+        step.wrong_pick_candidate_key = None;step.wrong_pick_candidate_since = None
         return EMPTY_REASON
     def _try_recover_wrong_pick(
         self,
@@ -1602,12 +1724,22 @@ class SOPStateMachine:
             normalized_label = box.label.casefold()
             if normalized_label and normalized_label != expected_label and normalized_label not in self.region_labels and box.class_id != -1:
                 labels.setdefault(normalized_label, box.label)
+        detected_wrong: str | None = None
         for label in labels.values():
-            current_count = count_boxes_inside_regions(find_boxes(boxes, label), regions)
+            candidate_boxes = [box for box in find_boxes(boxes,label,confirmed_only=False) if self._box_confirmed_for_step(step,box)]
+            current_count = count_boxes_inside_regions(candidate_boxes, regions)
             baseline_count = self._completed_object_count_in_region(label, step.to_region)
             if current_count > baseline_count:
-                return sop_reason("WRONG_OBJECT_ENTERED",f"NG: Expected {step.expected_object}, but {label} entered {step.to_region_name}",expected=step.expected_object,actual=label,target=step.to_region_name)
-        return EMPTY_REASON
+                wrong_boxes = [box for box in candidate_boxes if box.center is not None and point_in_any_region(box.center,regions)]
+                if step.identity_locked and any(box.track_id == step.locked_track_id for box in wrong_boxes):continue
+                detected_wrong = label;break
+        if not detected_wrong:step.wrong_candidate_label = None;step.wrong_candidate_since = None;return EMPTY_REASON
+        if not step.vision_fusion_enabled:return sop_reason("WRONG_OBJECT_ENTERED",f"NG: Expected {step.expected_object}, but {detected_wrong} entered {step.to_region_name}",expected=step.expected_object,actual=detected_wrong,target=step.to_region_name)
+        now = time.time()
+        if step.wrong_candidate_label != detected_wrong:step.wrong_candidate_label = detected_wrong;step.wrong_candidate_since = now
+        elapsed_ms = int((now-(step.wrong_candidate_since or now))*1000);required_ms = step.vision_fusion_config["wrongObjectConfirmMs"];step.vision_evidence_state = "wrong_candidate"
+        if elapsed_ms < required_ms:return EMPTY_REASON
+        return sop_reason("WRONG_OBJECT_ENTERED",f"NG: Expected {step.expected_object}, but {detected_wrong} entered {step.to_region_name}",expected=step.expected_object,actual=detected_wrong,target=step.to_region_name)
     def _completed_object_count_in_region(self, label: str, region: str) -> int:
         expected_label = label.casefold()
         expected_region = region.casefold()
@@ -1732,14 +1864,21 @@ def normalize_detections(
                     points=points,
                     score=score,
                     class_id=item.get("class_id"),
+                    raw_label=str(item.get("raw_label",label)),
+                    top_k=item.get("fused_top_k") if isinstance(item.get("fused_top_k"),list) else (item.get("top_k") if isinstance(item.get("top_k"),list) else []),
+                    class_margin=_to_float(item.get("class_margin",1.0)),
+                    classification_state=str(item.get("classification_state","confirmed")),
+                    track_id=int(item["track_id"]) if item.get("track_id") is not None else None,
+                    high_confidence=bool(item.get("high_confidence",score >= min_score)),
+                    predicted=bool(item.get("predicted",False)),
                 )
             )
     return boxes
 
 
-def find_boxes(boxes: list[DetectionBox], label: str) -> list[DetectionBox]:
+def find_boxes(boxes: list[DetectionBox], label: str,confirmed_only:bool=True) -> list[DetectionBox]:
     expected = label.strip().lower()
-    return [box for box in boxes if box.label.strip().lower() == expected]
+    return [box for box in boxes if box.label.strip().lower() == expected and (not confirmed_only or (box.classification_state == "confirmed" and box.high_confidence and not box.predicted))]
 
 
 def count_boxes_inside_regions(targets: list[DetectionBox], regions: list[DetectionBox]) -> int:

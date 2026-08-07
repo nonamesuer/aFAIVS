@@ -121,6 +121,7 @@
                                 >
                                     {{ currentStep.reason }}
                                 </div>
+                                <div v-if="currentStep.vision_evidence" class="overlay-evidence"><el-tag size="small" :type="visionEvidenceType(currentStep.vision_evidence.state)" effect="dark">{{ visionEvidenceText(currentStep.vision_evidence) }}</el-tag></div>
                             </div>
                         </div>
                     </div>
@@ -211,6 +212,7 @@
                     <div v-if="currentStep" class="current-section">
                         <div class="current-name">{{ currentStep.name }}</div>
                         <div class="current-desc">{{ currentStep.hint }}</div>
+                        <div v-if="currentStep.vision_evidence" class="current-evidence"><span>{{ $t('displaytext.visionEvidence') }}</span><el-tag size="small" :type="visionEvidenceType(currentStep.vision_evidence.state)">{{ visionEvidenceText(currentStep.vision_evidence) }}</el-tag></div>
 
                         <div class="current-progress-row">
                             <div class="current-metrics">
@@ -647,6 +649,8 @@ function normalizeStep(step = {}, index = 0, runtimeStep = false) {
         reason: runtimeStep ? getSopReasonText(step) : '',
     }
 };
+function visionEvidenceType(state) {return ['confirmed','identity_locked','confirming_target','confirming_release'].includes(String(state || '')) ? 'success' : ['ambiguous','missing_grace','wrong_candidate'].includes(String(state || '')) ? 'warning' : 'info'};
+function visionEvidenceText(evidence = {}) {const state = String(evidence.state || 'waiting');const label = te(`displaytext.visionEvidenceState.${state}`) ? t(`displaytext.visionEvidenceState.${state}`) : state;return evidence.identity_locked && evidence.locked_track_id ? `${label} · ID ${evidence.locked_track_id}` : label};
 
 function mapSopStepStatus(state) {
     return {done: 'success',active: 'process',failed: 'error'}[state] || 'wait';
@@ -1612,6 +1616,7 @@ watch(
             .overlay-meta {
                 margin-top: 6px;
             }
+            .overlay-evidence{margin-top:7px}
         }
     }
 }
@@ -1702,6 +1707,7 @@ watch(
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+    .current-evidence{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;font-size:12px;color:#606266}
 
     .current-progress-row {
         min-height: 28px;
