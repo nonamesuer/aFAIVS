@@ -14,6 +14,7 @@ from typing import Any
 
 from module._base import RESULTS_PATH, get_main_config
 from module._auth import get_current_operator_name
+from module._manual_regions import region_reference_name
 from module._result_storage import (
     request_auto_sync,
     resolve_result_storage,
@@ -37,6 +38,16 @@ def json_dumps(data: Any) -> str:
         separators=(",", ":"),
         default=str,
     )
+
+
+def storage_text(value: Any) -> str:
+    if value is None:return ""
+    if isinstance(value,str):return value
+    if isinstance(value,(int,float,bool)):return str(value)
+    return json_dumps(value)
+
+
+def storage_region(value: Any) -> str:return region_reference_name(value) or storage_text(value)
 
 
 class SOPResultStore:
@@ -1437,24 +1448,9 @@ class SOPResultStore:
                         )
                     ),
 
-                    str(
-                        context.get(
-                            "expectedObject",
-                            "",
-                        )
-                    ),
-                    str(
-                        context.get(
-                            "fromRegion",
-                            "",
-                        )
-                    ),
-                    str(
-                        context.get(
-                            "toRegion",
-                            "",
-                        )
-                    ),
+                    storage_text(context.get("expectedObject","")),
+                    storage_region(context.get("fromRegion","")),
+                    storage_region(context.get("toRegion","")),
 
                     int(
                         step.get(
@@ -1576,24 +1572,9 @@ class SOPResultStore:
                     step_id,
                     cycle_no,
 
-                    str(
-                        context.get(
-                            "expectedObject",
-                            "",
-                        )
-                    ),
-                    str(
-                        context.get(
-                            "fromRegion",
-                            "",
-                        )
-                    ),
-                    str(
-                        context.get(
-                            "toRegion",
-                            "",
-                        )
-                    ),
+                    storage_text(context.get("expectedObject","")),
+                    storage_region(context.get("fromRegion","")),
+                    storage_region(context.get("toRegion","")),
 
                     timestamp_ms,
                 ),
@@ -1649,7 +1630,7 @@ class SOPResultStore:
             or {}
         )
 
-        actual_object = (
+        actual_object = storage_text(
             step.get(
                 "pickup_object_label"
             )
@@ -1659,7 +1640,7 @@ class SOPResultStore:
             or ""
         )
 
-        actual_source = (
+        actual_source = storage_region(
             step.get(
                 "pickup_origin_region"
             )
@@ -1932,19 +1913,9 @@ class SOPResultStore:
                     placement,
                     total,
 
-                    str(
-                        context.get(
-                            "expectedObject",
-                            "",
-                        )
-                    ),
+                    storage_text(context.get("expectedObject","")),
 
-                    str(
-                        context.get(
-                            "fromRegion",
-                            "",
-                        )
-                    ),
+                    storage_region(context.get("fromRegion","")),
 
                     cycle_run_id,
                 ),

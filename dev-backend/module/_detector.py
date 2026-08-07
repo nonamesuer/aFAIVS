@@ -325,6 +325,7 @@ class DetectorWorker:
         }
         self.paused = False
         self.waiting_for_trigger = False
+        self._last_result_storage_error_at = 0.0
         self.on_sop_completed: Callable[[], None] | None = None
         self.trigger_lock = threading.Lock()
         self.pause_lock = threading.Lock()
@@ -447,7 +448,7 @@ class DetectorWorker:
             self._refresh_hand_tracker()
             sop_result = self.sop_machine.snapshot(reason="SOP started")
             self.feedback_dispatcher.reset(sop_result,self.sop_machine.sop_config)
-            self.result_store.consume_sop_snapshot(sop_result)
+            self._consume_sop_snapshot_safe(sop_result)
         with self.result_lock:
             self.result["manualRegions"] = manual_regions
         self._last_sop_state = self.sop_machine.snapshot().get("state")
@@ -519,7 +520,7 @@ class DetectorWorker:
                 hands=hands,
             )
             run_id = self.result_store.current_run_id
-            media_events = self.result_store.consume_sop_snapshot(sop_result)
+            media_events = self._consume_sop_snapshot_safe(sop_result)
             self.feedback_dispatcher.process_snapshot(sop_result, run_id)
             sop_state = sop_result.get("state")
             with self.result_lock:
@@ -569,6 +570,16 @@ class DetectorWorker:
             if len(events) > MAX_FEEDBACK_STATUS_EVENTS:
                 del events[:-MAX_FEEDBACK_STATUS_EVENTS]
             self.result["updated_at"] = time.time()
+
+    def _consume_sop_snapshot_safe(self,sop_result:dict) -> list[dict]:
+        try:return self.result_store.consume_sop_snapshot(sop_result)
+        except Exception as exc:
+            now = time.time()
+            if now-self._last_result_storage_error_at >= 5:
+                self._last_result_storage_error_at = now
+                logger.exception("Failed to save SOP snapshot; detection will continue")
+                self._handle_feedback_status({"id":f"storage-{time.time_ns()}","status":"failed","channel":"storage","eventType":"result_storage","stepId":(sop_result.get("current_step") or {}).get("id"),"stepName":(sop_result.get("current_step") or {}).get("name","") ,"runId":self.result_store.current_run_id,"target":self.result_store.result_path,"message":str(exc) or exc.__class__.__name__,"timestamp":now})
+            return []
 
     def snapshot(self):
         with self.result_lock:
@@ -635,7 +646,7 @@ class DetectorWorker:
                 )
                 self.feedback_dispatcher.reset(sop_result,self.sop_machine.sop_config)
                 # 先记录初始状态
-                self.result_store.consume_sop_snapshot(sop_result)
+                self._consume_sop_snapshot_safe(sop_result)
                 self._last_sop_state = sop_result.get("state")
                 with self.result_lock:
                     self.result.update({
@@ -667,7 +678,7 @@ class DetectorWorker:
                 self.paused = True
                 self.sop_machine.pause()
                 sop_result = self.sop_machine.snapshot(matched=False,reason="SOP paused",)
-                self.result_store.consume_sop_snapshot(sop_result)
+                self._consume_sop_snapshot_safe(sop_result)
                 with self.result_lock:
                     self.result["sop"] = sop_result
                     self.result["hands"] = {}
@@ -685,7 +696,7 @@ class DetectorWorker:
                 self.sop_machine.resume()
                 self.paused = False
                 sop_result = self.sop_machine.snapshot(matched=False,reason="SOP resumed")
-                self.result_store.consume_sop_snapshot(sop_result)
+                self._consume_sop_snapshot_safe(sop_result)
                 with self.result_lock:
                     self.result["sop"] = sop_result
                     self.result["updated_at"] = time.time()
@@ -714,7 +725,7 @@ class DetectorWorker:
                     reason = "SOP reset"
                 sop_result = self.sop_machine.snapshot(matched=False,reason=reason)
                 self.feedback_dispatcher.reset(sop_result,self.sop_machine.sop_config)
-                self.result_store.consume_sop_snapshot(sop_result)
+                self._consume_sop_snapshot_safe(sop_result)
                 self._last_sop_state = sop_result.get("state")
 
                 with self.result_lock:

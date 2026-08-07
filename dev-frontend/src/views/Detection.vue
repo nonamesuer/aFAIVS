@@ -766,11 +766,12 @@ function applySopState(sop) {
 };
 
 function getFeedbackEventText(feedbackEvent = {}) {
-    const channel = {modbus: t('displaytext.modbusfeedbackname'), audio: t('displaytext.audiofeedbackname'), http: t('displaytext.httpfeedbackname')}[feedbackEvent.channel] || feedbackEvent.channel || '';
+    const channel = {modbus: t('displaytext.modbusfeedbackname'),audio: t('displaytext.audiofeedbackname'),http: t('displaytext.httpfeedbackname'),storage:t('displaytext.storagefeedbackname')}[feedbackEvent.channel] || feedbackEvent.channel || '';
     const eventType = {
         operation_error: t('displaytext.feedbackoperationerror'),
         step_success: t('displaytext.feedbackstepsuccess'),
         sop_completed: t('displaytext.feedbacksopcompleted'),
+        result_storage:t('displaytext.feedbackresultstorage'),
         // Keep displaying feedback events produced by an older backend.
         operation_completed: t('displaytext.feedbackstepsuccess'),
     }[feedbackEvent.eventType] || feedbackEvent.eventType || '';
