@@ -293,10 +293,6 @@
         </div>
       </section>
     </el-main>
-    <el-footer>
-      <i style="margin-right: 8px">©</i
-      ><span>{{ $t("public.developed") }}(v-{{ appStore.version }})</span>
-    </el-footer>
 
     <el-drawer v-model="detailVisible" size="88%" class="result-drawer"  destroy-on-close @closed="clearMediaUrls">
       <template #header>
@@ -417,7 +413,7 @@
                 >
                   <el-icon><InfoFilled /></el-icon
                   ><span>{{
-                    detail.run?.lastReason || $t("results.no_reason")
+                    localizedReason(detail.run) || $t("results.no_reason")
                   }}</span>
                 </div>
               </article>
@@ -568,7 +564,7 @@
                     <b>{{ eventType(event.eventType) }}</b
                     ><span>{{ formatTime(event.timestampMs) }}</span>
                   </div>
-                  <p>{{ event.message || event.code || "-" }}</p>
+                  <p>{{ localizedEventReason(event) || event.code || "-" }}</p>
                   <pre
                     v-if="event.details && Object.keys(event.details).length"
                     >{{ prettyJson(event.details) }}</pre
@@ -656,6 +652,40 @@
       </div>
     </el-drawer>
   </el-container>
+
+
+
+  <!-- <div class="results-page" v-loading="loading"> -->
+  <!-- </div> -->
+
+
+
+
+    <!-- <header class="app-header">
+      <div class="brand">
+        <b>{{ $t("public.faivs") }}</b> > 
+        <b>{{ $t("results.title") }}</b>
+      </div>
+      <div class="header-actions">
+        <el-button :icon="Refresh" circle @click="loadAll" /><el-dropdown
+          trigger="click"
+          @command="langChange"
+          ><span class="language"
+            >{{ currentLanguage }}<el-icon><ArrowDown /></el-icon></span
+          ><template #dropdown
+            ><el-dropdown-menu
+              ><el-dropdown-item command="en">English</el-dropdown-item
+              ><el-dropdown-item command="zh"
+                >Chinese</el-dropdown-item
+              ></el-dropdown-menu
+            ></template
+          ></el-dropdown
+        ><img src="@/assets/img/bosch.26cf9c8e.svg" alt="Bosch" />
+      </div>
+    </header> -->
+
+    
+  <!-- </div> -->
 </template>
 
 <script setup lang="ts">
@@ -688,9 +718,10 @@ import {
 } from "@element-plus/icons-vue";
 import dayjs from "dayjs";
 import api from "@/api/index";
+import { translateSopReason } from "@/assets/js/sopReason";
 
 const appStore = useAppStore();
-const { t, locale } = useI18n();
+const { t,te,locale } = useI18n();
 const loading = ref(false);
 const detailLoading = ref(false);
 const exporting = ref(false);
@@ -779,6 +810,8 @@ const timeBreakdown = computed(() => [
     color: "#e26b3a",
   },
 ]);
+const localizedReason = (source:any) => translateSopReason(source,{t,te,locale});
+const localizedEventReason = (event:any) => translateSopReason({reasonCode:event?.details?.reason_code,reasonParams:event?.details?.reason_params,reason:event?.message},{t,te,locale});
 
 onBeforeMount(() => {
   currentLanguage.value = appStore.locale === "zh" ? "Chinese" : "English";
@@ -1069,7 +1102,7 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
 
 <style scoped lang="scss">
 .el-container {
-  height: calc(100vh - 8px);
+  height: 100vh;
 }
 .el-header{
   display: flex;
@@ -1100,14 +1133,8 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
   }
 }
 .el-main{
-  height: calc(100% - 140px);
+  height: calc(100% - 100px);
   overflow-y: auto;
-}
-.el-footer {
-  height: 40px;
-  border-top: 1px solid #c5c8cb;
-  display: flex;
-  align-items: center;
 }
 .results-content {
   width: min(1740px, calc(100% - 44px));
@@ -1130,7 +1157,7 @@ const prettyJson = (value: any) => JSON.stringify(value ?? {}, null, 2);
     );
     z-index: 0;
   }
-  background-image: url("@/assets/img/faivs.jpg");
+  background-image: url("@/assets/img/FAIVS.jpg");
   background-size: inherit;
   background-position: center;
   display: flex;

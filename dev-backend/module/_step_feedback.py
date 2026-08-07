@@ -298,6 +298,8 @@ class StepFeedbackDispatcher:
                 "type": step.get("type"),
                 "state": step.get("state"),
                 "reason": step.get("last_reason") or snapshot.get("reason", ""),
+                "reasonCode": step.get("last_reason_code") or snapshot.get("reason_code", ""),
+                "reasonParams": step.get("last_reason_params") or snapshot.get("reason_params", {}),
                 "target": step.get("target"),
                 "matchedCount": step.get("matched_count"),
             },

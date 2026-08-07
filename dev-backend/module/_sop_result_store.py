@@ -345,7 +345,9 @@ class SOPResultStore:
                     reset_count INTEGER DEFAULT 0,
 
                     last_step_id INTEGER,
-                    last_reason TEXT
+                    last_reason TEXT,
+                    last_reason_code TEXT,
+                    last_reason_params_json TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS sop_step_runs (
@@ -512,6 +514,9 @@ class SOPResultStore:
                 ON sop_media(storage_status);
                 """
             )
+            run_columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(sop_runs)").fetchall()}
+            if "last_reason_code" not in run_columns:conn.execute("ALTER TABLE sop_runs ADD COLUMN last_reason_code TEXT")
+            if "last_reason_params_json" not in run_columns:conn.execute("ALTER TABLE sop_runs ADD COLUMN last_reason_params_json TEXT")
 
     # =========================================================
     # Config
@@ -723,6 +728,8 @@ class SOPResultStore:
         self,
         execution_status: str,
         reason: str = "",
+        reason_code: str = "",
+        reason_params: dict | None = None,
     ) -> None:
 
         with self.lock:
@@ -816,7 +823,9 @@ class SOPResultStore:
                         total_duration_ms = ?,
                         active_duration_ms = ?,
 
-                        last_reason = ?
+                        last_reason = ?,
+                        last_reason_code = ?,
+                        last_reason_params_json = ?
                     WHERE run_id = ?
                     """,
                     (
@@ -826,6 +835,8 @@ class SOPResultStore:
                         total,
                         active,
                         reason,
+                        reason_code,
+                        json_dumps(reason_params or {}),
                         self.current_run_id,
                     ),
                 )
@@ -874,6 +885,8 @@ class SOPResultStore:
                 details={
                     "execution_status":
                         execution_status,
+                    "reason_code":reason_code,
+                    "reason_params":reason_params or {},
                 },
             )
 
@@ -1020,6 +1033,8 @@ class SOPResultStore:
                             "All steps completed",
                         )
                     ),
+                    reason_code=str(sop.get("reason_code") or ""),
+                    reason_params=sop.get("reason_params") if isinstance(sop.get("reason_params"),dict) else {},
                 )
 
             event_refs = list(self._event_collector)
@@ -2092,6 +2107,8 @@ class SOPResultStore:
                 "",
             )
         )
+        reason_code = str(step.get("last_reason_code") or "")
+        reason_params = step.get("last_reason_params") if isinstance(step.get("last_reason_params"),dict) else {}
 
         actual_object = str(
             step.get(
@@ -2125,7 +2142,7 @@ class SOPResultStore:
                 ),
             )
 
-        if "Wrong pickup source" in reason:
+        if reason_code == "WRONG_PICK_SOURCE" or "Wrong pickup source" in reason:
             event_type = (
                 "WRONG_PICK_SOURCE"
             )
@@ -2151,6 +2168,8 @@ class SOPResultStore:
                     actual_object,
                 "actual_source":
                     actual_source,
+                "reason_code":reason_code,
+                "reason_params":reason_params,
             },
             step_run_id=(
                 self.step_run_ids.get(
@@ -2193,6 +2212,8 @@ class SOPResultStore:
                 "",
             )
         )
+        reason_code = str(step.get("last_reason_code") or "")
+        reason_params = step.get("last_reason_params") if isinstance(step.get("last_reason_params"),dict) else {}
 
         with self._connect() as conn:
 
@@ -2205,12 +2226,16 @@ class SOPResultStore:
                     quality_status =
                         'with_deviation',
                     last_step_id = ?,
-                    last_reason = ?
+                    last_reason = ?,
+                    last_reason_code = ?,
+                    last_reason_params_json = ?
                 WHERE run_id = ?
                 """,
                 (
                     step_id,
                     reason,
+                    reason_code,
+                    json_dumps(reason_params),
                     self.current_run_id,
                 ),
             )
@@ -2268,6 +2293,8 @@ class SOPResultStore:
             reason,
             {
                 "step_id": step_id,
+                "reason_code":reason_code,
+                "reason_params":reason_params,
             },
             step_run_id=step_run_id,
             cycle_run_id=cycle_run_id,

@@ -17,6 +17,7 @@ from module._manual_regions import (
     region_reference_name,
 )
 from module._sop_config import normalize_ready_check_config
+from module._sop_reason import EMPTY_REASON,SOPReason,nested_reason_params,reason_payload,sop_reason
 
 
 DEFAULT_STEP_TIMEOUT_SECONDS = 30.0
@@ -140,7 +141,7 @@ class SOPStepRuntime:
     started_at: float | None = None
     completed_at: float | None = None
     paused_at: float | None = None
-    last_reason: str = ""
+    last_reason: SOPReason = EMPTY_REASON
 
     phase: SOPCyclePhase = SOPCyclePhase.WAITING
     pick_state: str = "idle"
@@ -172,7 +173,7 @@ class SOPStepRuntime:
     # 是否已经检测到错误取料
     wrong_pick_latched: bool = False
     # 错误原因
-    wrong_pick_reason: str = ""
+    wrong_pick_reason: SOPReason = EMPTY_REASON
     wrong_pick_clear_count: int = 0
 
     @classmethod
@@ -252,7 +253,7 @@ class SOPStepRuntime:
         value = _to_float(self.context.get("movementThreshold", DEFAULT_MOVEMENT_THRESHOLD))
         return value if value > 0 else DEFAULT_MOVEMENT_THRESHOLD
 
-    def validate_config(self) -> tuple[bool, str]:
+    def validate_config(self) -> tuple[bool, SOPReason]:
         result = validate_vision_step(
             {
                 "id": self.id,
@@ -261,7 +262,7 @@ class SOPStepRuntime:
                 "context": self.context,
             }
         )
-        return result.valid, result.message
+        return result.valid,EMPTY_REASON if result.valid else sop_reason(f"STEP_CONFIG_{result.code.upper()}",result.message,step=self.id)
 
     def set_phase(self, phase: SOPCyclePhase) -> None:
         self.phase = phase
@@ -293,7 +294,7 @@ class SOPStepRuntime:
         self.pickup_object_label = None
 
         self.wrong_pick_latched = False
-        self.wrong_pick_reason = ""
+        self.wrong_pick_reason = EMPTY_REASON
         self.wrong_pick_clear_count = 0
 
     def to_dict(self) -> dict[str, Any]:
@@ -312,7 +313,7 @@ class SOPStepRuntime:
             "started_at": self.started_at,
             "completed_at": self.completed_at,
             "paused_at": self.paused_at,
-            "last_reason": self.last_reason,
+            **reason_payload(self.last_reason,"last_reason"),
             "phase": self.phase.value,
             "pick_state": self.pick_state,
             "hand_grip_state": self.hand_grip_state,
@@ -326,7 +327,7 @@ class SOPStepRuntime:
             "pickup_origin_region": self.pickup_origin_region,
             "pickup_object_label": self.pickup_object_label,
             "wrong_pick_latched": self.wrong_pick_latched,
-            "wrong_pick_reason": self.wrong_pick_reason,
+            "wrong_pick_reason": str(self.wrong_pick_reason),
             "wrong_pick_clear_count": self.wrong_pick_clear_count,
             "cycle": {
                 "current": min(self.matched_count + 1, self.target),
@@ -383,7 +384,7 @@ class SOPStateMachine:
         self.current_index = 0
         self.started_at: float | None = None
         self.completed_at: float | None = None
-        self.last_reason = ""
+        self.last_reason = EMPTY_REASON
         self.paused_at: float | None = None
         self.state_before_pause: SOPRunState | None = None
         ready_check = normalize_ready_check_config(self.sop_config.get("readyCheck"))
@@ -453,7 +454,7 @@ class SOPStateMachine:
     def start(self) -> None:
         if not self.steps:
             self.state = SOPRunState.FAILED
-            self.last_reason = "SOP steps is empty"
+            self.last_reason = sop_reason("SOP_STEPS_EMPTY","SOP steps is empty")
             return
 
         for step in self.steps:
@@ -467,7 +468,7 @@ class SOPStateMachine:
             step.started_at = None
             step.completed_at = None
             step.paused_at = None
-            step.last_reason = ""
+            step.last_reason = EMPTY_REASON
             step.blocked_pick_state = None
             step.awaiting_cycle_reset = False
             step.cycle_reset_armed = False
@@ -481,7 +482,7 @@ class SOPStateMachine:
         self.ready_started_at = time.time()
         if self.enable_ready_check:
             self.state = SOPRunState.IDLE
-            self.last_reason = "Waiting for required regions and objects"
+            self.last_reason = sop_reason("WAITING_REQUIRED_REGIONS_AND_OBJECTS","Waiting for required regions and objects")
         else:
             self.state = SOPRunState.RUNNING
             step = self.current_step
@@ -495,7 +496,7 @@ class SOPStateMachine:
         self.completed_at = None
         self.paused_at = None
         self.state_before_pause = None
-        self.last_reason = ""
+        self.last_reason = EMPTY_REASON
         self.ready_started_at = None
         for step in self.steps:
             step.state = SOPStepState.PENDING
@@ -503,7 +504,7 @@ class SOPStateMachine:
             step.started_at = None
             step.completed_at = None
             step.paused_at = None
-            step.last_reason = ""
+            step.last_reason = EMPTY_REASON
             step.blocked_pick_state = None
             step.awaiting_cycle_reset = False
             step.cycle_reset_armed = False
@@ -518,7 +519,7 @@ class SOPStateMachine:
         if step and step.started_at is not None:
             step.paused_at = self.paused_at
         self.state = SOPRunState.PAUSED
-        self.last_reason = "SOP paused"
+        self.last_reason = sop_reason("SOP_PAUSED","SOP paused")
         return True
 
     def resume(self) -> bool:
@@ -538,7 +539,7 @@ class SOPStateMachine:
         self.state = self.state_before_pause or SOPRunState.RUNNING
         self.paused_at = None
         self.state_before_pause = None
-        self.last_reason = "SOP resumed"
+        self.last_reason = sop_reason("SOP_RESUMED","SOP resumed")
         return True
 
     def update(
@@ -555,7 +556,7 @@ class SOPStateMachine:
 
         step = self.current_step
         if step is None:
-            self._complete_all("All steps completed")
+            self._complete_all(sop_reason("ALL_STEPS_COMPLETED","All steps completed"))
             return self.snapshot(matched=False, reason=self.last_reason)
 
         valid, validation_reason = step.validate_config()
@@ -606,14 +607,9 @@ class SOPStateMachine:
                 reason=recovery_reason,
             )
         if self.state == SOPRunState.FAILED:
-            self._recover_current_step("Blocking condition cleared; restarting current cycle")
-            return self.snapshot(
-                matched=False,
-                reason=(
-                    "Blocking condition cleared; "
-                    "restarting current cycle"
-                ),
-            )
+            recovery_reason = sop_reason("BLOCKING_CONDITION_CLEARED","Blocking condition cleared; restarting current cycle")
+            self._recover_current_step(recovery_reason)
+            return self.snapshot(matched=False,reason=recovery_reason)
 
         
 
@@ -650,7 +646,7 @@ class SOPStateMachine:
             step.stable_count = 0
         return self.snapshot(matched=completed_once, reason=reason)
 
-    def snapshot(self, matched: bool = False, reason: str = "") -> dict[str, Any]:
+    def snapshot(self, matched: bool = False, reason: str | SOPReason = EMPTY_REASON) -> dict[str, Any]:
         done_count = sum(1 for step in self.steps if step.state == SOPStepState.DONE)
         return {
             "sop_name": self.sop_name,
@@ -660,7 +656,7 @@ class SOPStateMachine:
             "steps": [step.to_dict() for step in self.steps],
             "progress": {"done": done_count, "total": len(self.steps), "current_index": self.current_index},
             "matched": matched,
-            "reason": reason,
+            **reason_payload(reason),
             "updated_at": time.time(),
         }
 
@@ -675,19 +671,19 @@ class SOPStateMachine:
     ) -> dict[str, Any]:
         step = self.current_step
         if step is None:
-            self._complete_all("All steps completed")
+            self._complete_all(sop_reason("ALL_STEPS_COMPLETED","All steps completed"))
             return self.snapshot(matched=False, reason=self.last_reason)
         boxes = normalize_detections(detections, min_score=self.confidence)
         ready, missing = self._check_step_ready(step, boxes)
         if not ready:
             if self.ready_started_at and time.time() - self.ready_started_at > self.ready_check_timeout:
-                reason = f"Ready check timeout: waiting for {', '.join(missing)}"
+                reason = sop_reason("READY_CHECK_TIMEOUT",f"Ready check timeout: waiting for {', '.join(missing)}",items=missing)
                 self._fail_current_step(reason)
                 return self.snapshot(matched=False, reason=reason)
-            reason = f"Waiting for: {', '.join(missing)}"
+            reason = sop_reason("WAITING_REQUIRED_ITEMS",f"Waiting for: {', '.join(missing)}",items=missing)
             return self.snapshot(matched=False, reason=reason)
         self._start_step(step)
-        return self.snapshot(matched=False, reason="Required regions and objects ready")
+        return self.snapshot(matched=False,reason=sop_reason("REQUIRED_ITEMS_READY","Required regions and objects ready"))
 
     def _check_step_ready(self, step: SOPStepRuntime, boxes: list[DetectionBox]) -> tuple[bool, list[str]]:
         required = {step.to_region}
@@ -723,7 +719,7 @@ class SOPStateMachine:
         self.state = SOPRunState.RUNNING
         if self.started_at is None:
             self.started_at = time.time()
-        self.last_reason = "SOP started"
+        self.last_reason = sop_reason("SOP_STARTED","SOP started")
 
     def _observe(
         self,
@@ -907,7 +903,7 @@ class SOPStateMachine:
                 step.transit_seen = True
                 step.set_phase(SOPCyclePhase.TRANSIT)
             elif obs.source_count <= 0:
-                return False, f"Waiting for {label} in {source}"
+                return False,sop_reason("WAITING_OBJECT_IN_REGION",f"Waiting for {label} in {source}",object=label,region=source)
             else:
                 # Inventory can be replenished while waiting. The latest stable
                 # count becomes this cycle's source baseline.
@@ -915,13 +911,13 @@ class SOPStateMachine:
                 step.outside_source_baseline_count = obs.outside_source_count
                 step.target_baseline_count = obs.target_count
                 step.set_phase(SOPCyclePhase.ACQUIRING)
-                return False, f"{label} ready in {source}; waiting for one item to leave"
+                return False,sop_reason("OBJECT_READY_WAITING_LEAVE",f"{label} ready in {source}; waiting for one item to leave",object=label,source=source)
 
         if step.phase == SOPCyclePhase.ACQUIRING:
             if obs.source_count > step.source_baseline_count:
                 step.source_baseline_count = obs.source_count
                 step.outside_source_baseline_count = obs.outside_source_count
-                return False, f"{source} inventory baseline updated to {obs.source_count}"
+                return False,sop_reason("SOURCE_INVENTORY_UPDATED",f"{source} inventory baseline updated to {obs.source_count}",source=source,count=obs.source_count)
             source_decreased = obs.source_count < step.source_baseline_count
             moved_object_visible = obs.outside_source_count > step.outside_source_baseline_count
             if source_decreased and (moved_object_visible or target_delta):
@@ -933,30 +929,30 @@ class SOPStateMachine:
                 return self._loss_or_restart(
                     step,
                     "object",
-                    f"One {label} left {source} but is temporarily occluded",
+                    sop_reason("OBJECT_TEMPORARILY_OCCLUDED",f"One {label} left {source} but is temporarily occluded",object=label,source=source),
                 )
             else:
                 step.object_miss_count = 0
-                return False, f"Waiting for one {label} to leave {source}"
+                return False,sop_reason("WAITING_OBJECT_LEAVE_REGION",f"Waiting for one {label} to leave {source}",object=label,region=source)
 
         if step.phase == SOPCyclePhase.TRANSIT:
             if target_delta:
                 step.target_entry_seen = True
                 step.set_phase(SOPCyclePhase.TARGET)
-                return True, f"A new {label} entered {target}"
+                return True,sop_reason("OBJECT_ENTERED_TARGET",f"A new {label} entered {target}",object=label,target=target)
             if step.require_object_in_transit:
                 moved_object_visible = obs.outside_source_count > step.outside_source_baseline_count
                 if moved_object_visible:
                     step.transit_seen = True
                     step.object_miss_count = 0
-                    return False, f"Tracking {label} from {source} to {target}"
-                return self._loss_or_restart(step, "object", f"{label} lost during transit")
-            return False, f"Waiting for {label} to enter {target}"
+                    return False,sop_reason("TRACKING_OBJECT_TO_TARGET",f"Tracking {label} from {source} to {target}",object=label,source=source,target=target)
+                return self._loss_or_restart(step,"object",sop_reason("OBJECT_LOST_DURING_TRANSIT",f"{label} lost during transit",object=label))
+            return False,sop_reason("WAITING_OBJECT_ENTER_TARGET",f"Waiting for {label} to enter {target}",object=label,target=target)
 
         if step.phase == SOPCyclePhase.TARGET:
-            return target_delta, f"A new {label} entered {target}" if target_delta else f"Waiting for {label} in {target}"
+            return (target_delta,sop_reason("OBJECT_ENTERED_TARGET",f"A new {label} entered {target}",object=label,target=target)) if target_delta else (False,sop_reason("WAITING_OBJECT_IN_REGION",f"Waiting for {label} in {target}",object=label,region=target))
 
-        return False, f"Waiting for {label}"
+        return False,sop_reason("WAITING_OBJECT",f"Waiting for {label}",object=label)
 
     def _match_fixed_source_with_hand(
         self, step: SOPStepRuntime, obs: StepObservation
@@ -968,42 +964,42 @@ class SOPStateMachine:
 
         if step.phase == SOPCyclePhase.WAITING:
             if step.require_object_at_source and obs.source_count <= 0:
-                return False, f"Waiting for {label} in {source}"
+                return False,sop_reason("WAITING_OBJECT_IN_REGION",f"Waiting for {label} in {source}",object=label,region=source)
             if not obs.hand_in_source:
-                return False, f"Waiting for hand in {source}"
+                return False,sop_reason("WAITING_HAND_IN_REGION",f"Waiting for hand in {source}",region=source)
             step.source_baseline_count = obs.source_count
             step.outside_source_baseline_count = obs.outside_source_count
             step.target_baseline_count = obs.target_count
             step.set_phase(SOPCyclePhase.ACQUIRING)
             if step.require_object_at_source and not obs.hand_on_object:
-                return False, f"Hand entered {source}; waiting to engage {label}"
+                return False,sop_reason("HAND_ENTERED_WAITING_OBJECT",f"Hand entered {source}; waiting to engage {label}",source=source,object=label)
             if obs.hand_on_object:
                 step.hand_grip_state = "gripping"
-            return False, f"Hand ready in {source}"
+            return False,sop_reason("HAND_READY_IN_REGION",f"Hand ready in {source}",region=source)
 
         if step.phase == SOPCyclePhase.ACQUIRING:
             if obs.hand_on_object:
                 step.hand_grip_state = "gripping"
                 step.hand_miss_count = 0
             if not obs.hand_visible:
-                return self._loss_or_restart(step, "hand", "Hand lost while acquiring object")
+                return self._loss_or_restart(step,"hand",sop_reason("HAND_LOST_WHILE_ACQUIRING","Hand lost while acquiring object"))
             if obs.hand_in_source:
                 if step.require_object_at_source and step.hand_grip_state != "gripping":
-                    return False, f"Move hand close to {label} in {source}"
-                return False, f"Pick {label or 'the item'} from {source}"
+                    return False,sop_reason("MOVE_HAND_CLOSE_TO_OBJECT_IN_REGION",f"Move hand close to {label} in {source}",object=label,region=source)
+                return False,sop_reason("PICK_OBJECT_FROM_REGION",f"Pick {label or 'the item'} from {source}",object=label or "item",source=source)
             if step.require_object_at_source and step.hand_grip_state != "gripping":
-                return self._restart_cycle(step, f"Hand left {source} without engaging {label}")
+                return self._restart_cycle(step,sop_reason("HAND_LEFT_WITHOUT_OBJECT",f"Hand left {source} without engaging {label}",source=source,object=label))
             step.source_departure_seen = True
             step.set_phase(SOPCyclePhase.TRANSIT)
 
         if step.phase == SOPCyclePhase.TRANSIT:
             if not obs.hand_visible:
-                return self._loss_or_restart(step, "hand", "Hand lost during transit")
+                return self._loss_or_restart(step,"hand",sop_reason("HAND_LOST_DURING_TRANSIT","Hand lost during transit"))
             step.hand_miss_count = 0
             if obs.hand_in_source:
                 step.set_phase(SOPCyclePhase.ACQUIRING)
                 step.hand_grip_state = "released"
-                return False, f"Hand returned to {source}; pick again"
+                return False,sop_reason("HAND_RETURNED_PICK_AGAIN",f"Hand returned to {source}; pick again",source=source)
 
             if step.require_object_in_transit:
                 object_evidence = obs.hand_on_object or obs.transit_count > 0 or target_delta
@@ -1011,7 +1007,7 @@ class SOPStateMachine:
                     step.transit_seen = True
                     step.object_miss_count = 0
                 else:
-                    return self._loss_or_restart(step, "object", f"{label} lost during transit")
+                    return self._loss_or_restart(step,"object",sop_reason("OBJECT_LOST_DURING_TRANSIT",f"{label} lost during transit",object=label))
             else:
                 step.transit_seen = True
 
@@ -1019,31 +1015,31 @@ class SOPStateMachine:
                 step.target_entry_seen = True
                 step.set_phase(SOPCyclePhase.TARGET)
                 if not step.require_object_at_target:
-                    return True, f"Hand or {label or 'item'} entered {target}"
+                    return True,sop_reason("HAND_OR_OBJECT_ENTERED_TARGET",f"Hand or {label or 'item'} entered {target}",object=label or "item",target=target)
             else:
-                return False, f"Moving to {target}"
+                return False,sop_reason("MOVING_TO_TARGET",f"Moving to {target}",target=target)
 
         if step.phase == SOPCyclePhase.TARGET:
             if not step.require_object_at_target:
-                return True, f"Hand or {label or 'item'} entered {target}"
+                return True,sop_reason("HAND_OR_OBJECT_ENTERED_TARGET",f"Hand or {label or 'item'} entered {target}",object=label or "item",target=target)
             if target_delta:
                 step.target_entry_seen = True
                 step.object_miss_count = 0
                 step.set_phase(SOPCyclePhase.RELEASE)
             else:
-                return self._loss_or_restart(step, "object", f"Waiting for a new {label} in {target}")
+                return self._loss_or_restart(step,"object",sop_reason("WAITING_NEW_OBJECT_IN_TARGET",f"Waiting for a new {label} in {target}",object=label,target=target))
 
         if step.phase == SOPCyclePhase.RELEASE:
             if not step.target_entry_seen:
                 step.set_phase(SOPCyclePhase.TARGET)
-                return False, f"Waiting for {label} in {target}"
+                return False,sop_reason("WAITING_OBJECT_IN_REGION",f"Waiting for {label} in {target}",object=label,region=target)
             if not obs.hand_on_object or not obs.hand_in_target:
                 step.release_seen = True
                 step.hand_grip_state = "released"
-                return True, f"{label} placed in {target} and hand released"
-            return False, f"Waiting for hand to release {label} or leave {target}"
+                return True,sop_reason("OBJECT_PLACED_HAND_RELEASED",f"{label} placed in {target} and hand released",object=label,target=target)
+            return False,sop_reason("WAITING_HAND_RELEASE_OBJECT",f"Waiting for hand to release {label} or leave {target}",object=label,target=target)
 
-        return False, f"Waiting for operation in {source}"
+        return False,sop_reason("WAITING_OPERATION_IN_REGION",f"Waiting for operation in {source}",region=source)
 
     def _match_free_source(self, step: SOPStepRuntime, obs: StepObservation) -> tuple[bool, str]:
         if step.hand_gate_enabled:
@@ -1059,36 +1055,36 @@ class SOPStateMachine:
 
         if step.phase == SOPCyclePhase.WAITING:
             if step.require_object_at_source and obs.outside_target_count <= 0:
-                return False, f"Waiting for {label} in visible area outside {target}"
+                return False,sop_reason("WAITING_OBJECT_VISIBLE_OUTSIDE_TARGET",f"Waiting for {label} in visible area outside {target}",object=label,target=target)
             if step.require_object_in_transit and obs.outside_target_count <= 0:
-                return False, f"Waiting for moving {label} in visible area"
+                return False,sop_reason("WAITING_MOVING_OBJECT_VISIBLE",f"Waiting for moving {label} in visible area",object=label)
             step.initial_object_centers = list(obs.outside_target_centers)
             step.set_phase(SOPCyclePhase.TRANSIT if step.require_object_in_transit else SOPCyclePhase.TARGET)
             if step.phase == SOPCyclePhase.TARGET:
-                return False, f"Waiting for a new {label} in {target}"
+                return False,sop_reason("WAITING_NEW_OBJECT_IN_TARGET",f"Waiting for a new {label} in {target}",object=label,target=target)
 
         if step.phase == SOPCyclePhase.TRANSIT:
             if target_delta and step.transit_seen:
                 step.target_entry_seen = True
                 step.set_phase(SOPCyclePhase.TARGET)
-                return True, f"A new {label} entered {target}"
+                return True,sop_reason("OBJECT_ENTERED_TARGET",f"A new {label} entered {target}",object=label,target=target)
             if self._object_motion_detected(step, obs):
                 step.transit_seen = True
                 step.object_miss_count = 0
-                return False, f"Tracking moving {label} to {target}"
+                return False,sop_reason("TRACKING_MOVING_OBJECT",f"Tracking moving {label} to {target}",object=label,target=target)
             if target_delta and not step.transit_seen:
-                return False, f"{label} reached {target}, but transit evidence is still required"
+                return False,sop_reason("TRANSIT_EVIDENCE_REQUIRED",f"{label} reached {target}, but transit evidence is still required",object=label,target=target)
             if not obs.expected_boxes:
-                return self._loss_or_restart(step, "object", f"{label} lost before reaching {target}")
-            return False, f"Waiting for {label} movement"
+                return self._loss_or_restart(step,"object",sop_reason("OBJECT_LOST_BEFORE_TARGET",f"{label} lost before reaching {target}",object=label,target=target))
+            return False,sop_reason("WAITING_OBJECT_MOVEMENT",f"Waiting for {label} movement",object=label)
 
         if step.phase == SOPCyclePhase.TARGET:
             if target_delta:
                 step.target_entry_seen = True
-                return True, f"{label} count in {target} increased from {step.target_baseline_count} to {obs.target_count}"
-            return False, f"Waiting for a new {label} in {target}"
+                return True,sop_reason("OBJECT_COUNT_INCREASED",f"{label} count in {target} increased from {step.target_baseline_count} to {obs.target_count}",object=label,target=target,previous=step.target_baseline_count,current=obs.target_count)
+            return False,sop_reason("WAITING_NEW_OBJECT_IN_TARGET",f"Waiting for a new {label} in {target}",object=label,target=target)
 
-        return False, f"Waiting for {label}"
+        return False,sop_reason("WAITING_OBJECT",f"Waiting for {label}",object=label)
 
     def _match_free_source_with_hand(
         self, step: SOPStepRuntime, obs: StepObservation
@@ -1099,26 +1095,26 @@ class SOPStateMachine:
 
         if step.phase == SOPCyclePhase.WAITING:
             if not obs.hand_visible:
-                return False, "Waiting for hand in visible area"
+                return False,sop_reason("WAITING_HAND_VISIBLE","Waiting for hand in visible area")
             if obs.hand_in_target:
-                return False, f"Waiting for hand to leave {target} before a new action"
+                return False,sop_reason("WAITING_HAND_LEAVE_TARGET",f"Waiting for hand to leave {target} before a new action",target=target)
             if step.require_object_at_source:
                 if obs.outside_target_count <= 0:
-                    return False, f"Waiting for {label} in visible area"
+                    return False,sop_reason("WAITING_OBJECT_VISIBLE",f"Waiting for {label} in visible area",object=label)
                 if not obs.hand_on_object:
-                    return False, f"Move hand close to {label}"
+                    return False,sop_reason("MOVE_HAND_CLOSE_TO_OBJECT",f"Move hand close to {label}",object=label)
                 step.hand_grip_state = "gripping"
             elif step.require_object_in_transit and label:
                 if not obs.hand_on_object:
-                    return False, f"Waiting for hand to carry {label}"
+                    return False,sop_reason("WAITING_HAND_CARRY_OBJECT",f"Waiting for hand to carry {label}",object=label)
                 step.hand_grip_state = "gripping"
                 step.transit_seen = True
             step.set_phase(SOPCyclePhase.TRANSIT)
-            return False, f"New hand action detected; move to {target}"
+            return False,sop_reason("NEW_HAND_ACTION_MOVE_TARGET",f"New hand action detected; move to {target}",target=target)
 
         if step.phase == SOPCyclePhase.TRANSIT:
             if not obs.hand_visible:
-                return self._loss_or_restart(step, "hand", "Hand lost during transit")
+                return self._loss_or_restart(step,"hand",sop_reason("HAND_LOST_DURING_TRANSIT","Hand lost during transit"))
             step.hand_miss_count = 0
 
             if step.require_object_in_transit and label:
@@ -1126,7 +1122,7 @@ class SOPStateMachine:
                     step.transit_seen = True
                     step.object_miss_count = 0
                 else:
-                    return self._loss_or_restart(step, "object", f"Hand is no longer carrying {label}")
+                    return self._loss_or_restart(step,"object",sop_reason("HAND_NO_LONGER_CARRYING",f"Hand is no longer carrying {label}",object=label))
             else:
                 step.transit_seen = True
 
@@ -1134,49 +1130,49 @@ class SOPStateMachine:
                 step.target_entry_seen = True
                 step.set_phase(SOPCyclePhase.TARGET)
                 if not step.require_object_at_target:
-                    return True, f"Hand or {label or 'item'} entered {target}"
-                return False, f"Hand reached {target}; verifying {label}"
-            return False, f"Moving hand to {target}"
+                    return True,sop_reason("HAND_OR_OBJECT_ENTERED_TARGET",f"Hand or {label or 'item'} entered {target}",object=label or "item",target=target)
+                return False,sop_reason("HAND_REACHED_VERIFYING_OBJECT",f"Hand reached {target}; verifying {label}",target=target,object=label)
+            return False,sop_reason("MOVING_TO_TARGET",f"Moving hand to {target}",target=target)
 
         if step.phase == SOPCyclePhase.TARGET:
             if not step.require_object_at_target:
-                return True, f"Hand entered {target}"
+                return True,sop_reason("HAND_ENTERED_TARGET",f"Hand entered {target}",target=target)
             if target_delta:
                 step.target_entry_seen = True
                 step.object_miss_count = 0
                 step.set_phase(SOPCyclePhase.RELEASE)
             else:
-                return self._loss_or_restart(step, "object", f"Waiting for a new {label} in {target}")
+                return self._loss_or_restart(step,"object",sop_reason("WAITING_NEW_OBJECT_IN_TARGET",f"Waiting for a new {label} in {target}",object=label,target=target))
 
         if step.phase == SOPCyclePhase.RELEASE:
             if not obs.hand_on_object or not obs.hand_in_target:
                 step.release_seen = True
                 step.hand_grip_state = "released"
-                return True, f"{label} placed in {target} and hand released"
-            return False, f"Waiting for hand to release {label} or leave {target}"
+                return True,sop_reason("OBJECT_PLACED_HAND_RELEASED",f"{label} placed in {target} and hand released",object=label,target=target)
+            return False,sop_reason("WAITING_HAND_RELEASE_OBJECT",f"Waiting for hand to release {label} or leave {target}",object=label,target=target)
 
-        return False, "Waiting for hand action"
+        return False,sop_reason("WAITING_HAND_ACTION","Waiting for hand action")
 
     def _try_reset_for_next_cycle(
         self, step: SOPStepRuntime, obs: StepObservation
     ) -> tuple[bool, str]:
         if not step.awaiting_cycle_reset:
-            return True, ""
+            return True,EMPTY_REASON
 
         if step.hand_gate_enabled:
             if not step.cycle_reset_armed:
                 released = not obs.hand_in_target and (not step.from_region or not obs.hand_in_source)
                 if not released:
-                    return False, "Waiting for hand to release before the next cycle"
+                    return False,sop_reason("WAITING_HAND_RELEASE_NEXT_CYCLE","Waiting for hand to release before the next cycle")
                 step.cycle_reset_armed = True
-                return False, "Previous hand action released; waiting for next action"
+                return False,sop_reason("PREVIOUS_HAND_ACTION_RELEASED","Previous hand action released; waiting for next action")
 
         step.awaiting_cycle_reset = False
         step.cycle_reset_armed = False
         step.reset_cycle_runtime()
         self._initialize_cycle(step, obs)
         step.started_at = time.time()
-        return True, f"Cycle {step.matched_count + 1}/{step.target} ready"
+        return True,sop_reason("CYCLE_READY",f"Cycle {step.matched_count + 1}/{step.target} ready",current=step.matched_count + 1,target=step.target)
 
     def _confirm_cycle_completed(
         self, step: SOPStepRuntime, reason: str, observation: StepObservation
@@ -1201,7 +1197,7 @@ class SOPStateMachine:
             step.awaiting_cycle_reset = False
             step.cycle_reset_armed = True
 
-        step.last_reason = f"Cycle {step.matched_count}/{step.target} completed; waiting for next cycle"
+        step.last_reason = sop_reason("CYCLE_COMPLETED_WAITING_NEXT",f"Cycle {step.matched_count}/{step.target} completed; waiting for next cycle",current=step.matched_count,target=step.target)
 
     def _finish_current_step(self, reason: str) -> None:
         step = self.current_step
@@ -1215,22 +1211,22 @@ class SOPStateMachine:
         self.current_index += 1
         next_step = self.current_step
         if next_step is None:
-            self._complete_all("All steps completed")
+            self._complete_all(sop_reason("ALL_STEPS_COMPLETED","All steps completed"))
             return
         if self.enable_ready_check:
             next_step.state = SOPStepState.PENDING
             self.state = SOPRunState.IDLE
             self.ready_started_at = time.time()
-            self.last_reason = f"Step {step.id} completed; waiting for next step"
+            self.last_reason = sop_reason("STEP_COMPLETED_WAITING_NEXT",f"Step {step.id} completed; waiting for next step",step=step.id)
         else:
             self._start_step(next_step)
 
-    def _complete_all(self, reason: str) -> None:
+    def _complete_all(self, reason: str | SOPReason) -> None:
         self.state = SOPRunState.COMPLETED
         self.completed_at = time.time()
         self.last_reason = reason
 
-    def _fail_current_step(self, reason: str) -> None:
+    def _fail_current_step(self, reason: str | SOPReason) -> None:
         step = self.current_step
         if step:
             step.blocked_pick_state = step.pick_state
@@ -1241,7 +1237,7 @@ class SOPStateMachine:
         self.completed_at = time.time()
         self.last_reason = reason
 
-    def _recover_current_step(self, reason: str) -> None:
+    def _recover_current_step(self, reason: str | SOPReason) -> None:
         step = self.current_step
         if step:
             step.state = SOPStepState.ACTIVE
@@ -1254,16 +1250,16 @@ class SOPStateMachine:
             step.reset_cycle_runtime()
         self.state = SOPRunState.RUNNING
         self.completed_at = None
-        self.last_reason = ""
+        self.last_reason = EMPTY_REASON
 
-    def _restart_cycle(self, step: SOPStepRuntime, reason: str) -> tuple[bool, str]:
+    def _restart_cycle(self, step: SOPStepRuntime, reason: str | SOPReason) -> tuple[bool, str]:
         step.reset_cycle_runtime()
         step.awaiting_cycle_reset = step.hand_gate_enabled
         step.cycle_reset_armed = not step.hand_gate_enabled
         step.started_at = time.time()
-        return False, f"{reason}; restarting current cycle"
+        return False,sop_reason("RESTARTING_CURRENT_CYCLE",f"{reason}; restarting current cycle",**nested_reason_params(reason))
 
-    def _loss_or_restart(self, step: SOPStepRuntime, actor: str, reason: str) -> tuple[bool, str]:
+    def _loss_or_restart(self, step: SOPStepRuntime, actor: str, reason: str | SOPReason) -> tuple[bool, str]:
         if actor == "hand":
             step.hand_miss_count += 1
             count = step.hand_miss_count
@@ -1273,8 +1269,9 @@ class SOPStateMachine:
         step.miss_count = max(step.object_miss_count, step.hand_miss_count)
         tolerance = step.miss_tolerance
         if count <= tolerance:
-            return False, f"{reason} ({count}/{tolerance}); holding phase {step.phase.value}"
-        return self._restart_cycle(step, f"{reason} exceeded missTolerance={tolerance}")
+            return False,sop_reason("MISS_TOLERANCE_HOLDING",f"{reason} ({count}/{tolerance}); holding phase {step.phase.value}",**nested_reason_params(reason),count=count,tolerance=tolerance,phase=step.phase.value)
+        exceeded = sop_reason("MISS_TOLERANCE_EXCEEDED",f"{reason} exceeded missTolerance={tolerance}",**nested_reason_params(reason),tolerance=tolerance)
+        return self._restart_cycle(step,exceeded)
     def _collect_source_region_names(self) -> list[str]:
         """
         收集所有需要监控的物料来源区域。
@@ -1308,16 +1305,16 @@ class SOPStateMachine:
         self,
         step: SOPStepRuntime,
         obs: StepObservation,
-    ) -> str:
+    ) -> str | SOPReason:
 
         # 没配置固定起始区域，不做来源检查
         if not step.from_region:
-            return ""
+            return EMPTY_REASON
 
         # 没启用手部识别，无法可靠判断
         # “操作者从哪个区域拿的”
         if not step.hand_gate_enabled:
-            return ""
+            return EMPTY_REASON
 
         # 已经锁定错误取料以后，
         # 不允许下一帧自动恢复。
@@ -1366,13 +1363,8 @@ class SOPStateMachine:
 
                 actual_object = objects[0]
 
-                reason = (
-                    "NG: Wrong pickup source: "
-                    f"expected {step.from_region_name}, "
-                    f"but operator picked "
-                    f"{actual_object} "
-                    f"from {self._display_region_name(region_name)}"
-                )
+                actual_source = self._display_region_name(region_name)
+                reason = sop_reason("WRONG_PICK_SOURCE",f"NG: Wrong pickup source: expected {step.from_region_name}, but operator picked {actual_object} from {actual_source}",expectedSource=step.from_region_name,actualObject=actual_object,actualSource=actual_source)
 
                 step.pickup_origin_region = (
                     region_name
@@ -1402,14 +1394,8 @@ class SOPStateMachine:
                         != expected_object
                     ):
 
-                        reason = (
-                            "NG: Wrong material pickup: "
-                            f"expected "
-                            f"{step.expected_object}, "
-                            f"but operator picked "
-                            f"{actual_object} "
-                            f"from {self._display_region_name(region_name)}"
-                        )
+                        source_name = self._display_region_name(region_name)
+                        reason = sop_reason("WRONG_MATERIAL_PICKUP",f"NG: Wrong material pickup: expected {step.expected_object}, but operator picked {actual_object} from {source_name}",expected=step.expected_object,actual=actual_object,source=source_name)
 
                         step.pickup_origin_region = (
                             region_name
@@ -1439,12 +1425,12 @@ class SOPStateMachine:
                     objects[0]
                 )
 
-        return ""
+        return EMPTY_REASON
     def _try_recover_wrong_pick(
         self,
         step: SOPStepRuntime,
         obs: StepObservation,
-    ) -> tuple[bool, str]:
+    ) -> tuple[bool, str | SOPReason]:
         """
         检查错误取料动作是否已经结束。
 
@@ -1459,7 +1445,7 @@ class SOPStateMachine:
         """
 
         if not step.wrong_pick_latched:
-            return True, ""
+            return True,EMPTY_REASON
 
         wrong_region = (
             step.pickup_origin_region or ""
@@ -1522,14 +1508,7 @@ class SOPStateMachine:
         ):
             step.wrong_pick_clear_count = 0
 
-            return (
-                False,
-                (
-                    f"{step.wrong_pick_reason}; "
-                    "please release the wrong material "
-                    "and move hand away from material area"
-                ),
-            )
+            return False,sop_reason("WRONG_PICK_RELEASE_REQUIRED",f"{step.wrong_pick_reason}; please release the wrong material and move hand away from material area",actualObject=wrong_object,actualSource=self._display_region_name(wrong_region))
 
         # ========================================
         # 4. 错误动作已经消失
@@ -1547,28 +1526,15 @@ class SOPStateMachine:
             step.wrong_pick_clear_count
             < required_frames
         ):
-            return (
-                False,
-                (
-                    "Wrong pickup released; "
-                    f"confirming "
-                    f"{step.wrong_pick_clear_count}/"
-                    f"{required_frames}"
-                ),
-            )
+            return False,sop_reason("WRONG_PICK_RELEASE_CONFIRMING",f"Wrong pickup released; confirming {step.wrong_pick_clear_count}/{required_frames}",current=step.wrong_pick_clear_count,target=required_frames)
 
         # ========================================
         # 5. 真正解除错误状态
         # ========================================
 
-        self._recover_current_step(
-            "Wrong pickup cleared; restart current cycle"
-        )
-
-        return (
-            True,
-            "Wrong pickup cleared; restart current cycle",
-        )
+        cleared_reason = sop_reason("WRONG_PICK_CLEARED","Wrong pickup cleared; restart current cycle")
+        self._recover_current_step(cleared_reason)
+        return True,cleared_reason
     def _object_motion_detected(self, step: SOPStepRuntime, obs: StepObservation) -> bool:
         if not obs.outside_target_centers:
             return False
@@ -1582,12 +1548,12 @@ class SOPStateMachine:
                 return True
         return False
 
-    def _check_timeout(self, step: SOPStepRuntime) -> str:
+    def _check_timeout(self, step: SOPStepRuntime) -> str | SOPReason:
         if step.timeout <= 0 or step.started_at is None:
-            return ""
+            return EMPTY_REASON
         if time.time() - step.started_at <= step.timeout:
-            return ""
-        return f"Step timeout: {step.name} exceeded {step.timeout:g}s"
+            return EMPTY_REASON
+        return sop_reason("STEP_TIMEOUT",f"Step timeout: {step.name} exceeded {step.timeout:g}s",step=step.name,seconds=step.timeout)
 
     def _match_done_when(
         self, rules: list[dict[str, Any]], boxes: list[DetectionBox]
@@ -1611,23 +1577,25 @@ class SOPStateMachine:
             if current_count >= count:
                 matched_rules += 1
             reasons.append(f"{label}:{current_count}/{count}")
-        return matched_rules, "; ".join(reasons) or "Waiting for doneWhen"
+        details = "; ".join(reasons)
+        return matched_rules,sop_reason("DONE_WHEN_PROGRESS",details or "Waiting for doneWhen",details=details)
 
-    def _match_ng_when(self, step: SOPStepRuntime, boxes: list[DetectionBox]) -> tuple[bool, str]:
+    def _match_ng_when(self, step: SOPStepRuntime, boxes: list[DetectionBox]) -> tuple[bool, str | SOPReason]:
         for rule in step.ng_when:
             if not isinstance(rule, dict):
                 continue
             matched, reason = self._match_rule(rule, boxes)
             if matched:
-                return True, f"NG: {str(rule.get('message') or reason or 'NG rule matched')}"
-        return False, ""
+                message = str(rule.get("message") or "").strip()
+                return (True,sop_reason("NG_RULE_MATCHED",f"NG: {message}",message=message)) if message else (True,reason)
+        return False,EMPTY_REASON
 
-    def _match_default_wrong_object(self, step: SOPStepRuntime, boxes: list[DetectionBox]) -> str:
+    def _match_default_wrong_object(self, step: SOPStepRuntime, boxes: list[DetectionBox]) -> str | SOPReason:
         if not step.expected_object or not step.to_region:
-            return ""
+            return EMPTY_REASON
         regions = find_boxes(boxes, step.to_region)
         if not regions:
-            return ""
+            return EMPTY_REASON
         expected_label = step.expected_object.casefold()
         labels = {label.casefold(): label for label in self._future_expected_objects() if label.casefold() != expected_label and label.casefold() not in self.region_labels}
         for box in boxes:
@@ -1638,11 +1606,8 @@ class SOPStateMachine:
             current_count = count_boxes_inside_regions(find_boxes(boxes, label), regions)
             baseline_count = self._completed_object_count_in_region(label, step.to_region)
             if current_count > baseline_count:
-                return (
-                    f"NG: Expected {step.expected_object}, but {label} "
-                    f"entered {step.to_region_name}"
-                )
-        return ""
+                return sop_reason("WRONG_OBJECT_ENTERED",f"NG: Expected {step.expected_object}, but {label} entered {step.to_region_name}",expected=step.expected_object,actual=label,target=step.to_region_name)
+        return EMPTY_REASON
     def _completed_object_count_in_region(self, label: str, region: str) -> int:
         expected_label = label.casefold()
         expected_region = region.casefold()
@@ -1653,7 +1618,7 @@ class SOPStateMachine:
             and completed_step.expected_object.casefold() == expected_label
             and completed_step.to_region.casefold() == expected_region
         )
-    def _match_rule(self, rule: dict[str, Any], boxes: list[DetectionBox]) -> tuple[bool, str]:
+    def _match_rule(self, rule: dict[str, Any], boxes: list[DetectionBox]) -> tuple[bool, SOPReason]:
         rule_type = str(rule.get("type", "object_detected")).strip()
         label = str(rule.get("label") or rule.get("object") or rule.get("expectedObject") or "").strip()
         region_reference = rule.get("region") or rule.get("toRegion")
@@ -1662,14 +1627,14 @@ class SOPStateMachine:
         count = max(1, int(rule.get("count", 1) or 1))
         if rule_type in {"object_in_region", "wrong_object_in_region"}:
             if not label or not region:
-                return False, "Invalid object_in_region rule"
+                return False,sop_reason("INVALID_OBJECT_IN_REGION_RULE","Invalid object_in_region rule")
             actual = count_boxes_inside_regions(find_boxes(boxes, label), find_boxes(boxes, region))
-            return actual >= count, f"{label} in {region_name}: {actual}/{count}"
+            return actual >= count,sop_reason("NG_OBJECT_IN_REGION",f"NG: {label} in {region_name}: {actual}/{count}",object=label,region=region_name,current=actual,target=count)
         if rule_type == "object_missing":
             actual = len(find_boxes(boxes, label)) if label else 0
-            return bool(label) and actual < count, f"{label} missing: {actual}/{count}"
+            return bool(label) and actual < count,sop_reason("NG_OBJECT_MISSING",f"NG: {label} missing: {actual}/{count}",object=label,current=actual,target=count)
         actual = len(find_boxes(boxes, label)) if label else 0
-        return bool(label) and actual >= count, f"{label}: {actual}/{count}"
+        return bool(label) and actual >= count,sop_reason("NG_OBJECT_DETECTED",f"NG: {label}: {actual}/{count}",object=label,current=actual,target=count)
 
     def _future_expected_objects(self) -> set[str]:
         return {

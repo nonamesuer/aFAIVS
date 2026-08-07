@@ -335,8 +335,9 @@ import api from '@/api/index';
 import { MesAlertWTitle,MesConfirmWTitle } from '@/assets/js/secondpk';
 import { useAppStore } from '@/stores/store';
 import { ElMessage } from 'element-plus';
+import { sopReasonKey,translateSopReason } from '@/assets/js/sopReason';
 const appStore = useAppStore();
-const { t, locale } = useI18n();
+const { t,te,locale } = useI18n();
 const MAX_EVENT_COUNT = 50;
 const MAX_ALERT_COUNT = 30;
 const RECONNECT_DELAY_MS = 3000;
@@ -620,41 +621,17 @@ function getNowTime() {
     return new Date().toLocaleTimeString('zh-CN', { hour12: false });
 };
 
-function getSopReasonText(reason = '') {
-    if (!reason) return t('displaytext.waitresult');
-    const wrongObjectMatch = reason.match(/^NG: Expected (.+), but (.+) entered (.+)$/,);
-    if (wrongObjectMatch) return t('message.messagetext.wrongObject', {expected: wrongObjectMatch[1],actual: wrongObjectMatch[2],target: wrongObjectMatch[3],});
-
-    const replacements = [
-        ['NG: ', `${t('displaytext.failed')}: `],
-        ['Step timeout: ', `${t('displaytext.processtimeout')}: `],
-        ['Waiting for region ', `${t('displaytext.waitingforregion')}`],
-        ['Waiting for ', `${t('displaytext.waitingfor')}`],
-    ];
-    for (const [prefix, replacement] of replacements) {
-        if (reason.startsWith(prefix)) {
-            return reason.replace(prefix, replacement);
-        };
-    };
-
-    if (reason.startsWith('Move ') && reason.includes(' into ')) {
-        const [objectName, regionName] = reason.replace('Move ', '').split(' into ');
-        return t('message.messagetext.moveInto', {object: objectName,region: regionName});
-    };
-
-    if (reason.includes(' entered ')) {
-        const [objectName, regionName] = reason.split(' entered ');
-        return t('message.messagetext.enteredRegion', {object: objectName,region: regionName});
-    };
-    if (reason === 'All steps completed') {
-        return t('message.messagetext.completedall');
-    }
-    return reason;
+function getSopReasonText(source = '') {return translateSopReason(source,{t,te,locale}) || t('displaytext.waitresult')};
+function getReasonSource(sop = {},step = null,isFailed = false) {
+    if (isFailed && sop.reason)return sop;
+    if (step?.last_reason)return step;
+    return sop;
 };
-
-function getSopAlertCode(reason = '') {
-    if (reason.startsWith('Step timeout: ')) return t('displaytext.timeout');
-    if (reason.startsWith('NG: ')) return t('displaytext.ng');
+function getSopAlertCode(source = '') {
+    const reasonCode = typeof source === 'object' ? String(source.reason_code || source.last_reason_code || '') : '';
+    const reason = typeof source === 'string' ? source : String(source?.reason || source?.last_reason || '');
+    if (reasonCode.endsWith('_TIMEOUT') || reason.startsWith('Step timeout: ') || reason.startsWith('Ready check timeout: ')) return t('displaytext.timeout');
+    if (reasonCode.startsWith('WRONG_') || reasonCode === 'NG_RULE_MATCHED' || reason.startsWith('NG: ')) return t('displaytext.ng');
     return t('message.error');
 };
 
@@ -667,7 +644,7 @@ function normalizeStep(step = {}, index = 0, runtimeStep = false) {
         current: runtimeStep ? Number(step.matched_count ?? 0) : 0,
         status: runtimeStep ? mapSopStepStatus(step.state) : 'wait',
         hint: step.hint || '',
-        reason: runtimeStep ? getSopReasonText(step.last_reason || '') : '',
+        reason: runtimeStep ? getSopReasonText(step) : '',
     }
 };
 
@@ -695,10 +672,10 @@ function resetProcessSteps() {
 function syncProcessStepsFromSop(sop = {}) {
     const steps = Array.isArray(sop.steps) ? sop.steps : [];
     if (!steps.length) return;
-    const failedReason = sop.state === 'failed' ? getSopReasonText(sop.reason || '') : '';
+    const failedReason = sop.state === 'failed' ? getSopReasonText(sop) : '';
     processSteps.value = buildProcessSteps(steps, true).map((step, index) => {
         const source = steps[index];
-        return {...step,reason:source.state === 'failed' ? failedReason : getSopReasonText(source.last_reason || '')};
+        return {...step,reason:source.state === 'failed' ? failedReason : getSopReasonText(source)};
     });
 };
 
@@ -718,9 +695,10 @@ function buildEventKey(sop, step, rawReason) {
 function appendSopEvent(sop = {}) {
     const step = sop.current_step;
     const isFailed = sop.state === 'failed' || step?.state === 'failed';
-    const rawReason = isFailed ? sop.reason || step?.last_reason || '' : step?.last_reason || sop.reason || '';
+    const reasonSource = getReasonSource(sop,step,isFailed);
+    const rawReason = reasonSource?.reason || reasonSource?.last_reason || '';
     if (!rawReason) return;
-    const eventKey = buildEventKey(sop, step, rawReason);
+    const eventKey = buildEventKey(sop,step,sopReasonKey(reasonSource));
     if (eventKey === lastSopEventKey) return;
     lastSopEventKey = eventKey;
     events.value = [
@@ -729,7 +707,7 @@ function appendSopEvent(sop = {}) {
             time: getNowTime(),
             level: isFailed ? 'error' : sop.state === 'completed' || step?.state === 'done' ? 'success' : 'info',
             step: step?.name || 'SOP',
-            text: getSopReasonText(rawReason),
+            text: getSopReasonText(reasonSource),
         },
         ...events.value,
     ].slice(0, MAX_EVENT_COUNT);
@@ -758,16 +736,17 @@ function syncSopAlert(sop = {}) {
         return;
     };
 
-    const rawReason = sop.reason || step?.last_reason || t('message.messagetext.unknownreason');
-    const code = getSopAlertCode(rawReason);
-    const alertKey = `${step?.id || 'sop'}|${code}|${rawReason}`;
+    const reasonSource = getReasonSource(sop,step,true);
+    const rawReason = reasonSource?.reason || reasonSource?.last_reason || t('message.messagetext.unknownreason');
+    const code = getSopAlertCode(reasonSource);
+    const alertKey = `${step?.id || 'sop'}|${code}|${sopReasonKey(reasonSource)}`;
     if (alertKey === lastCriticalAlertKey) return;
     lastCriticalAlertKey = alertKey;
     const alert = {
         id: `sop-${Date.now()}-${Math.random()}`,
         level: 'error',
         code,
-        message: getSopReasonText(rawReason),
+        message: getSopReasonText(reasonSource),
         confirmed: false,
     };
 
