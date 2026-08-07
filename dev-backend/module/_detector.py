@@ -394,7 +394,8 @@ class DetectorWorker:
         """按当前SOP是否需要手部识别，惰性创建/销毁 HandTracker，避免不需要时白白耗CPU。"""
         needs_hands = self.sop_machine.requires_hand_tracking
         if needs_hands and self.hand_worker is None:
-            num_hands = max(1, self.sop_machine.max_required_hands)
+            # 即使工序只配置单侧手，也必须同时保留左右手检测槽位；否则未配置侧先出现时会占用唯一槽位。
+            num_hands = 2
             tracker = HandTracker(num_hands=num_hands)
             self.hand_worker = HandDetectorWorker(
                 camera=self.camera,
